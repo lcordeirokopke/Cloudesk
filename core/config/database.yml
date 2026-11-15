@@ -1,0 +1,23 @@
+# Um único banco por ambiente: dados de domínio, Solid Queue, Solid Cable e Solid Cache.
+# As credenciais chegam por variável de ambiente. Os processos da aplicação e os testes
+# usam o papel da aplicação; migrações e seeds usam o papel dono.
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  host: <%= ENV.fetch("DB_HOST", "localhost") %>
+  port: <%= ENV.fetch("DB_PORT", "5432") %>
+  username: <%= ENV["DB_USERNAME"] %>
+  password: <%= ENV["DB_PASSWORD"] %>
+
+development:
+  <<: *default
+  database: <%= ENV.fetch("DB_DEVELOPMENT_NAME", "cloudesk_development") %>
+
+test:
+  <<: *default
+  database: <%= ENV.fetch("DB_TEST_NAME", "cloudesk_test") %>
+
+production:
+  <<: *default
+  database: <%= ENV.fetch("DB_PRODUCTION_NAME", "cloudesk_production") %>
