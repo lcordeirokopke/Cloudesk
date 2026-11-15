@@ -1,2 +1,6 @@
 CLAUDE.MD
 contexto/
+.env
+__pycache__/
+*.egg-info/
+.pytest_cache/

@@ -1,0 +1,91 @@
+name: cloudesk
+
+x-rails: &rails
+  build:
+    context: ./core
+    dockerfile: Dockerfile.dev
+  image: cloudesk-core:dev
+  environment:
+    RAILS_ENV: development
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_USERNAME: ${DB_APP_USERNAME}
+    DB_PASSWORD: ${DB_APP_PASSWORD}
+    DB_DEVELOPMENT_NAME: ${DB_DEVELOPMENT_NAME}
+    DB_TEST_NAME: ${DB_TEST_NAME}
+  volumes:
+    - ./core:/rails
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      DB_OWNER_USERNAME: ${DB_OWNER_USERNAME}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD}
+      DB_APP_USERNAME: ${DB_APP_USERNAME}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD}
+      DB_DEVELOPMENT_NAME: ${DB_DEVELOPMENT_NAME}
+      DB_TEST_NAME: ${DB_TEST_NAME}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.7
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=info
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    ports:
+      - "19092:19092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.7
+    entrypoint: ["/bin/sh", "/scripts/create-topics.sh"]
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    volumes:
+      - ./infra/redpanda:/scripts:ro
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: "no"
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  web:
+    <<: *rails
+    command: ["bin/rails", "server", "-b", "0.0.0.0", "-p", "3000"]
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-data:
+  redpanda-data:

@@ -50,7 +50,7 @@ O agente de IA é modelado como um **atendente** igual ao humano (tipo `ai` ou `
 | - | - |
 | Brand | Marca/tenant (InfinitePay, JIM); escopo de todo dado |
 | Team | Equipe de analistas, com skills e horário |
-| Queue | Fila com SLA, capacidade, atendente inicial (IA ou humano) e fila de transbordo |
+| Queue | Fila com SLA, capacidade, atendente inicial (IA ou humano) e fila de transbordo; no código, `Routing::Queue` |
 | RoutingRule | Condição → fila + prioridade; versionada e auditada |
 | Contact | Lojista sintético, com identidades por canal (telefone, e-mail, id do app) |
 | Conversation | O atendimento e seu estado |
@@ -60,7 +60,9 @@ O agente de IA é modelado como um **atendente** igual ao humano (tipo `ai` ou `
 | AuditEvent | Registro append-only de cada decisão, com payload completo |
 | CustomerMemory | Resumo das interações anteriores do lojista |
 
-Todas as tabelas de domínio têm `brand_id`, com **Row-Level Security** no Postgres; a marca corrente é definida por transação e também segue no header Kafka. As migrações rodam com o papel dono das tabelas; a aplicação usa um papel sem privilégio de dono, para que o RLS e o bloqueio de escrita em `audit_events` valham para ela. As tabelas de infraestrutura (Solid Queue, Solid Cable e Solid Cache) não têm `brand_id` nem RLS, porque os workers processam jobs de todas as marcas; a marca de cada job segue nos argumentos dele. A tabela `brands` também fica fora do RLS, pois é lida para resolver a marca antes de ela ser definida na transação.
+Todas as tabelas de domínio têm `brand_id`, com **Row-Level Security** no Postgres; a marca corrente é definida por transação e também segue no header Kafka. As migrações rodam com o papel dono das tabelas; a aplicação usa um papel sem privilégio de dono, para que o RLS e o bloqueio de escrita em `audit_events` valham para ela. As tabelas de infraestrutura (Solid Queue, Solid Cable e Solid Cache) não têm `brand_id` nem RLS, porque os workers processam jobs de todas as marcas; a marca de cada job segue nos argumentos dele. A tabela `brands` também fica fora do RLS, pois é lida para resolver a marca antes de ela ser definida na transação. O RLS é forçado (`FORCE ROW LEVEL SECURITY`): o papel dono também obedece às políticas e não é superusuário.
+
+Os identificadores (chaves primárias e `event_id`) são UUID v7, gerados pelo `uuidv7()` do PostgreSQL 18. O detalhamento do modelo de dados está em `documents/f1-banco-multi-marca-e-entidades.md`.
 
 ### Filas configuráveis pela operação
 
@@ -83,14 +85,14 @@ Filas e regras são dados, não código: o operador cria e edita pelo painel adm
 
 ```json
 {
-  "event_id": "01J9Z…",
+  "event_id": "01a1d5f0-…",
   "type": "message.created",
   "brand": "infinitepay",
-  "conversation_id": "c_8f2…",
+  "conversation_id": "01a1d5e8-…",
   "sequence": 7,
   "received_at": "2026-11-13T14:02:11.482Z",
   "message": { "author": "customer", "channel": "whatsapp", "text": "Meu repasse de ontem não caiu" },
-  "context_url": "/api/v1/agent/conversations/c_8f2…/context",
+  "context_url": "/api/v1/agent/conversations/01a1d5e8-…/context",
   "traceparent": "00-4bf9…-00f0…-01"
 }
 ```
@@ -99,7 +101,7 @@ Filas e regras são dados, não código: o operador cria e edita pelo painel adm
 - **Assinatura na volta:** as chamadas do Broker à API de ações do Core usam o mesmo esquema de HMAC-SHA256 com timestamp.
 - **Ações do agente** (tópico de saída): `reply`, `escalate`, `categorize`, `resolve` e o registro das ferramentas consultadas. Toda ação leva `based_on_sequence`, a sequência da última mensagem que o agente considerou.
 - **Entrega:** at-least-once em todo o caminho + idempotência no Core = efeito exactly-once para o cliente.
-- **Falhas:** retries com backoff exponencial e jitter, tópico DLQ para mensagens problemáticas e reprocessamento pelo painel.
+- **Falhas:** retries com backoff exponencial e jitter, tópico DLQ para mensagens problemáticas, preservando chave, headers e payload originais, e reprocessamento pelo painel.
 
 #### Ordem das mensagens
 
@@ -112,7 +114,7 @@ A chave da partição Kafka é o `conversation_id`, o que preserva a ordem em qu
 #### Idempotência
 
 - A `Idempotency-Key` de cada ação é derivada do `event_id` de entrada e do tipo da ação. Um evento reentregue ao agente produz a mesma chave.
-- O Core mantém a tabela de eventos processados com índice único; a segunda ação com a mesma chave não produz efeito e devolve o resultado da primeira.
+- O Core mantém a tabela de eventos processados, com `brand_id`, RLS e índice único em `(brand_id, idempotency_key)`; a segunda ação com a mesma chave não produz efeito e devolve o resultado da primeira.
 - O Core é a única barreira de deduplicação. O agente não guarda estado, o que permite reiniciá-lo e rodar várias instâncias.
 
 #### Ação sobre contexto desatualizado
@@ -132,7 +134,16 @@ Na ação `escalate`, o agente envia motivo, resumo curto e contexto estruturado
 
 &#91;embedded content: Ciclo de vida do atendimento · 6 estados\]
 
-Toda transição gera um evento de auditoria; uma conversa resolvida volta à triagem se o lojista escrever de novo dentro do prazo de reabertura.
+| Estado | Significado |
+| - | - |
+| `triage` | Entrou ou reabriu; aguarda classificação e roteamento |
+| `with_ai` | Atribuída ao atendente IA |
+| `awaiting_human` | Escalada; na fila humana, sem analista |
+| `with_human` | Analista assumiu |
+| `resolved` | Resolvida; dentro do prazo de reabertura |
+| `closed` | Prazo de reabertura vencido; estado final |
+
+Toda transição gera um evento de auditoria; uma conversa resolvida volta à triagem se o lojista escrever de novo dentro do prazo de reabertura. Vencido o prazo, a conversa passa a `closed` e uma nova mensagem do lojista abre outra conversa.
 
 ### Auditoria e rastreabilidade
 
@@ -152,7 +163,7 @@ Toda transição gera um evento de auditoria; uma conversa resolvida volta à tr
 - **Canais:** WhatsApp com payloads no formato da Cloud API da Meta; e-mail via Mailpit (SMTP local); chat in-app como widget web.
 - **Simulador de canais:** envia mensagens sintéticas nos três formatos e recebe as respostas de saída, registrando cada uma para a reconciliação.
 - **Agente mock:** determinístico por intenção, com ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) , latência artificial configurável e modos de falha configuráveis (ver Diferenciais); modo LLM opcional com modelo aberto, registrando modelo, versão e parâmetros.
-- **Dados sintéticos:** lojistas, transações e conversas gerados com seeds fixas (Faker pt\_BR e en\_US), sem nenhum dado real.
+- **Dados sintéticos:** lojistas, transações e conversas gerados com seeds fixas (Faker pt\_BR e en\_US), sem nenhum dado real. Rodar as seeds de novo no mesmo banco não duplica registros.
 
 ## Arquitetura
 
@@ -173,13 +184,13 @@ Canal (chat, WhatsApp, e-mail)
 | Componente | Tecnologia | Responsabilidade |
 | - | - | - |
 | Core Help Desk | Rails 8 (API + Hotwire), módulos Channels, Conversations, Routing, Agents, Audit, Admin | Regras de negócio, API, chat, painel e admin |
-| Banco | PostgreSQL | Atendimentos, mensagens, filas, regras, auditoria, jobs, tempo real e cache |
+| Banco | PostgreSQL 18 | Atendimentos, mensagens, filas, regras, auditoria, jobs, tempo real e cache |
 | Jobs | Solid Queue, no mesmo banco do app | Entrega de webhooks, varredura de SLA, resumos de memória |
 | Tempo real | Action Cable / Turbo Streams sobre Solid Cable | Chat e painel do analista ao vivo |
 | Cache | Solid Cache | Cache de contexto e de regras compiladas |
 | E-mail de entrada | Action Mailbox + Mailpit | Canal de e-mail simulado |
 | Broker | Karafka + endpoint Rack, no mesmo código e imagem do Core | Webhook → Kafka e Kafka → API de ações |
-| Mensageria | Redpanda (compatível com a API Kafka) | `agent.inbound`, `agent.outbound` e DLQ |
+| Mensageria | Redpanda (compatível com a API Kafka) | `agent.inbound` e `agent.outbound`, com 6 partições cada, e `agent.dlq` |
 | Agente mock | Python | Consome, lê contexto, chama ferramentas falsas, publica ação |
 | Simulador de canais | Python | Gera tráfego dos três canais e recebe as respostas |
 | Observabilidade | Prometheus + Grafana | Métricas, cockpit operacional e alertas |

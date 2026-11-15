@@ -1,0 +1,27 @@
+# Imagem de desenvolvimento e teste do Core. O Dockerfile gerado pelo Rails é o de produção.
+FROM ruby:3.4-slim
+
+# Cliente PostgreSQL 18 do repositório oficial PGDG: o pg_dump gera o db/structure.sql
+# e precisa ser da mesma versão do servidor.
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+      build-essential ca-certificates curl git gnupg libpq-dev libyaml-dev pkg-config && \
+    install -d /usr/share/postgresql-common/pgdg && \
+    curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc && \
+    . /etc/os-release && \
+    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list && \
+    apt-get update -qq && \
+    apt-get install --no-install-recommends -y postgresql-client-18 && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /rails
+
+COPY Gemfile Gemfile.lock ./
+RUN bundle install
+
+COPY . .
+
+EXPOSE 3000
+CMD ["bin/rails", "server", "-b", "0.0.0.0", "-p", "3000"]
