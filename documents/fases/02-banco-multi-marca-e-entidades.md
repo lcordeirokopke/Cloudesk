@@ -17,7 +17,8 @@ Este documento detalha cada decisão e a fonte que a sustenta. O resumo está em
 | Marca corrente | `set_config('app.brand_id', <id>, true)`, por transação, em um único ponto do código |
 | Formato do schema | `db/structure.sql` |
 | Estados da conversa | `triage`, `with_ai`, `awaiting_human`, `with_human`, `resolved`, `closed` |
-| Sequência de mensagens | Contador na conversa + índice único `(conversation_id, sequence)` |
+| Sequência de mensagens | Contador na conversa + índice único `(brand_id, conversation_id, sequence)` |
+| Chaves estrangeiras | Compostas com `brand_id` entre tabelas de domínio, sem ação `ON DELETE` |
 | `audit_events` | Append-only por permissão e por trigger |
 | Eventos processados | Tabela de domínio, com `brand_id`, RLS e índice único `(brand_id, idempotency_key)` |
 | Seeds | Faker com semente fixa; rodar de novo no mesmo banco não duplica registros |
@@ -38,9 +39,10 @@ Permissões do papel da aplicação:
 | `audit_events` | `SELECT`, `INSERT` |
 | `brands` | `SELECT` |
 | Solid Queue, Solid Cable, Solid Cache | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
+| `schema_migrations`, `ar_internal_metadata` | `SELECT` |
 | Todas | Sem `TRUNCATE` |
 
-Os dois papéis e os bancos são criados na F0, pelo script de inicialização do Postgres (`documents/f0-repositorio-e-infraestrutura-local.md`). A F0 também concede as permissões nas tabelas do Solid Queue, Solid Cable e Solid Cache; a F1 entrega as permissões nas tabelas de domínio e o RLS.
+Os dois papéis (`cloudesk_owner` e `cloudesk_app`) e os bancos são criados na F0, pelo script de inicialização do Postgres (`documents/fases/01-repositorio-e-infraestrutura-local.md`). A F0 também concede as permissões nas tabelas do Solid Queue, Solid Cable e Solid Cache e nas tabelas de controle de migração; a F1 entrega as permissões nas tabelas de domínio e o RLS.
 
 As credenciais de cada papel chegam por variável de ambiente. Migrações e seeds rodam com as do papel dono; os processos da aplicação e os testes rodam com as do papel da aplicação.
 
@@ -100,6 +102,7 @@ O README do Solid Queue documenta a configuração de banco único para o app e 
 ### Cuidados
 
 - **Índices únicos incluem `brand_id`.** A documentação afirma: "Referential integrity checks, such as unique or primary key constraints and foreign key references, always bypass row security" e pede cuidado com vazamento por "covert channel". Um índice único global revelaria a uma marca a existência de um valor em outra.
+- **Chaves estrangeiras entre tabelas de domínio são compostas com `brand_id`.** Cada tabela de domínio tem índice único em `(brand_id, id)`, e a referência é `(brand_id, <tabela>_id)` para `(brand_id, id)`. Como a checagem de integridade referencial ignora o RLS, uma chave estrangeira só pelo `id` aceitaria a referência a uma linha de outra marca; a chave composta faz o banco recusar. Nenhuma chave estrangeira declara ação `ON DELETE`.
 - **`TRUNCATE` não é concedido.** "Operations that apply to the whole table, such as TRUNCATE and REFERENCES, are not subject to row security."
 - **Os testes conectam com o papel da aplicação.** É o papel que os processos usam, e é contra ele que o isolamento precisa ser provado.
 
@@ -107,11 +110,19 @@ O README do Solid Queue documenta a configuração de banco único para o app e 
 
 O schema é versionado em `db/structure.sql` (`config.active_record.schema_format = :sql`). Políticas, triggers, funções e permissões são criados com `execute` nas migrações.
 
-**Embasamento.** O guia de migrações do Rails 8.1 indica que o formato `:ruby` não expressa itens específicos do banco, como triggers, e recomenda o formato `:sql` nesses casos.
+- O Rails gera o `structure.sql` com `pg_dump` sem privilégios. A task `core/lib/tasks/structure_privileges.rake`, entregue na F0, estende o `db:schema:dump` e acrescenta ao arquivo os `GRANT` e `REVOKE` do banco. Os `GRANT` e `REVOKE` das migrações da F1 entram no arquivo do mesmo jeito.
+- Em banco vazio, o `db:migrate` carrega o `structure.sql` em vez de rodar as migrações. O banco de teste é montado assim, com o papel dono, e fica com as mesmas permissões do banco migrado.
+- Os nomes dos papéis ficam gravados no arquivo e por isso são fixos.
+
+**Embasamento.**
+
+- O guia de migrações do Rails 8.1 indica que o formato `:ruby` não expressa itens específicos do banco, como triggers, e recomenda o formato `:sql` nesses casos.
+- No código do ActiveRecord 8.1.4.1, `PostgreSQLDatabaseTasks#structure_dump` chama o `pg_dump` com as opções de só schema, sem privilégios e sem dono, e `DatabaseTasks#initialize_database` carrega o schema quando o banco não tem `schema_migrations`.
 
 ## Identificadores
 
 - Chaves primárias de todas as tabelas de domínio e o `event_id` são UUID v7.
+- O `event_id` é coluna de `audit_events`, `NOT NULL`, com default `uuidv7()` e índice único em `(brand_id, event_id)`. `messages` não tem `event_id`.
 - O valor é gerado pelo banco, com `uuidv7()` como default da coluna:
 
 ```ruby
@@ -138,7 +149,7 @@ Todas as tabelas abaixo, exceto `brands`, têm `brand_id` e RLS.
 | Message | `messages` | Canal, autor (cliente, IA, analista, sistema), texto e `sequence` |
 | Attendant | `attendants` | Tipo (`ai` ou `human`), capacidade simultânea e skills |
 | Handoff | `handoffs` | Motivo, resumo e contexto estruturado em `jsonb` |
-| AuditEvent | `audit_events` | Ator, ação, alvo, antes e depois, payload, motivo, regra e versão, `trace_id` |
+| AuditEvent | `audit_events` | `event_id`, ator, ação, alvo, antes e depois, payload, motivo, regra e versão, `trace_id` |
 | CustomerMemory | `customer_memories` | Resumo das interações anteriores do lojista |
 | Evento processado | `processed_events` | `idempotency_key` e resultado da primeira ação |
 
@@ -209,7 +220,7 @@ RETURNING last_sequence;
 ```
 
 - O incremento acontece na mesma transação que grava a mensagem. O `UPDATE` bloqueia a linha da conversa até o commit, o que serializa escritas concorrentes na mesma conversa.
-- `messages` tem índice único em `(conversation_id, sequence)`, como segunda barreira.
+- `messages` tem índice único em `(brand_id, conversation_id, sequence)`, como segunda barreira.
 - Sequences do PostgreSQL não são usadas: são globais, não por conversa, e deixam buracos quando uma transação é desfeita.
 
 ## `audit_events` append-only

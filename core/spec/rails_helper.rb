@@ -23,10 +23,11 @@ require 'rspec/rails'
 # directory. Alternatively, in the individual `*_spec.rb` files, manually
 # require only the support files necessary.
 #
-# Rails.root.glob('spec/support/**/*.rb').sort_by(&:to_s).each { |f| require f }
+Rails.root.glob('spec/support/**/*.rb').sort_by(&:to_s).each { |f| require f }
 
-# O banco de teste é montado com `RAILS_ENV=test bin/rails db:migrate` usando o papel dono:
-# os GRANT das migrações não ficam no db/structure.sql. Os testes conectam com o papel da aplicação.
+# O banco de teste é montado com `RAILS_ENV=test bin/rails db:migrate` usando o papel dono.
+# Os testes conectam com o papel da aplicação; as seeds rodam antes da suíte, com o papel dono
+# (spec/support/database_roles.rb).
 RSpec.configure do |config|
   # Remove this line if you're not using ActiveRecord or ActiveRecord fixtures
   config.fixture_paths = [

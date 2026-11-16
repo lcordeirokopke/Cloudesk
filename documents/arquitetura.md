@@ -62,7 +62,7 @@ O agente de IA é modelado como um **atendente** igual ao humano (tipo `ai` ou `
 
 Todas as tabelas de domínio têm `brand_id`, com **Row-Level Security** no Postgres; a marca corrente é definida por transação e também segue no header Kafka. As migrações rodam com o papel dono das tabelas; a aplicação usa um papel sem privilégio de dono, para que o RLS e o bloqueio de escrita em `audit_events` valham para ela. As tabelas de infraestrutura (Solid Queue, Solid Cable e Solid Cache) não têm `brand_id` nem RLS, porque os workers processam jobs de todas as marcas; a marca de cada job segue nos argumentos dele. A tabela `brands` também fica fora do RLS, pois é lida para resolver a marca antes de ela ser definida na transação. O RLS é forçado (`FORCE ROW LEVEL SECURITY`): o papel dono também obedece às políticas e não é superusuário.
 
-Os identificadores (chaves primárias e `event_id`) são UUID v7, gerados pelo `uuidv7()` do PostgreSQL 18. O detalhamento do modelo de dados está em `documents/f1-banco-multi-marca-e-entidades.md`.
+Os identificadores (chaves primárias e `event_id`) são UUID v7, gerados pelo `uuidv7()` do PostgreSQL 18. O detalhamento do modelo de dados está em `documents/fases/02-banco-multi-marca-e-entidades.md`.
 
 ### Filas configuráveis pela operação
 

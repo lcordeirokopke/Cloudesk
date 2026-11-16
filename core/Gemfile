@@ -28,6 +28,9 @@ gem "solid_cache"
 gem "solid_queue"
 gem "solid_cable"
 
+# Dados sintéticos das seeds; a versão fica travada no Gemfile.lock [https://github.com/faker-ruby/faker]
+gem "faker"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
