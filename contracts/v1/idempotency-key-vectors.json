@@ -1,0 +1,25 @@
+{
+  "format": "<inbound_event_id>:<type>",
+  "vectors": [
+    {
+      "inbound_event_id": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d",
+      "type": "reply",
+      "idempotency_key": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d:reply"
+    },
+    {
+      "inbound_event_id": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d",
+      "type": "escalate",
+      "idempotency_key": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d:escalate"
+    },
+    {
+      "inbound_event_id": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d",
+      "type": "categorize",
+      "idempotency_key": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d:categorize"
+    },
+    {
+      "inbound_event_id": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d",
+      "type": "resolve",
+      "idempotency_key": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d:resolve"
+    }
+  ]
+}

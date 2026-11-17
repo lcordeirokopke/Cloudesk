@@ -98,7 +98,9 @@ Filas e regras são dados, não código: o operador cria e edita pelo painel adm
 ```
 
 - **Assinatura na ida:** o webhook Core → Broker leva HMAC-SHA256 com timestamp no header; reenvios antigos são rejeitados (anti-replay).
-- **Assinatura na volta:** as chamadas do Broker à API de ações do Core usam o mesmo esquema de HMAC-SHA256 com timestamp.
+- **Assinatura na volta:** as chamadas do Broker à API de ações do Core e a leitura da `context_url` pelo agente usam o mesmo esquema de HMAC-SHA256 com timestamp.
+- **Formato da assinatura:** HMAC-SHA256 de `<timestamp>.<MÉTODO>.<caminho>.<corpo>`, nos headers `X-Cloudesk-Timestamp` e `X-Cloudesk-Signature`, com janela de 300 segundos.
+- **Contrato versionado:** os schemas, exemplos e vetores ficam em `contracts/v1/`; o detalhamento está em `documents/fases/04-contrato-de-integracao.md`.
 - **Ações do agente** (tópico de saída): `reply`, `escalate`, `categorize`, `resolve` e o registro das ferramentas consultadas. Toda ação leva `based_on_sequence`, a sequência da última mensagem que o agente considerou.
 - **Entrega:** at-least-once em todo o caminho + idempotência no Core = efeito exactly-once para o cliente.
 - **Falhas:** retries com backoff exponencial e jitter, tópico DLQ para mensagens problemáticas, preservando chave, headers e payload originais, e reprocessamento pelo painel.
@@ -113,7 +115,7 @@ A chave da partição Kafka é o `conversation_id`, o que preserva a ordem em qu
 
 #### Idempotência
 
-- A `Idempotency-Key` de cada ação é derivada do `event_id` de entrada e do tipo da ação. Um evento reentregue ao agente produz a mesma chave.
+- A `Idempotency-Key` de cada ação é derivada do `event_id` de entrada e do tipo da ação, no formato `<inbound_event_id>:<type>`. O Broker a calcula a partir do corpo da ação. Um evento reentregue ao agente produz a mesma chave.
 - O Core mantém a tabela de eventos processados, com `brand_id`, RLS e índice único em `(brand_id, idempotency_key)`; a segunda ação com a mesma chave não produz efeito e devolve o resultado da primeira.
 - O Core é a única barreira de deduplicação. O agente não guarda estado, o que permite reiniciá-lo e rodar várias instâncias.
 
@@ -150,7 +152,7 @@ Toda transição gera um evento de auditoria; uma conversa resolvida volta à tr
 - `audit_events` append-only: ator, ação, alvo, antes/depois, payload do evento, motivo, regra e versão que casou, `trace_id`.
 - `UPDATE` e `DELETE` bloqueados por permissão de banco e trigger.
 - `traceparent` (W3C) propagado em headers HTTP e Kafka, ligando cada salto da mensagem.
-- **Linha do tempo por mensagem:** cada salto carimba seu horário e o repassa adiante. O Broker registra o recebimento do webhook e a confirmação do Kafka nos headers da mensagem; o agente devolve esses carimbos e os seus próprios (consumo, ferramentas, publicação) na ação. O Core grava tudo no `audit_event` da ação. O painel monta a linha do tempo canal → Core → Broker → Kafka → agente → Broker → cliente a partir de `audit_events` e `trace_id`, sem serviço de tracing externo.
+- **Linha do tempo por mensagem:** cada salto carimba seu horário e o repassa adiante. O Broker registra o recebimento do webhook no header da mensagem, e o timestamp do registro Kafka marca a gravação no tópico; o agente devolve esses dois carimbos e os seus próprios (consumo, ferramentas, publicação) na ação. O Core grava tudo no `audit_event` da ação. O painel monta a linha do tempo canal → Core → Broker → Kafka → agente → Broker → cliente a partir de `audit_events` e `trace_id`, sem serviço de tracing externo.
 
 ### Memória e contexto
 

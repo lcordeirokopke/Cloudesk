@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cloudesk:contract:v1:kafka.outbound-headers",
+  "title": "Headers da mensagem Kafka em agent.outbound",
+  "description": "Gravados pelo agente. Os carimbos de horário seguem no corpo da ação.",
+  "type": "object",
+  "required": ["brand", "traceparent"],
+  "additionalProperties": false,
+  "properties": {
+    "brand": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "traceparent": { "type": "string", "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$" }
+  }
+}

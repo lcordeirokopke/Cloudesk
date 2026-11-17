@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cloudesk:contract:v1:webhook.message-created",
+  "title": "Evento message.created",
+  "description": "Corpo do webhook do Core para o Broker e valor da mensagem Kafka em agent.inbound. A chave da mensagem Kafka é o conversation_id.",
+  "type": "object",
+  "required": ["event_id", "type", "brand", "conversation_id", "sequence", "received_at", "message", "context_url", "traceparent"],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": { "$ref": "#/$defs/uuid", "description": "event_id do audit_event do evento. A Idempotency-Key das ações deriva dele." },
+    "type": { "const": "message.created" },
+    "brand": { "$ref": "#/$defs/brand" },
+    "conversation_id": { "$ref": "#/$defs/uuid" },
+    "sequence": { "type": "integer", "minimum": 1, "description": "Sequência da mensagem na conversa." },
+    "received_at": { "$ref": "#/$defs/timestamp", "description": "Horário em que o Core recebeu a mensagem do canal." },
+    "message": {
+      "type": "object",
+      "required": ["author", "channel", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "author": { "enum": ["customer", "ai", "analyst", "system"] },
+        "channel": { "enum": ["chat", "whatsapp", "email"] },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "context_url": {
+      "type": "string",
+      "pattern": "^/api/v1/agent/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/context$",
+      "description": "Caminho, no Core, do contexto da conversa."
+    },
+    "traceparent": { "$ref": "#/$defs/traceparent" }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "brand": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "timestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "traceparent": { "type": "string", "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$" }
+  }
+}

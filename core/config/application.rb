@@ -26,7 +26,11 @@ module Cloudesk
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    config.autoload_lib(ignore: %w[assets tasks])
+    config.autoload_lib(ignore: %w[assets tasks middleware])
+
+    # Contexto de trace e horário de recebimento de cada requisição HTTP.
+    require_relative "../lib/middleware/trace_context_middleware"
+    config.middleware.insert_after ActionDispatch::Executor, TraceContextMiddleware
 
     # Solid Queue no banco do app, em todos os ambientes: a gravação do estado e do job
     # acontece na mesma transação (outbox implícito).

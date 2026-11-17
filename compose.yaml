@@ -16,8 +16,10 @@ x-rails: &rails
     DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD}
     DB_DEVELOPMENT_NAME: ${DB_DEVELOPMENT_NAME}
     DB_TEST_NAME: ${DB_TEST_NAME}
+    CONTRACTS_PATH: /contracts
   volumes:
     - ./core:/rails
+    - ./contracts:/contracts:ro
   depends_on:
     postgres:
       condition: service_healthy

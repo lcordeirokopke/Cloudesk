@@ -1,0 +1,5 @@
+{
+  "status": "error",
+  "error": "invalid_signature",
+  "message": "assinatura inválida"
+}

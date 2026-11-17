@@ -10,7 +10,7 @@ requires-python = ">=3.13"
 dependencies = []
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "jsonschema"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

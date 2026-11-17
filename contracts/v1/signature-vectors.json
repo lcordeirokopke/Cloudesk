@@ -1,0 +1,43 @@
+{
+  "algorithm": "HMAC-SHA256",
+  "signed_payload": "<timestamp>.<METHOD>.<path>.<body>",
+  "tolerance_seconds": 300,
+  "vectors": [
+    {
+      "description": "POST com corpo JSON",
+      "secret": "segredo-core-para-broker",
+      "timestamp": "1794578531",
+      "method": "POST",
+      "path": "/webhooks",
+      "body": "{\"event_id\":\"019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d\",\"type\":\"message.created\",\"brand\":\"infinitepay\",\"conversation_id\":\"019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f\",\"sequence\":7,\"received_at\":\"2026-11-13T14:02:11.482Z\",\"message\":{\"author\":\"customer\",\"channel\":\"whatsapp\",\"text\":\"Meu repasse de ontem não caiu\"},\"context_url\":\"/api/v1/agent/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context\",\"traceparent\":\"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\"}",
+      "signature": "d9931ea095608c11e1fe22a790e27f758a5d91bb562dca464d7862c72ca8ee33"
+    },
+    {
+      "description": "GET sem corpo",
+      "secret": "segredo-do-agente",
+      "timestamp": "1794578532",
+      "method": "GET",
+      "path": "/api/v1/agent/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context",
+      "body": "",
+      "signature": "ab0bfa1c79130435b334ea875a902b7f9af20956719e283d00eaa9a02d11880b"
+    },
+    {
+      "description": "POST de ação",
+      "secret": "segredo-broker-para-core",
+      "timestamp": "1794578533",
+      "method": "POST",
+      "path": "/api/v1/agent/actions",
+      "body": "{\"type\":\"reply\",\"inbound_event_id\":\"019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d\",\"brand\":\"infinitepay\",\"conversation_id\":\"019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f\",\"based_on_sequence\":7,\"tools\":[{\"name\":\"consultar_repasse\",\"input\":{\"contact_id\":\"019a8f00-aaaa-7bbb-8ccc-0123456789ab\",\"date\":\"2026-11-12\"},\"output\":{\"status\":\"agendado\",\"valor\":\"1532.40\",\"previsao\":\"2026-11-13\"},\"started_at\":\"2026-11-13T14:02:11.720Z\",\"finished_at\":\"2026-11-13T14:02:11.760Z\"}],\"timestamps\":{\"broker_received_at\":\"2026-11-13T14:02:11.530Z\",\"kafka_appended_at\":\"2026-11-13T14:02:11.541Z\",\"agent_consumed_at\":\"2026-11-13T14:02:11.560Z\",\"agent_published_at\":\"2026-11-13T14:02:11.905Z\"},\"traceparent\":\"00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203331-01\",\"text\":\"Seu repasse de R$ 1.532,40 está agendado para hoje, 13/11.\"}",
+      "signature": "585a0366a470b2f1faa527b946e71f65a788f24efe19da9b1a5d723f1d1ac814"
+    },
+    {
+      "description": "caminho com query string",
+      "secret": "segredo-do-agente",
+      "timestamp": "1794578534",
+      "method": "GET",
+      "path": "/api/v1/agent/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context?limit=50",
+      "body": "",
+      "signature": "c1c71660a906cde43a24fba24178d66de2b824ef4e8a9242bbb80dc2047499c3"
+    }
+  ]
+}

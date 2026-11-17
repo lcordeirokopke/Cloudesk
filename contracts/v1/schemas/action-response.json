@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cloudesk:contract:v1:action-response",
+  "title": "Resposta da API de ações",
+  "description": "Corpo da resposta do Core ao Broker. accepted acompanha 2xx; a repetição da mesma Idempotency-Key devolve o corpo da primeira execução. stale acompanha 409. error acompanha os demais 4xx.",
+  "type": "object",
+  "required": ["status"],
+  "unevaluatedProperties": false,
+  "properties": {
+    "status": { "enum": ["accepted", "stale", "error"] }
+  },
+  "oneOf": [
+    {
+      "title": "accepted",
+      "required": ["type", "conversation_id", "event_id", "message_sequence"],
+      "properties": {
+        "status": { "const": "accepted" },
+        "type": { "enum": ["reply", "escalate", "categorize", "resolve"] },
+        "conversation_id": { "$ref": "#/$defs/uuid" },
+        "event_id": { "$ref": "#/$defs/uuid", "description": "event_id do audit_event da ação." },
+        "message_sequence": {
+          "description": "Sequência da mensagem gravada pela ação, ou null quando a ação não grava mensagem.",
+          "oneOf": [ { "type": "null" }, { "type": "integer", "minimum": 1 } ]
+        }
+      }
+    },
+    {
+      "title": "stale",
+      "required": ["conversation_id", "event_id", "based_on_sequence", "last_customer_sequence"],
+      "properties": {
+        "status": { "const": "stale" },
+        "conversation_id": { "$ref": "#/$defs/uuid" },
+        "event_id": { "$ref": "#/$defs/uuid", "description": "event_id do audit_event da rejeição." },
+        "based_on_sequence": { "type": "integer", "minimum": 1 },
+        "last_customer_sequence": { "type": "integer", "minimum": 1 }
+      }
+    },
+    {
+      "title": "error",
+      "required": ["error", "message"],
+      "properties": {
+        "status": { "const": "error" },
+        "error": { "enum": ["invalid_signature", "expired_timestamp", "invalid_payload", "missing_idempotency_key", "not_found"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+  }
+}

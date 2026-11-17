@@ -38,6 +38,7 @@ Cloudwalk/
 │   ├── db/               migrate/, structure.sql
 │   ├── lib/tasks/        structure_privileges.rake
 │   └── spec/             RSpec
+├── contracts/            contrato entre Core, Broker e agente (F3)
 ├── agent_mock/           Python: pyproject.toml, src/, tests/
 ├── channel_simulator/    Python: pyproject.toml, src/, tests/
 ├── experiment/           k6 e análise (F17)
@@ -167,6 +168,7 @@ Os demais serviços da aplicação (`jobs-webhooks`, `jobs-default`, `broker-web
 - O script de `infra/redpanda/` cria os três tópicos com `rpk topic create`, com a opção de não falhar quando o tópico já existe. O fator de replicação é 1, pois o ambiente tem um único nó.
 - O número de partições limita quantas instâncias de `broker-consumer` e de `agent-mock` consomem em paralelo: até 6 por grupo consumidor.
 - O tópico `agent.dlq` é criado pelo script porque o Karafka não o cria.
+- O script define `message.timestamp.type=LogAppendTime` em `agent.inbound`: o timestamp do registro é o horário de gravação no Kafka, usado pelo contrato da F3 (`documents/fases/04-contrato-de-integracao.md`).
 
 **Embasamento.**
 
