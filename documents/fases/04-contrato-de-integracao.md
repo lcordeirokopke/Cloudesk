@@ -228,7 +228,7 @@ O critério é o de `contexto/ordem-de-implementacao.md`: os schemas estão no r
 
 | Fase | Fato | Tratamento |
 | - | - | - |
-| F5 | Os documentos não definem o que o simulador de canais consome do contrato | Ponto em aberto, decidido antes da F5 |
+| F5 | O simulador de canais usa do contrato só a assinatura, na entrada JSON do chat | `channel_simulator/signature.py` é cópia de `agent_mock/signature.py`, testada com `contracts/v1/signature-vectors.json`; detalhes em `documents/fases/06-simulador-de-canais.md` |
 | F7 | O corpo do webhook vem de `Contract::MessageCreated.build` e os headers de `Contract::Signature.headers` | O job assina e envia; o caminho do endpoint do Broker é definido na F9 |
 | F8 | A API valida a assinatura, o schema `action` e a `Idempotency-Key`, e responde conforme `action-response` | Os caminhos dos endpoints de ação são definidos na F8; o endpoint de contexto valida a assinatura do agente |
 | F9 | O Broker calcula a `Idempotency-Key`, grava `broker_received_at` no header e publica o corpo do webhook sem alterar | O `broker-web` e o `broker-consumer` usam `core/lib/contract/` |

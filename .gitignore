@@ -4,3 +4,4 @@ contexto/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+channel_simulator/data/

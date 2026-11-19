@@ -170,7 +170,10 @@ begin
           phone_format[:prefix],
           Faker::Number.unique.number(digits: phone_format[:digits])
         ].join
-        email = "#{Faker::Internet.unique.username(specifier: name, separators: [ '.' ])}@example.com"
+        # O username do Faker pt-BR traz acentos do nome; o e-mail fica em ASCII, como os e-mails
+        # reais de lojistas. A transliteração não consome a semente: nomes e telefones não mudam.
+        username = Faker::Internet.unique.username(specifier: name, separators: [ "." ])
+        email = "#{I18n.transliterate(username)}@example.com"
         app_id = "app-#{Faker::Alphanumeric.unique.alphanumeric(number: 12)}"
         segment = Faker::Base.sample(entry[:segments])
 

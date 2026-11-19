@@ -264,6 +264,7 @@ As referências de `audit_events` a outras tabelas não usam `ON DELETE CASCADE`
 - **Determinismo:** `Faker::Config.random = Random.new(<semente>)`. A versão do Faker fica travada no `Gemfile.lock`, porque os valores gerados dependem dos dicionários da gem.
 - **Locales:** `pt-BR` para a InfinitePay e `en-US` para a JIM. No Faker Ruby os arquivos são `lib/locales/pt-BR.yml` e `lib/locales/en-US.yml`, com hífen.
 - **Conteúdo:** marcas, equipes, filas, regras, atendentes e lojistas sintéticos. Nenhum dado real.
+- **E-mail do lojista:** o username do Faker, gerado a partir do nome, passa por `I18n.transliterate` e fica em ASCII (`barbara.costa@example.com`, e não `bárbara.costa@example.com`). O e-mail com acento na parte local exige SMTPUTF8 em todo o caminho do e-mail, e e-mails reais de lojistas são em ASCII. A transliteração não consome a semente: nomes e telefones são os mesmos.
 - **Reexecução:** cada registro é buscado por uma chave natural e criado só se não existe (marca pelo identificador, fila pelo nome dentro da marca, lojista pela identidade de canal). Com a semente fixa, a segunda execução gera os mesmos valores e encontra os registros existentes.
 - **Papel:** as seeds rodam com o papel dono, que grava em `brands`, e definem a marca por transação, pelo mesmo caminho da aplicação.
 

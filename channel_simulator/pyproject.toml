@@ -7,13 +7,18 @@ name = "channel-simulator"
 version = "0.1.0"
 description = "Simulador de canais do Cloudesk"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = ["aiohttp"]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "pytest-aiohttp"]
+
+[project.scripts]
+channel-simulator = "channel_simulator.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

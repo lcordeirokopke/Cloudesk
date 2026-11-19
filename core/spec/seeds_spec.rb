@@ -40,6 +40,15 @@ RSpec.describe "Seeds" do
     )
   end
 
+  it "gravam os e-mails dos lojistas em ASCII" do
+    emails = Brand.order(:slug).flat_map do |brand|
+      Tenancy.with_brand(brand) { ContactIdentity.where(channel: "email").pluck(:value) }
+    end
+
+    expect(emails.size).to eq(100)
+    expect(emails).to all(match(/\A[a-z0-9._-]+@example\.com\z/))
+  end
+
   it "rodar de novo no mesmo banco mantém a mesma contagem de registros" do
     before_counts = counts
     before_identities = identity_values

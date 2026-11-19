@@ -108,6 +108,35 @@ services:
     <<: *rails
     command: ["bin/jobs"]
 
+  channel-simulator:
+    build: ./channel_simulator
+    image: cloudesk-channel-simulator:dev
+    environment:
+      CORE_URL: http://web:3000
+      CORE_CABLE_URL: ws://web:3000/cable
+      CORE_ORIGIN: http://web:3000
+      MAILPIT_API_URL: http://mailpit:8025
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      CHAT_SIGNING_SECRET: ${CHAT_SIGNING_SECRET}
+      CONTRACTS_PATH: /contracts
+      PERSONAS_PATH: /personas/personas.json
+      SIMULATOR_DATA_DIR: /app/data
+      SIMULATOR_PORT: "8080"
+      MAILPIT_POLL_SECONDS: "2"
+    volumes:
+      - ./channel_simulator:/app
+      - ./contracts:/contracts:ro
+      - ./core/tmp/simulator:/personas:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - web
+      - mailpit
+
 volumes:
   postgres-data:
   redpanda-data:
