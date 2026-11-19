@@ -1,10 +1,15 @@
 # O atendimento e seu estado. As transições de estado válidas ficam só aqui, em TRANSITIONS.
+# O roteamento (Routing::Route) define category, urgency, queue, priority, sla_minutes e attendant;
+# queued_at é o horário em que a conversa entrou na fila humana.
 class Conversation < ApplicationRecord
   include BrandScoped
 
   class InvalidTransition < StandardError; end
 
   STATES = %w[triage with_ai awaiting_human with_human resolved closed].freeze
+  # Estados em que a conversa ocupa a capacidade da fila.
+  OPEN_STATES = %w[with_ai awaiting_human with_human].freeze
+  URGENCIES = %w[high normal].freeze
 
   TRANSITIONS = {
     "triage" => %w[with_ai awaiting_human],
@@ -23,6 +28,7 @@ class Conversation < ApplicationRecord
 
   validates :channel, inclusion: { in: ContactIdentity::CHANNELS }
   validates :state, inclusion: { in: STATES }
+  validates :urgency, inclusion: { in: URGENCIES }, allow_nil: true
   validate :starts_in_triage, on: :create
   validate :transition_is_allowed, on: :update, if: :will_save_change_to_state?
 

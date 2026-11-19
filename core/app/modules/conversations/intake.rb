@@ -10,7 +10,10 @@ module Conversations
   #        resolved dentro do prazo de reabertura: resolved -> triage (conversation.reopened);
   #        resolved com prazo vencido: resolved -> closed (conversation.closed) e abre outra;
   #        qualquer outro estado: usa a conversa;
-  #   4. grava a mensagem com a próxima sequência (message.created), com job de webhook ao Broker.
+  #   4. conversa em triage (aberta ou reaberta): classifica e roteia (Routing::Route) pelo texto da
+  #      mensagem e, no e-mail, pelo assunto;
+  #   5. grava a mensagem com a próxima sequência (message.created). O job de webhook ao Broker é
+  #      enfileirado só quando a conversa está em with_ai.
   #
   # Duas primeiras mensagens simultâneas do mesmo lojista batem nos índices únicos (identidade,
   # conversa aberta por lojista, external_id). A transação que perde é desfeita inteira e tentada de
@@ -62,6 +65,7 @@ module Conversations
 
         contact = find_or_create_contact(inbound)
         conversation = current_conversation(contact, inbound)
+        route(conversation, inbound) if conversation.state == "triage"
         message = append_message(conversation, contact, inbound)
         Result.new(message: message, conversation: conversation, contact: contact, duplicate: false)
       end
@@ -133,13 +137,21 @@ module Conversations
       end.value
     end
 
+    def route(conversation, inbound)
+      Routing::Route.call(
+        conversation: conversation, trigger: "intake", text: inbound.text, subject: inbound.subject,
+        received_at: inbound.received_at
+      )
+    end
+
     # O payload.message segue o formato do contrato (author, channel, text), lido por
     # Contract::MessageCreated.build. Os demais campos ficam só no audit_event: identity é o
     # destinatário da resposta, e subject e external_id formam o assunto e o In-Reply-To do e-mail.
     def append_message(conversation, contact, inbound)
       body = inbound.text.presence || Channels::AttachmentText.for(@brand, inbound.attachments.first&.fetch("kind", nil))
 
-      Audit::Command.call(brand: @brand, type: "message.created", actor_type: "customer", actor_id: contact.id, webhook: true) do |change|
+      Audit::Command.call(brand: @brand, type: "message.created", actor_type: "customer", actor_id: contact.id,
+                          webhook: conversation.state == "with_ai") do |change|
         message = conversation.append_message!(
           channel: inbound.channel, author: "customer", body: body, external_id: inbound.external_id,
           attachments: inbound.attachments, brand_channel_id: inbound.brand_channel&.id

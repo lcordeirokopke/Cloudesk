@@ -7,13 +7,7 @@ RSpec.describe Conversations::CloseExpiredJob do
       inbound_message(brand: brand, channel: "whatsapp", identity: identity_of(contact, "whatsapp"))
     ).first
 
-    Tenancy.with_brand(brand) do
-      conversation = Conversation.find(received.conversation.id)
-      conversation.transition_to!("with_ai")
-      conversation.transition_to!("resolved")
-      conversation.update!(resolved_at: resolved_at)
-      conversation
-    end
+    resolve_conversation(brand, received.conversation.id, resolved_at)
   end
 
   def state_of(brand, conversation)
@@ -27,13 +21,14 @@ RSpec.describe Conversations::CloseExpiredJob do
     open_ip = Conversations::Intake.call(
       inbound_message(brand: infinitepay, channel: "whatsapp", identity: identity_of(seed_contact(infinitepay, 3), "whatsapp"))
     ).first.conversation
+    open_state = state_of(infinitepay, open_ip)
 
     described_class.perform_now
 
     expect(state_of(infinitepay, expired_ip)).to eq("closed")
     expect(state_of(jim, expired_jim)).to eq("closed")
     expect(state_of(infinitepay, recent_ip)).to eq("resolved")
-    expect(state_of(infinitepay, open_ip)).to eq("triage")
+    expect(state_of(infinitepay, open_ip)).to eq(open_state)
 
     event = audit_events_of(infinitepay, expired_ip.id).last
     expect(event).to have_attributes(action: "conversation.closed", actor_type: "system",

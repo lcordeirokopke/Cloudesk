@@ -1,0 +1,152 @@
+# Corpus do classificador (Routing::Classifier): frases sintéticas com a categoria e a urgência
+# esperadas, por marca. category vazio é mensagem sem categoria; urgency ausente é normal; subject
+# é o assunto do e-mail. As frases marcadas como simulador são os modelos de
+# channel_simulator/src/channel_simulator/templates.py, com os campos preenchidos.
+infinitepay:
+  # simulador · transacao
+  - { text: "Olá, a transação TX123 de R$ 150,00 do dia 01/11/2026 não aparece no meu extrato.", category: transacao }
+  - { text: "Fiz uma venda de R$ 150,00 em 01/11/2026 (id TX123) e o cliente diz que foi cobrado duas vezes.", category: transacao }
+  - { text: "Podem verificar a transação TX123? Ela ficou pendente desde 01/11/2026.", category: transacao }
+  # simulador · repasse
+  - { text: "Meu repasse de 01/11/2026 no valor de R$ 150,00 ainda não caiu.", category: repasse }
+  - { text: "Quando cai o repasse das vendas de 01/11/2026? São R$ 150,00.", category: repasse }
+  - { text: "O repasse de R$ 150,00 previsto para 01/11/2026 veio com valor diferente.", category: repasse }
+  # simulador · taxas
+  - { text: "Qual a taxa do crédito parcelado em 12x?", category: taxas }
+  - { text: "Fui cobrado R$ 150,00 de taxa na venda TX123, está certo?", category: taxas }
+  - { text: "Quero entender as taxas do débito e do Pix na minha conta.", category: taxas }
+  # simulador · maquininha
+  - { text: "Minha maquininha SN35789316 não liga desde 01/11/2026.", category: maquininha }
+  - { text: "A maquininha SN35789316 mostra erro de conexão ao passar o cartão.", category: maquininha }
+  - { text: "Preciso trocar a maquininha SN35789316, a bateria não segura carga.", category: maquininha }
+  # simulador · saudação
+  - { text: "Oi, tudo bem? Preciso de ajuda.", category: }
+  - { text: "Bom dia! Alguém pode me atender?", category: }
+  - { text: "Olá, quero falar com o suporte.", category: }
+  # simulador · assunto do e-mail
+  - { subject: "Repasse não recebido", text: "Olá, quero falar com o suporte.", category: repasse }
+  - { subject: "Dúvida sobre taxas", text: "Podem me explicar?", category: taxas }
+  - { subject: "Problema na maquininha", text: "Bom dia! Alguém pode me atender?", category: maquininha }
+  # repasse
+  - { text: "O dinheiro das vendas de ontem não caiu na minha conta", category: repasse }
+  - { text: "Até agora não recebi o valor das vendas da semana", category: repasse }
+  - { text: "Quero antecipar meus recebíveis", category: repasse }
+  - { text: "Qual a data de liquidação das vendas no crédito?", category: repasse }
+  - { text: "O saldo a receber está diferente do que vendi", category: repasse }
+  - { text: "nao chegou nada na minha conta bancaria ainda", category: repasse }
+  - { text: "REPASSE ATRASADO", category: repasse }
+  # taxas
+  - { text: "Quanto custa a taxa de antecipação?", category: taxas }
+  - { text: "O MDR do débito mudou?", category: taxas }
+  - { text: "Quanto vocês cobram no crédito à vista?", category: taxas }
+  - { text: "Achei a tarifa do Pix muito alta", category: taxas }
+  - { text: "Qual o percentual cobrado em cada venda parcelada?", category: taxas }
+  - { text: "Tem mensalidade para usar a maquininha?", category: taxas }
+  # transacao
+  - { text: "Preciso fazer o estorno de uma venda", category: transacao }
+  - { text: "Recebi uma contestação de chargeback", category: transacao }
+  - { text: "O cliente pagou no pix e o pagamento ficou pendente", category: transacao }
+  - { text: "Como cancelo a venda de ontem? Preciso cancelar a venda", category: transacao }
+  - { text: "Pagamento recusado no cartão do cliente", category: transacao }
+  - { text: "Preciso do comprovante de uma compra", category: transacao }
+  - { text: "Cobrança duplicada no cartão do meu cliente", category: transacao }
+  # maquininha
+  - { text: "A máquina não conecta no wifi", category: maquininha }
+  - { text: "O cartão não passa de jeito nenhum", category: maquininha }
+  - { text: "Acabou a bobina, como peço mais?", category: maquininha }
+  - { text: "A tela quebrada não mostra nada", category: maquininha }
+  - { text: "Perdi o carregador, onde compro outro?", category: maquininha }
+  - { text: "Está sem sinal desde cedo", category: maquininha }
+  # app
+  - { text: "Esqueci a senha do aplicativo", category: app }
+  - { text: "O app não abre no meu celular", category: app }
+  - { text: "Não consigo entrar na minha conta", category: app }
+  - { text: "Não chega o código de verificação", category: app }
+  - { text: "O login pela biometria parou", category: app }
+  # sem categoria
+  - { text: "Obrigado pelo atendimento!", category: }
+  - { text: "Vocês abrem no sábado?", category: }
+  - { text: "Quero falar com um humano", category: }
+  # limites de palavra e sobreposição
+  - { text: "Eu repassei o contato para o meu sócio", category: }
+  - { text: "Uso vários apps", category: }
+  - { text: "A maquininha não liga e o leitor de cartão também não", category: maquininha }
+  # urgência
+  - { text: "URGENTE: minha conta foi bloqueada", category: , urgency: high }
+  - { text: "Tem uma venda que não fui eu, acho que é golpe", category: transacao, urgency: high }
+  - { text: "Roubaram minha maquininha", category: maquininha, urgency: high }
+  - { text: "Meu repasse não caiu e preciso disso o mais rápido possível", category: repasse, urgency: high }
+  - { text: "Minha senha foi hackeada", category: app, urgency: high }
+  - { text: "Transação não autorizada no meu extrato", category: transacao, urgency: high }
+
+jim:
+  # simulador · transaction
+  - { text: "Hi, transaction TX123 for $150.00 on 11/01/2026 is missing from my statement.", category: transaction }
+  - { text: "I made a $150.00 sale on 11/01/2026 (id TX123) and the customer says they were charged twice.", category: transaction }
+  - { text: "Can you check transaction TX123? It has been pending since 11/01/2026.", category: transaction }
+  # simulador · payout
+  - { text: "My payout from 11/01/2026 for $150.00 has not arrived yet.", category: payout }
+  - { text: "When will the payout for my 11/01/2026 sales arrive? It is $150.00.", category: payout }
+  - { text: "The $150.00 payout expected on 11/01/2026 came with a different amount.", category: payout }
+  # simulador · fees
+  - { text: "What is the fee for credit card installments?", category: fees }
+  - { text: "I was charged a $150.00 fee on sale TX123, is that right?", category: fees }
+  - { text: "I want to understand the debit and instant payment fees on my account.", category: fees }
+  # simulador · card_reader
+  - { text: "My card reader SN35789316 has not turned on since 11/01/2026.", category: card_reader }
+  - { text: "Card reader SN35789316 shows a connection error when I swipe a card.", category: card_reader }
+  - { text: "I need to replace card reader SN35789316, the battery does not hold a charge.", category: card_reader }
+  # simulador · saudação
+  - { text: "Hi, how are you? I need some help.", category: }
+  - { text: "Good morning! Can someone help me?", category: }
+  - { text: "Hello, I want to talk to support.", category: }
+  # simulador · assunto do e-mail
+  - { subject: "Payout not received", text: "Hello, I want to talk to support.", category: payout }
+  - { subject: "Question about fees", text: "Can you explain?", category: fees }
+  - { subject: "Card reader issue", text: "Good morning! Can someone help me?", category: card_reader }
+  # payout
+  - { text: "My deposit didn't arrive in my bank account", category: payout }
+  - { text: "The funds from yesterday were not received", category: payout }
+  - { text: "How do I request an instant payout?", category: payout }
+  - { text: "When is the next settlement?", category: payout }
+  - { text: "Is there any update on my payout?", category: payout }
+  - { text: "I want to withdraw my balance", category: payout }
+  # fees
+  - { text: "What are your processing fees?", category: fees }
+  - { text: "How much do you charge per transaction?", category: fees }
+  - { text: "Is there a monthly fee?", category: fees }
+  - { text: "The commission on my sales seems too high", category: fees }
+  - { text: "What rate do you apply to debit cards?", category: fees }
+  # transaction
+  - { text: "I need to refund a customer", category: transaction }
+  - { text: "I got a chargeback dispute", category: transaction }
+  - { text: "The customer's card was declined", category: transaction }
+  - { text: "How do I cancel a sale from yesterday?", category: transaction }
+  - { text: "Can you send me the receipt for this purchase?", category: transaction }
+  - { text: "There is a duplicate charge on a payment", category: transaction }
+  # card_reader
+  - { text: "The terminal won't connect to wifi", category: card_reader }
+  - { text: "Bluetooth pairing keeps failing", category: card_reader }
+  - { text: "The screen is broken on my device", category: card_reader }
+  - { text: "I lost the charger", category: card_reader }
+  - { text: "The reader won't turn on", category: card_reader }
+  # app
+  - { text: "I can't access my account in the app", category: app }
+  - { text: "The application keeps crashing", category: app }
+  - { text: "I need to reset my password", category: app }
+  - { text: "The verification code never arrives", category: app }
+  - { text: "Sign in with Face ID is not working", category: app }
+  # sem categoria
+  - { text: "Thanks for the help!", category: }
+  - { text: "Are you open on Saturday?", category: }
+  - { text: "I want to talk to a human", category: }
+  # limites de palavra e sobreposição
+  - { text: "I have some feedback about your service", category: }
+  - { text: "Where can I buy a charger for the card reader?", category: card_reader }
+  # urgência
+  - { text: "URGENT: my account is locked", category: , urgency: high }
+  - { text: "There is a sale that was not me, I think it is a scam", category: transaction, urgency: high }
+  - { text: "My card reader was stolen", category: card_reader, urgency: high }
+  - { text: "My payout did not arrive and I need it asap", category: payout, urgency: high }
+  - { text: "My password was hacked", category: app, urgency: high }
+  - { text: "Unauthorized transaction on my statement", category: transaction, urgency: high }

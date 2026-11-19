@@ -77,9 +77,11 @@ Filas e regras são dados, não código: o operador cria e edita pelo painel adm
 ```
 
 - **Dimensões de condição:** marca, canal, categoria, prioridade, segmento do lojista, idioma, horário.
-- **Triagem:** um classificador leve (regras + palavras-chave) define categoria e prioridade na entrada; o agente pode reclassificar durante a conversa, o que dispara novo roteamento.
+- **Triagem:** um classificador leve (regras + palavras-chave) define categoria e urgência na entrada; a condição de prioridade das regras compara com a urgência, e a prioridade numérica da conversa vem da regra. O agente pode reclassificar durante a conversa, o que dispara novo roteamento.
 - **Distribuição:** atribuição por capacidade com `SELECT … FOR UPDATE SKIP LOCKED` no Postgres, evitando que dois atendentes peguem o mesmo caso.
 - **Toda edição de regra gera uma nova versão** e um evento de auditoria com autor, diff e horário.
+
+O detalhamento da triagem, do roteamento e da distribuição está em `documents/fases/07-triagem-roteamento-e-distribuicao.md`.
 
 ### Contrato com o agente (webhooks + Kafka)
 
@@ -218,7 +220,7 @@ Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-w
 ### Fluxo de uma mensagem
 
 1. O canal simulado chama o webhook de entrada; o Core normaliza para o envelope canônico.
-2. A triagem define categoria e prioridade; o Routing avalia as regras e atribui ao atendente IA da fila.
+2. A triagem define categoria e urgência; o Routing avalia as regras e atribui ao atendente IA da fila.
 3. Numa única transação, o Core grava a mensagem, o `audit_event` e o job de webhook no Solid Queue.
 4. O worker `jobs-webhooks` envia o webhook `message.created` assinado ao Broker.
 5. O Broker valida a assinatura, publica em `agent.inbound` com chave `conversation_id` e responde 2xx **somente depois da confirmação do Kafka**. Sem confirmação, responde erro e o Solid Queue reenvia.
@@ -380,6 +382,7 @@ Por configuração, o agente mock atrasa, não responde, publica a mesma ação 
 - **Memória semântica** com pgvector e casos similares.
 - **Shadow mode e canário** de versões do agente.
 - **Cloudesk como servidor MCP.**
+- **Detecção do idioma do lojista** cujo idioma é desconhecido: pelo texto das mensagens com mais de um número mínimo de caracteres, pelos dados do perfil do lojista ou pelo idioma informado pelo navegador ou dispositivo. O lojista novo recebe o idioma da marca.
 
 **Governança**
 

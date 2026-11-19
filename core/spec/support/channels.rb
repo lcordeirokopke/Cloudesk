@@ -29,6 +29,24 @@ module ChannelHelpers
     Tenancy.with_brand(brand) { Contact.order(:id).offset(index).first! }
   end
 
+  # Lojista das seeds de um segmento.
+  def seed_contact_in_segment(brand, segment, index = 0)
+    Tenancy.with_brand(brand) { Contact.where(segment: segment).order(:id).offset(index).first! }
+  end
+
+  # Leva a conversa a resolved pelas transições válidas, a partir do estado em que o roteamento a
+  # deixou, e grava resolved_at.
+  def resolve_conversation(brand, conversation_id, resolved_at)
+    Tenancy.with_brand(brand) do
+      conversation = Conversation.find(conversation_id)
+      conversation.transition_to!("with_ai") if conversation.state == "triage"
+      conversation.transition_to!("with_human") if conversation.state == "awaiting_human"
+      conversation.transition_to!("resolved")
+      conversation.update!(resolved_at: resolved_at)
+      conversation
+    end
+  end
+
   def identity_of(contact, channel)
     Tenancy.with_brand(contact.brand_id) { ContactIdentity.find_by!(contact_id: contact.id, channel: channel).value }
   end

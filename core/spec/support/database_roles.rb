@@ -51,6 +51,24 @@ module DatabaseHelpers
     expect { in_savepoint(record_class, &block) }.to raise_error(ActiveRecord::StatementInvalid, pattern)
   end
 
+  # Apaga, com o papel dono, conversas gravadas com commit por exemplos fora da transação do RSpec,
+  # com as mensagens e os audit_events delas. O trigger de audit_events fica desligado só durante
+  # a limpeza, na mesma transação.
+  def purge_conversations(brand, conversation_ids)
+    return if conversation_ids.empty?
+
+    connection = OwnerRecord.lease_connection
+    ids = conversation_ids.map { |id| connection.quote(id) }.join(", ")
+    OwnerRecord.transaction do
+      connection.execute("SELECT set_config('app.brand_id', #{connection.quote(brand.id)}, true)")
+      connection.execute("ALTER TABLE audit_events DISABLE TRIGGER audit_events_block_row_changes")
+      connection.execute("DELETE FROM audit_events WHERE conversation_id IN (#{ids})")
+      connection.execute("ALTER TABLE audit_events ENABLE TRIGGER audit_events_block_row_changes")
+      connection.execute("DELETE FROM messages WHERE conversation_id IN (#{ids})")
+      connection.execute("DELETE FROM conversations WHERE id IN (#{ids})")
+    end
+  end
+
   def current_setting(connection = ApplicationRecord.lease_connection)
     connection.select_value("SELECT current_setting('app.brand_id', true)")
   end

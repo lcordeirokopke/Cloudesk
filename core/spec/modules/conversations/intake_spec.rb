@@ -2,7 +2,8 @@ require "rails_helper"
 
 RSpec.describe Conversations::Intake do
   let(:brand) { infinitepay }
-  let(:contact) { seed_contact(brand) }
+  # Lojista alto_tpv: a mensagem de repasse cai na fila prioritária, atendida pela IA.
+  let(:contact) { seed_contact_in_segment(brand, "alto_tpv") }
   let(:phone) { identity_of(contact, "whatsapp") }
 
   def whatsapp_message(**attributes)
@@ -25,12 +26,7 @@ RSpec.describe Conversations::Intake do
   end
 
   def resolve(conversation, resolved_at)
-    Tenancy.with_brand(brand) do
-      conversation = Conversation.find(conversation.id)
-      conversation.transition_to!("with_ai")
-      conversation.transition_to!("resolved")
-      conversation.update!(resolved_at: resolved_at)
-    end
+    resolve_conversation(brand, conversation.id, resolved_at)
   end
 
   describe "abertura de conversa" do
@@ -39,11 +35,13 @@ RSpec.describe Conversations::Intake do
 
       expect(result.duplicate).to be(false)
       expect(result.contact.id).to eq(contact.id)
-      expect(result.conversation).to have_attributes(state: "triage", channel: "whatsapp", contact_id: contact.id)
+      expect(result.conversation).to have_attributes(state: "with_ai", channel: "whatsapp", contact_id: contact.id)
       expect(result.message).to have_attributes(sequence: 1, author: "customer", channel: "whatsapp",
                                                 body: "Meu repasse de ontem não caiu",
                                                 brand_channel_id: brand_channel(brand, "whatsapp").id)
-      expect(actions_of(result.conversation.id)).to eq(%w[conversation.opened message.created])
+      expect(actions_of(result.conversation.id)).to eq(
+        %w[conversation.opened conversation.classified conversation.routed message.created]
+      )
     end
 
     it "usa a conversa aberta do lojista nas mensagens seguintes" do
@@ -52,7 +50,9 @@ RSpec.describe Conversations::Intake do
 
       expect(second.conversation.id).to eq(first.conversation.id)
       expect(second.message.sequence).to eq(2)
-      expect(actions_of(first.conversation.id)).to eq(%w[conversation.opened message.created message.created])
+      expect(actions_of(first.conversation.id)).to eq(
+        %w[conversation.opened conversation.classified conversation.routed message.created message.created]
+      )
     end
 
     it "reabre a conversa resolvida dentro do prazo de reabertura" do
@@ -62,9 +62,12 @@ RSpec.describe Conversations::Intake do
       second = intake(whatsapp_message(text: "Voltou a acontecer"))
 
       expect(second.conversation.id).to eq(first.conversation.id)
-      expect(second.conversation.state).to eq("triage")
+      expect(second.conversation.state).to eq("with_ai")
       reopened = audit_events_of(brand, first.conversation.id).find { |event| event.action == "conversation.reopened" }
       expect(reopened).to have_attributes(actor_type: "system", before: { "state" => "resolved" }, after: { "state" => "triage" })
+      expect(actions_of(first.conversation.id).last(4)).to eq(
+        %w[conversation.reopened conversation.classified conversation.routed message.created]
+      )
     end
 
     it "fecha a conversa resolvida com prazo vencido e abre outra" do
@@ -77,7 +80,101 @@ RSpec.describe Conversations::Intake do
       expect(second.message.sequence).to eq(1)
       Tenancy.with_brand(brand) { expect(Conversation.find(first.conversation.id).state).to eq("closed") }
       expect(actions_of(first.conversation.id).last).to eq("conversation.closed")
-      expect(actions_of(second.conversation.id)).to eq(%w[conversation.opened message.created])
+      expect(actions_of(second.conversation.id)).to eq(
+        %w[conversation.opened conversation.classified conversation.routed message.created]
+      )
+    end
+  end
+
+  describe "roteamento" do
+    def routed_event(conversation_id)
+      audit_events_of(brand, conversation_id).find { |event| event.action == "conversation.routed" }
+    end
+
+    def queue_name(conversation)
+      Tenancy.with_brand(brand) { Routing::Queue.find(conversation.queue_id).name }
+    end
+
+    it "repasse de lojista alto_tpv vai para a fila prioritária, com a IA e o webhook" do
+      before_jobs = webhook_jobs.count
+
+      result = intake(whatsapp_message)
+
+      expect(result.conversation).to have_attributes(state: "with_ai", category: "repasse", urgency: "normal",
+                                                     priority: 90, sla_minutes: 15)
+      expect(queue_name(result.conversation)).to eq("ip-financeiro-prioritaria")
+      expect(webhook_jobs.count).to eq(before_jobs + 1)
+    end
+
+    it "repasse de outro segmento vai para a fila humana, sem atendente e sem webhook" do
+      other = seed_contact_in_segment(brand, "medio_tpv")
+      before_jobs = webhook_jobs.count
+
+      result = intake(inbound_message(brand: brand, channel: "whatsapp", identity: identity_of(other, "whatsapp")))
+
+      expect(result.conversation).to have_attributes(state: "awaiting_human", attendant_id: nil, priority: 50,
+                                                     sla_minutes: 60)
+      expect(result.conversation.queued_at).to be_present
+      expect(queue_name(result.conversation)).to eq("ip-financeiro")
+      expect(result.message).to be_persisted
+      expect(webhook_jobs.count).to eq(before_jobs)
+    end
+
+    it "outra categoria cai na regra genérica" do
+      result = intake(whatsapp_message(text: "A maquininha não liga"))
+
+      expect(result.conversation).to have_attributes(state: "with_ai", category: "maquininha", priority: 10)
+      expect(queue_name(result.conversation)).to eq("ip-suporte-geral")
+      expect(routed_event(result.conversation.id).payload.dig("payload", "rule", "name")).to eq("InfinitePay · Geral")
+    end
+
+    it "no e-mail, o assunto entra na classificação" do
+      email = identity_of(contact, "email")
+
+      result = intake(inbound_message(brand: brand, channel: "email", identity: email, text: "Podem verificar?",
+                                      subject: "Repasse urgente"))
+
+      expect(result.conversation).to have_attributes(category: "repasse", urgency: "high")
+    end
+
+    it "mensagem de conversa fora de triage não é classificada nem roteada de novo" do
+      first = intake(whatsapp_message)
+
+      intake(whatsapp_message(text: "A maquininha não liga"))
+
+      expect(actions_of(first.conversation.id).count("conversation.classified")).to eq(1)
+      Tenancy.with_brand(brand) { expect(Conversation.find(first.conversation.id).category).to eq("repasse") }
+    end
+
+    # Uma requisição do WhatsApp pode trazer mensagens das duas marcas; o Rails liga o query cache
+    # em requisições e jobs.
+    it "duas marcas na mesma execução, com o query cache ligado, usam cada uma as suas regras" do
+      jim_contact = seed_contact_in_segment(jim, "high_tpv")
+
+      ip, us = ActiveRecord::Base.cache do
+        [ intake(whatsapp_message),
+          described_class.call(inbound_message(brand: jim, channel: "whatsapp", identity: identity_of(jim_contact, "whatsapp"),
+                                               text: "My payout did not arrive")).first ]
+      end
+
+      expect(queue_name(ip.conversation)).to eq("ip-financeiro-prioritaria")
+      Tenancy.with_brand(jim) do
+        conversation = Conversation.find(us.conversation.id)
+        expect(conversation).to have_attributes(state: "with_ai", category: "payout")
+        expect(conversation.queue.name).to eq("jim-finance-priority")
+        expect(conversation.attendant.name).to eq("JIM AI Agent")
+      end
+    end
+
+    it "a conversa reaberta é roteada de novo" do
+      first = intake(whatsapp_message)
+      resolve(first.conversation, 1.hour.ago)
+
+      second = intake(whatsapp_message(text: "Agora a maquininha não liga"))
+
+      expect(second.conversation).to have_attributes(state: "with_ai", category: "maquininha")
+      expect(queue_name(second.conversation)).to eq("ip-suporte-geral")
+      expect(actions_of(first.conversation.id).count("conversation.routed")).to eq(2)
     end
   end
 

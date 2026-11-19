@@ -1,0 +1,330 @@
+# Palavras-chave do classificador de entrada (Routing::Classifier), por marca.
+#   version:    versão das listas da marca; vai para o audit_event conversation.classified.
+#   categories: categoria => listas. As categorias são as skills das equipes.
+#     terms:    palavras e expressões próprias da categoria; peso 2.
+#     context:  palavras comuns a vários assuntos, que só indicam a categoria; peso 1.
+#   urgency:    palavras e expressões que dão urgência high; sem nenhuma, a urgência é normal.
+#
+# Caixa e acentos não importam: texto e palavras passam pela mesma normalização. Cada palavra ou
+# expressão casa inteira, com limites de palavra. Quando duas casam no mesmo trecho do texto, conta
+# só a mais longa. A pontuação de uma categoria é a soma dos pesos das palavras casadas, cada uma
+# contada uma vez; vence a maior, e no empate a primeira categoria desta lista.
+#
+# Toda mudança nas listas aumenta a version e passa pelo corpus de
+# spec/fixtures/routing/classifier_corpus.yml.
+infinitepay:
+  version: 2
+  categories:
+    repasse:
+      terms:
+        - repasse
+        - repasses
+        - recebimento
+        - recebimentos
+        - recebíveis
+        - agenda de recebimentos
+        - antecipação
+        - antecipar
+        - liquidação
+        - saque
+        - sacar
+        - não caiu
+        - ainda não caiu
+        - não recebi
+        - não chegou
+        - caiu na conta
+        - cair na conta
+        - quando cai
+        - valor a receber
+        - saldo a receber
+        - transferência para minha conta
+      context:
+        - dinheiro
+        - saldo
+        - depósito
+        - conta bancária
+        - banco
+    taxas:
+      terms:
+        - taxa
+        - taxas
+        - tarifa
+        - tarifas
+        - mdr
+        - taxa de antecipação
+        - percentual
+        - porcentagem
+        - mensalidade
+        - plano de taxas
+        - quanto custa
+        - quanto vocês cobram
+        - valor cobrado
+        - cobrança de taxa
+      context:
+        - juros
+        - desconto
+        - cobrado
+        - cobrada
+        - cobrança
+        - parcelado
+        - parcelamento
+        - crédito
+        - débito
+    transacao:
+      terms:
+        - transação
+        - transações
+        - estorno
+        - estornar
+        - chargeback
+        - contestação
+        - cobrado duas vezes
+        - cobrança duplicada
+        - venda duplicada
+        - venda recusada
+        - pagamento recusado
+        - transação recusada
+        - cancelar a venda
+        - cancelamento da venda
+        - venda não aparece
+        - não aparece no meu extrato
+        - código de autorização
+        - comprovante
+      context:
+        - venda
+        - vendas
+        - pagamento
+        - pagamentos
+        - pix
+        - compra
+        - cliente
+        - extrato
+        - pendente
+    maquininha:
+      terms:
+        - maquininha
+        - maquininhas
+        - máquina
+        - leitor de cartão
+        - bobina
+        - não liga
+        - não conecta
+        - erro de conexão
+        - sem sinal
+        - bluetooth
+        - cartão não passa
+        - não lê o cartão
+        - tela quebrada
+        - tela apagada
+        - bateria
+        - carregador
+        - não segura carga
+      context:
+        - tela
+        - conexão
+        - sinal
+        - wifi
+        - chip
+        - trocar
+    app:
+      terms:
+        - app
+        - aplicativo
+        - login
+        - senha
+        - esqueci a senha
+        - não abre
+        - não consigo entrar
+        - não consigo acessar
+        - código de verificação
+        - erro no app
+        - biometria
+        - token
+      context:
+        - travando
+        - trava
+        - atualização
+        - atualizar
+        - celular
+        - acesso
+  urgency:
+    - urgente
+    - urgência
+    - com urgência
+    - emergência
+    - imediatamente
+    - o mais rápido possível
+    - bloqueado
+    - bloqueada
+    - bloqueio
+    - conta bloqueada
+    - fraude
+    - golpe
+    - clonado
+    - clonada
+    - roubo
+    - roubaram
+    - roubada
+    - furto
+    - furtada
+    - invadida
+    - invadiram
+    - hackeada
+    - não autorizada
+    - não autorizado
+    - não reconheço
+    - não fui eu
+    - prejuízo
+jim:
+  version: 2
+  categories:
+    payout:
+      terms:
+        - payout
+        - payouts
+        - deposit
+        - deposits
+        - settlement
+        - settlements
+        - withdrawal
+        - withdraw
+        - early payout
+        - instant payout
+        - not received
+        - did not arrive
+        - didn't arrive
+        - has not arrived
+        - hasn't arrived
+        - not arrived
+        - transfer to my bank
+        - bank deposit
+      context:
+        - funds
+        - transfer
+        - balance
+        - money
+        - bank
+        - arrive
+    fees:
+      terms:
+        - fee
+        - fees
+        - rate
+        - rates
+        - pricing
+        - commission
+        - surcharge
+        - processing fee
+        - monthly fee
+        - percentage
+        - how much does it cost
+        - how much do you charge
+      context:
+        - interest
+        - charged
+        - charge
+        - installment
+        - installments
+        - credit
+        - debit
+        - cost
+    transaction:
+      terms:
+        - transaction
+        - transactions
+        - refund
+        - refunds
+        - chargeback
+        - chargebacks
+        - dispute
+        - charged twice
+        - double charge
+        - duplicate charge
+        - declined
+        - payment declined
+        - cancel a sale
+        - cancel the sale
+        - missing from my statement
+        - authorization code
+        - receipt
+      context:
+        - sale
+        - sales
+        - payment
+        - payments
+        - purchase
+        - customer
+        - statement
+        - pending
+    card_reader:
+      terms:
+        - card reader
+        - card readers
+        - terminal
+        - won't turn on
+        - not turning on
+        - does not turn on
+        - has not turned on
+        - connection error
+        - won't connect
+        - not connecting
+        - bluetooth
+        - pairing
+        - battery
+        - charger
+        - hold a charge
+        - screen is broken
+        - swipe
+      context:
+        - reader
+        - device
+        - screen
+        - signal
+        - wifi
+        - replace
+    app:
+      terms:
+        - app
+        - application
+        - login
+        - log in
+        - sign in
+        - password
+        - reset my password
+        - crash
+        - crashes
+        - crashing
+        - keeps crashing
+        - verification code
+        - two-factor
+        - can't access
+        - cannot access
+        - not loading
+        - face id
+      context:
+        - update
+        - phone
+        - access
+  urgency:
+    - urgent
+    - urgently
+    - asap
+    - as soon as possible
+    - emergency
+    - immediately
+    - right away
+    - blocked
+    - locked
+    - locked out
+    - frozen
+    - fraud
+    - fraudulent
+    - scam
+    - scammed
+    - stolen
+    - theft
+    - hacked
+    - unauthorized
+    - not me
+    - don't recognize
+    - do not recognize

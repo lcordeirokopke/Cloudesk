@@ -14,8 +14,9 @@ module Audit
   #     message
   #   end
   class Command
-    # O que o bloco informa sobre a mudança que executou.
-    Change = Struct.new(:target, :conversation, :sequence, :before, :after, :payload)
+    # O que o bloco informa sobre a mudança que executou. routing_rule, quando informada pelo bloco,
+    # vale no lugar da informada na chamada: é o caso da versão de regra gravada pelo próprio bloco.
+    Change = Struct.new(:target, :conversation, :sequence, :before, :after, :payload, :routing_rule)
 
     # value é o retorno do bloco.
     Result = Data.define(:value, :audit_event, :envelope)
@@ -75,6 +76,7 @@ module Audit
     end
 
     def record(change, envelope)
+      routing_rule = change.routing_rule || @routing_rule
       AuditEvent.create!(
         event_id: envelope.event_id,
         actor_type: @actor_type,
@@ -87,8 +89,8 @@ module Audit
         after: change.after,
         payload: envelope.to_h,
         reason: @reason,
-        routing_rule: @routing_rule,
-        rule_version: @routing_rule&.version,
+        routing_rule: routing_rule,
+        rule_version: routing_rule&.version,
         trace_id: envelope.trace_id
       )
     end

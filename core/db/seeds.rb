@@ -143,6 +143,7 @@ begin
           record.position = attributes[:position]
           record.when = attributes[:when]
           record.then = attributes[:then]
+          record.active = true
         end
       end
 

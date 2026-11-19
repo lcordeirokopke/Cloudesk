@@ -317,7 +317,11 @@ CREATE TABLE public.conversations (
     resolved_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT conversations_channel_check CHECK (((channel)::text = ANY ((ARRAY['chat'::character varying, 'whatsapp'::character varying, 'email'::character varying])::text[])))
+    urgency character varying,
+    sla_minutes integer,
+    queued_at timestamp(6) without time zone,
+    CONSTRAINT conversations_channel_check CHECK (((channel)::text = ANY ((ARRAY['chat'::character varying, 'whatsapp'::character varying, 'email'::character varying])::text[]))),
+    CONSTRAINT conversations_urgency_check CHECK (((urgency)::text = ANY ((ARRAY['high'::character varying, 'normal'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.conversations FORCE ROW LEVEL SECURITY;
@@ -430,7 +434,8 @@ CREATE TABLE public.routing_rules (
     "position" integer NOT NULL,
     "when" jsonb DEFAULT '{}'::jsonb NOT NULL,
     "then" jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) without time zone NOT NULL,
+    active boolean DEFAULT true NOT NULL
 );
 
 ALTER TABLE ONLY public.routing_rules FORCE ROW LEVEL SECURITY;
@@ -1517,6 +1522,13 @@ CREATE UNIQUE INDEX index_contacts_on_brand_id_and_id ON public.contacts USING b
 
 
 --
+-- Name: index_conversations_awaiting_human; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversations_awaiting_human ON public.conversations USING btree (brand_id, queue_id, priority DESC, queued_at) WHERE (state = 'awaiting_human'::public.conversation_state);
+
+
+--
 -- Name: index_conversations_on_brand_id_and_attendant_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1549,6 +1561,13 @@ CREATE INDEX index_conversations_on_brand_id_and_queue_id ON public.conversation
 --
 
 CREATE UNIQUE INDEX index_conversations_one_open_per_contact ON public.conversations USING btree (brand_id, contact_id) WHERE (state <> 'closed'::public.conversation_state);
+
+
+--
+-- Name: index_conversations_open_by_queue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversations_open_by_queue ON public.conversations USING btree (brand_id, queue_id) WHERE (state = ANY (ARRAY['with_ai'::public.conversation_state, 'awaiting_human'::public.conversation_state, 'with_human'::public.conversation_state]));
 
 
 --
@@ -2423,6 +2442,7 @@ ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261120120000'),
 ('20261119120200'),
 ('20261119120100'),
 ('20261119120000'),
