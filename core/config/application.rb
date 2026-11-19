@@ -28,9 +28,11 @@ module Cloudesk
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     config.autoload_lib(ignore: %w[assets tasks middleware])
 
-    # Contexto de trace e horário de recebimento de cada requisição HTTP.
+    # Contexto de trace e horário de recebimento de cada requisição HTTP. Fica depois de
+    # ActionDispatch::Callbacks, que vem depois do ActionDispatch::Reloader em desenvolvimento: o
+    # recarregamento de código troca a classe Current, e o valor gravado antes dele se perderia.
     require_relative "../lib/middleware/trace_context_middleware"
-    config.middleware.insert_after ActionDispatch::Executor, TraceContextMiddleware
+    config.middleware.insert_after ActionDispatch::Callbacks, TraceContextMiddleware
 
     # Solid Queue no banco do app, em todos os ambientes: a gravação do estado e do job
     # acontece na mesma transação (outbox implícito).

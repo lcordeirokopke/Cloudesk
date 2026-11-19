@@ -16,10 +16,8 @@ module Channels
       IGNORED_TAG = "cloudesk-ignored".freeze
 
       MAX_ATTEMPTS = 10
-      JITTER = 0.15
-      BACKOFF = ->(executions) { (2**executions) * (1 + (rand * JITTER)) }
 
-      retry_on Mailpit::Client::Error, wait: BACKOFF, attempts: MAX_ATTEMPTS
+      retry_on Mailpit::Client::Error, wait: EXPONENTIAL_BACKOFF, attempts: MAX_ATTEMPTS
 
       def perform(mailpit_id)
         client = Mailpit::Client.new

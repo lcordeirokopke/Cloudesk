@@ -143,10 +143,10 @@ Todas as tabelas abaixo, exceto `brands`, têm `brand_id` e RLS.
 | Brand | `brands` | Marca (InfinitePay, JIM); fora do RLS |
 | Team | `teams` | Equipe de analistas, com skills e horário |
 | Queue | `queues` | SLA, capacidade, atendente inicial (`ai` ou `human`) e referência à fila de transbordo |
-| RoutingRule | `routing_rules` | Condição (`when`) e resultado (`then`) em `jsonb`, posição de avaliação e número da versão; cada versão é uma linha imutável |
+| RoutingRule | `routing_rules` | Condição (`when`) e resultado (`then`) em `jsonb`, posição de avaliação, número da versão e `active`; cada versão é uma linha imutável |
 | Contact | `contacts` | Lojista sintético |
 | Identidade do contato | tabela filha de `contacts` | Canal e valor (telefone, e-mail, id do app); única por marca |
-| Conversation | `conversations` | Estado, fila, prioridade, atendente e `last_sequence` |
+| Conversation | `conversations` | Estado, fila, categoria, urgência, prioridade, SLA, entrada na fila humana (`queued_at`), atendente e `last_sequence` |
 | Message | `messages` | Canal, autor (cliente, IA, analista, sistema), texto e `sequence` |
 | Attendant | `attendants` | Tipo (`ai` ou `human`), capacidade simultânea e skills |
 | Handoff | `handoffs` | Motivo, resumo e contexto estruturado em `jsonb` |

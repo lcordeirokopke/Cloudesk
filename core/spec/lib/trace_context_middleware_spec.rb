@@ -33,11 +33,15 @@ RSpec.describe TraceContextMiddleware do
     expect(seen[:received_at]).to be_between(before_call, Time.current)
   end
 
-  it "fica na pilha do app, depois do executor que limpa Current" do
+  it "fica na pilha do app, depois do executor que limpa Current e do recarregamento de código" do
     middlewares = Rails.application.middleware.map(&:klass)
 
     expect(middlewares).to include(described_class)
     expect(middlewares.index(described_class)).to be > middlewares.index(ActionDispatch::Executor)
+    expect(middlewares.index(described_class)).to be > middlewares.index(ActionDispatch::Callbacks)
+    if middlewares.include?(ActionDispatch::Reloader)
+      expect(middlewares.index(described_class)).to be > middlewares.index(ActionDispatch::Reloader)
+    end
   end
 
   it "não deixa o contexto de uma requisição para a seguinte" do

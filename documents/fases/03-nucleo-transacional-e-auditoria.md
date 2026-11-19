@@ -76,12 +76,12 @@ Argumentos do comando:
 | - | - |
 | `brand` | `Brand` da transação |
 | `type` | Tipo do evento |
-| `actor_type`, `actor_id` | Quem decidiu: `customer`, `ai`, `analyst` ou `system`, e o id quando o ator é um registro |
+| `actor_type`, `actor_id` | Quem decidiu: `customer`, `ai`, `analyst`, `operator` ou `system`, e o id quando o ator é um registro |
 | `reason` | Motivo da decisão |
 | `routing_rule` | Versão da `RoutingRule` que casou; o comando grava `routing_rule_id` e `rule_version` |
 | `webhook` | `true` quando o evento sai para o Broker |
 
-O bloco executa a mudança de estado e informa, em `change`, o alvo, a conversa, a sequência, o antes, o depois e o payload. O comando devolve o retorno do bloco, o `audit_event` e o envelope.
+O bloco executa a mudança de estado e informa, em `change`, o alvo, a conversa, a sequência, o antes, o depois e o payload. O bloco também pode informar `change.routing_rule`, que vale no lugar do argumento `routing_rule`: é o caso da versão de regra gravada pelo próprio bloco, no `Routing::RulePublisher`. O comando devolve o retorno do bloco, o `audit_event` e o envelope.
 
 Passos, todos dentro de um único `Tenancy.with_brand`:
 
@@ -124,7 +124,7 @@ versão - trace_id (32 hex) - parent_id (16 hex) - flags (2 hex)
 - O `TraceContextMiddleware` lê o header `traceparent` de cada requisição HTTP. Com header válido, o Core mantém o `trace_id` e gera um `parent_id` próprio. Sem header, ou com header inválido, o Core inicia um trace.
 - Só a versão `00` é aceita; `trace_id` e `parent_id` zerados são inválidos.
 - O mesmo middleware carimba o `received_at`, o horário de recebimento da requisição. É o ponto inicial das medidas das hipóteses H2 e H4.
-- Os dois valores ficam em `Current`, que o Rails limpa antes e depois de cada requisição. O middleware fica depois de `ActionDispatch::Executor` na pilha.
+- Os dois valores ficam em `Current`, que o Rails limpa antes e depois de cada requisição. O middleware fica depois de `ActionDispatch::Executor` e de `ActionDispatch::Callbacks` na pilha. Em desenvolvimento, `ActionDispatch::Callbacks` vem depois do `ActionDispatch::Reloader`: o recarregamento de código troca a classe `Current`, e um valor gravado antes dele se perderia.
 - O serviço de comando grava o `trace_id` na coluna `audit_events.trace_id`, o `traceparent` no envelope e nos argumentos do job. Fora de uma requisição HTTP, o comando inicia um trace.
 - Não há gem de tracing: OpenTelemetry está na seção "Evolução" da arquitetura.
 

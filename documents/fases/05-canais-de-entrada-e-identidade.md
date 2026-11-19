@@ -152,7 +152,8 @@ As seeds gravam o telefone com `+`, e o `wa_id` da Cloud API vem sem `+`; um ún
    - `resolved` com `resolved_at` dentro do prazo: `resolved → triage` (`conversation.reopened`);
    - `resolved` com `resolved_at` anterior a `received_at` menos o prazo: `resolved → closed` (`conversation.closed`) e abre outra;
    - qualquer outro estado: usa a conversa.
-4. Grava a mensagem com a próxima sequência (`message.created`, `webhook: true`).
+4. Com a conversa em `triage`, classifica e roteia por `Routing::Route` (`documents/fases/07-triagem-roteamento-e-distribuicao.md`).
+5. Grava a mensagem com a próxima sequência (`message.created`, com webhook ao Broker só com a conversa em `with_ai`).
 
 | Evento | Ator | Webhook ao Broker |
 | - | - | - |
@@ -160,7 +161,7 @@ As seeds gravam o telefone com `+`, e o `wa_id` da Cloud API vem sem `+`; um ún
 | `conversation.opened` | `system` | não |
 | `conversation.reopened` | `system`, com motivo | não |
 | `conversation.closed` | `system`, com motivo | não |
-| `message.created` do lojista | `customer`, com `actor_id` do `Contact` | sim, em qualquer estado da conversa |
+| `message.created` do lojista | `customer`, com `actor_id` do `Contact` | sim, com a conversa em `with_ai` |
 
 O payload do `message.created` mantém `payload.message` no formato do contrato (`author`, `channel`, `text`), que `Contract::MessageCreated.build` lê. Os demais campos ficam no `audit_event`, fora do webhook:
 
@@ -377,7 +378,7 @@ O analista une dois `Contact` do mesmo lojista, por exemplo um WhatsApp e um e-m
 | Fase | Fato | Tratamento |
 | - | - | - |
 | F5 | O simulador faz o papel da Meta e do lojista | Envia nos formatos desta fase, assina o WhatsApp e o chat, assina o stream Turbo devolvido pelo chat e recebe o `POST` do envio do WhatsApp; define `WHATSAPP_API_URL` |
-| F6 | O Intake enfileira o webhook em qualquer estado da conversa | A condição de atribuição à IA chega com o roteamento |
+| F6 | A conversa em `triage` passa por `Routing::Route` na transação do Intake | O webhook do `message.created` sai só com a conversa em `with_ai` |
 | F7 | A fila `webhooks` não está no worker do `jobs-default` | O `jobs-webhooks` processa a fila |
 | F8 | A resposta sai por `Conversations::Outbound.append!` | A ação `reply` chama o serviço com `in_reply_to_sequence` igual ao `based_on_sequence` |
 | F11 | O analista responde pelo mesmo serviço | Autor `analyst`, com o `Attendant` |

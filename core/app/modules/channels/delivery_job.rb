@@ -17,13 +17,9 @@ module Channels
     self.enqueue_after_transaction_commit = false
 
     MAX_ATTEMPTS = 10
-    JITTER = 0.15
-
-    # Backoff exponencial com jitter: 2^n segundos mais até 15%.
-    BACKOFF = ->(executions) { (2**executions) * (1 + (rand * JITTER)) }
 
     retry_on DeliveryError::Transient, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED,
-             Errno::ECONNRESET, Net::SMTPServerBusy, wait: BACKOFF, attempts: MAX_ATTEMPTS
+             Errno::ECONNRESET, Net::SMTPServerBusy, wait: EXPONENTIAL_BACKOFF, attempts: MAX_ATTEMPTS
 
     # Dados da entrega, lidos na marca do job.
     #   recipient:   identidade do lojista que escreveu a mensagem respondida;

@@ -240,8 +240,8 @@ No Core, `WHATSAPP_API_URL` é `http://channel-simulator:8080/v1`.
 **Checagem ponta a ponta no Compose**, com `web`, `jobs-default`, `mailpit` e `channel-simulator`:
 
 1. `verify-whatsapp`: 200 com o `challenge`.
-2. `scenario cross-channel` na InfinitePay: três mensagens do mesmo `Contact` na mesma conversa, cada uma com `message.created` e job de webhook.
-3. `send` com `channel` e `brand` iguais a `all`, `count` 30, `rate` 5 e `attachments` 0,3: 30 linhas em `sent.jsonl` (10 por canal), status 200 ou 250, 30 mensagens no banco com `message.created` e job de webhook.
+2. `scenario cross-channel` na InfinitePay: três mensagens do mesmo `Contact` na mesma conversa, cada uma com `message.created`; o job de webhook existe quando o roteamento atribui a conversa à IA (`with_ai`), conforme `documents/fases/07-triagem-roteamento-e-distribuicao.md`.
+3. `send` com `channel` e `brand` iguais a `all`, `count` 30, `rate` 5 e `attachments` 0,3: 30 linhas em `sent.jsonl` (10 por canal), status 200 ou 250, 30 mensagens no banco com `message.created`, e job de webhook para as mensagens das conversas em `with_ai`.
 4. Respostas por `Conversations::Outbound.append!` a uma mensagem de cada canal da conversa do passo 2: três linhas em `received.jsonl`, uma por canal, com o id da `Message` do Core.
 5. `Channels::DeliveryJob.perform_now` repetido para a resposta do WhatsApp: o mesmo `core_message_id` duas vezes em `received.jsonl`.
 6. Reinício do `channel-simulator`: o Core confirma a assinatura de todos os streams, os e-mails já vistos não são registrados de novo, e uma resposta de chat posterior chega.

@@ -27,6 +27,8 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "solid_cache"
 gem "solid_queue"
 gem "solid_cable"
+# Painel dos jobs do Solid Queue: fila de falhas, reprocessamento e descarte [https://github.com/rails/mission_control-jobs]
+gem "mission_control-jobs"
 
 # Dados sintéticos das seeds; a versão fica travada no Gemfile.lock [https://github.com/faker-ruby/faker]
 gem "faker"

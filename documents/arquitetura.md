@@ -128,6 +128,12 @@ A chave da partição Kafka é o `conversation_id`, o que preserva a ordem em qu
 - A resposta ao lojista vem da ação gerada pelo evento da mensagem mais nova.
 - Uma mensagem do lojista conta como atendida quando existe uma ação aceita com `based_on_sequence` maior ou igual à sequência dela. Essa é a definição usada na reconciliação do experimento.
 
+#### Ação com a conversa fora da IA
+
+- O Core aceita ação do agente só com a conversa em `with_ai`. Com a conversa em outro estado (por exemplo, assumida por um analista ou resolvida), a ação é rejeitada e a rejeição gera `audit_event`.
+- A comparação de `based_on_sequence` não cobre esse caso: a conversa pode mudar de estado sem mensagem nova do lojista, e a ação chega com a sequência em dia.
+- O job de webhook confere o estado antes de enviar e não envia com a conversa fora de `with_ai`. A conferência evita trabalho do agente, mas não fecha a corrida entre o envio e a ação; a barreira é a rejeição no Core.
+
 #### Timeout do agente
 
 Um job recorrente varre as conversas atribuídas à IA cuja última mensagem do lojista está sem ação aceita além do SLA da fila. Para cada uma, a plataforma envia mensagem de espera ou escala para humano. Não existe timer por mensagem.
@@ -221,7 +227,7 @@ Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-w
 
 1. O canal simulado chama o webhook de entrada; o Core normaliza para o envelope canônico.
 2. A triagem define categoria e urgência; o Routing avalia as regras e atribui ao atendente IA da fila.
-3. Numa única transação, o Core grava a mensagem, o `audit_event` e o job de webhook no Solid Queue.
+3. Numa única transação, o Core grava a mensagem, a classificação, o roteamento, os `audit_events` e, com a conversa atribuída à IA, o job de webhook no Solid Queue.
 4. O worker `jobs-webhooks` envia o webhook `message.created` assinado ao Broker.
 5. O Broker valida a assinatura, publica em `agent.inbound` com chave `conversation_id` e responde 2xx **somente depois da confirmação do Kafka**. Sem confirmação, responde erro e o Solid Queue reenvia.
 6. O agente mock consome, lê o contexto na `context_url`, consulta ferramentas falsas e publica a ação em `agent.outbound`.

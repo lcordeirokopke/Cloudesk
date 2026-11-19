@@ -27,7 +27,7 @@ module Audit
 
     # brand:        Brand da transação.
     # type:         tipo do evento, gravado em audit_events.action e no envelope.
-    # actor_type:   quem decidiu: customer, ai, analyst ou system.
+    # actor_type:   quem decidiu: customer, ai, analyst, operator ou system.
     # actor_id:     id do ator, quando ele é um registro.
     # reason:       motivo da decisão.
     # routing_rule: versão da RoutingRule que casou; grava regra e versão no audit_event.

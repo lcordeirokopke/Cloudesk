@@ -1,0 +1,23 @@
+# Processo jobs-webhooks (bin/jobs --config-file config/queue_webhooks.yml --skip-recurring): só a
+# fila webhooks, com o envio do message.created ao Broker. O polling de 0,1 s mantém curta a espera
+# do job antes do envio, que entra na latência entrada → Kafka.
+# O worker de 5 threads usa 7 conexões do pool: o serviço define RAILS_MAX_THREADS=7.
+# As tarefas recorrentes ficam só no jobs-default.
+default: &default
+  dispatchers:
+    - polling_interval: 1
+      batch_size: 500
+  workers:
+    - queues: [ webhooks ]
+      threads: 5
+      processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
+      polling_interval: 0.1
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+
+production:
+  <<: *default

@@ -5,7 +5,7 @@ x-rails: &rails
     context: ./core
     dockerfile: Dockerfile.dev
   image: cloudesk-core:dev
-  environment:
+  environment: &rails-environment
     RAILS_ENV: development
     DB_HOST: postgres
     DB_PORT: "5432"
@@ -27,6 +27,10 @@ x-rails: &rails
     CHAT_SIGNING_SECRET: ${CHAT_SIGNING_SECRET}
     MAILPIT_WEBHOOK_USER: ${MAILPIT_WEBHOOK_USER}
     MAILPIT_WEBHOOK_PASSWORD: ${MAILPIT_WEBHOOK_PASSWORD}
+    BROKER_WEBHOOK_URL: ${BROKER_WEBHOOK_URL}
+    BROKER_WEBHOOK_SECRET: ${BROKER_WEBHOOK_SECRET}
+    MISSION_CONTROL_USER: ${MISSION_CONTROL_USER}
+    MISSION_CONTROL_PASSWORD: ${MISSION_CONTROL_PASSWORD}
   volumes:
     - ./core:/rails
     - ./contracts:/contracts:ro
@@ -107,6 +111,14 @@ services:
   jobs-default:
     <<: *rails
     command: ["bin/jobs"]
+
+  jobs-webhooks:
+    <<: *rails
+    command: ["bin/jobs", "--config-file", "config/queue_webhooks.yml", "--skip-recurring"]
+    # O worker de 5 threads da fila webhooks usa 7 conexões do pool.
+    environment:
+      <<: *rails-environment
+      RAILS_MAX_THREADS: "7"
 
   channel-simulator:
     build: ./channel_simulator
