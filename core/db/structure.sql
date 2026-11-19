@@ -42,6 +42,138 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: action_mailbox_inbound_emails; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.action_mailbox_inbound_emails (
+    id bigint NOT NULL,
+    status integer DEFAULT 0 NOT NULL,
+    message_id character varying NOT NULL,
+    message_checksum character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: action_mailbox_inbound_emails_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.action_mailbox_inbound_emails_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: action_mailbox_inbound_emails_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.action_mailbox_inbound_emails_id_seq OWNED BY public.action_mailbox_inbound_emails.id;
+
+
+--
+-- Name: active_storage_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.active_storage_attachments (
+    id bigint NOT NULL,
+    name character varying NOT NULL,
+    record_type character varying NOT NULL,
+    record_id bigint NOT NULL,
+    blob_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: active_storage_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.active_storage_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: active_storage_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.active_storage_attachments_id_seq OWNED BY public.active_storage_attachments.id;
+
+
+--
+-- Name: active_storage_blobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.active_storage_blobs (
+    id bigint NOT NULL,
+    key character varying NOT NULL,
+    filename character varying NOT NULL,
+    content_type character varying,
+    metadata text,
+    service_name character varying NOT NULL,
+    byte_size bigint NOT NULL,
+    checksum character varying,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: active_storage_blobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.active_storage_blobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: active_storage_blobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.active_storage_blobs_id_seq OWNED BY public.active_storage_blobs.id;
+
+
+--
+-- Name: active_storage_variant_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.active_storage_variant_records (
+    id bigint NOT NULL,
+    blob_id bigint NOT NULL,
+    variation_digest character varying NOT NULL
+);
+
+
+--
+-- Name: active_storage_variant_records_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.active_storage_variant_records_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: active_storage_variant_records_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.active_storage_variant_records_id_seq OWNED BY public.active_storage_variant_records.id;
+
+
+--
 -- Name: ar_internal_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -101,6 +233,22 @@ ALTER TABLE ONLY public.audit_events FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: brand_channels; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.brand_channels (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    brand_id uuid NOT NULL,
+    channel character varying NOT NULL,
+    value character varying NOT NULL,
+    display_value character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT brand_channels_channel_check CHECK (((channel)::text = ANY ((ARRAY['whatsapp'::character varying, 'email'::character varying])::text[])))
+);
+
+
+--
 -- Name: brands; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -110,7 +258,9 @@ CREATE TABLE public.brands (
     name character varying NOT NULL,
     locale character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    reopen_window_minutes integer DEFAULT 1440 NOT NULL,
+    CONSTRAINT brands_reopen_window_minutes_check CHECK ((reopen_window_minutes > 0))
 );
 
 
@@ -221,6 +371,9 @@ CREATE TABLE public.messages (
     attendant_id uuid,
     body text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
+    external_id character varying,
+    attachments jsonb DEFAULT '[]'::jsonb NOT NULL,
+    brand_channel_id uuid,
     CONSTRAINT messages_author_check CHECK (((author)::text = ANY ((ARRAY['customer'::character varying, 'ai'::character varying, 'analyst'::character varying, 'system'::character varying])::text[]))),
     CONSTRAINT messages_channel_check CHECK (((channel)::text = ANY ((ARRAY['chat'::character varying, 'whatsapp'::character varying, 'email'::character varying])::text[])))
 );
@@ -818,6 +971,34 @@ ALTER TABLE ONLY public.teams FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: action_mailbox_inbound_emails id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.action_mailbox_inbound_emails ALTER COLUMN id SET DEFAULT nextval('public.action_mailbox_inbound_emails_id_seq'::regclass);
+
+
+--
+-- Name: active_storage_attachments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_attachments ALTER COLUMN id SET DEFAULT nextval('public.active_storage_attachments_id_seq'::regclass);
+
+
+--
+-- Name: active_storage_blobs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_blobs ALTER COLUMN id SET DEFAULT nextval('public.active_storage_blobs_id_seq'::regclass);
+
+
+--
+-- Name: active_storage_variant_records id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_variant_records ALTER COLUMN id SET DEFAULT nextval('public.active_storage_variant_records_id_seq'::regclass);
+
+
+--
 -- Name: solid_cable_messages id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -923,6 +1104,38 @@ ALTER TABLE ONLY public.solid_queue_semaphores ALTER COLUMN id SET DEFAULT nextv
 
 
 --
+-- Name: action_mailbox_inbound_emails action_mailbox_inbound_emails_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.action_mailbox_inbound_emails
+    ADD CONSTRAINT action_mailbox_inbound_emails_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: active_storage_attachments active_storage_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_attachments
+    ADD CONSTRAINT active_storage_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: active_storage_blobs active_storage_blobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_blobs
+    ADD CONSTRAINT active_storage_blobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: active_storage_variant_records active_storage_variant_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_variant_records
+    ADD CONSTRAINT active_storage_variant_records_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -944,6 +1157,14 @@ ALTER TABLE ONLY public.attendants
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: brand_channels brand_channels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brand_channels
+    ADD CONSTRAINT brand_channels_pkey PRIMARY KEY (id);
 
 
 --
@@ -1163,6 +1384,41 @@ ALTER TABLE ONLY public.teams
 
 
 --
+-- Name: index_action_mailbox_inbound_emails_uniqueness; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_action_mailbox_inbound_emails_uniqueness ON public.action_mailbox_inbound_emails USING btree (message_id, message_checksum);
+
+
+--
+-- Name: index_active_storage_attachments_on_blob_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_active_storage_attachments_on_blob_id ON public.active_storage_attachments USING btree (blob_id);
+
+
+--
+-- Name: index_active_storage_attachments_uniqueness; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_active_storage_attachments_uniqueness ON public.active_storage_attachments USING btree (record_type, record_id, name, blob_id);
+
+
+--
+-- Name: index_active_storage_blobs_on_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_active_storage_blobs_on_key ON public.active_storage_blobs USING btree (key);
+
+
+--
+-- Name: index_active_storage_variant_records_uniqueness; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_active_storage_variant_records_uniqueness ON public.active_storage_variant_records USING btree (blob_id, variation_digest);
+
+
+--
 -- Name: index_attendants_on_brand_id_and_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1209,6 +1465,20 @@ CREATE INDEX index_audit_events_on_brand_id_and_routing_rule_id ON public.audit_
 --
 
 CREATE INDEX index_audit_events_on_brand_id_and_trace_id ON public.audit_events USING btree (brand_id, trace_id);
+
+
+--
+-- Name: index_brand_channels_on_brand_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_brand_channels_on_brand_id_and_id ON public.brand_channels USING btree (brand_id, id);
+
+
+--
+-- Name: index_brand_channels_on_channel_and_value; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_brand_channels_on_channel_and_value ON public.brand_channels USING btree (channel, value);
 
 
 --
@@ -1275,6 +1545,20 @@ CREATE INDEX index_conversations_on_brand_id_and_queue_id ON public.conversation
 
 
 --
+-- Name: index_conversations_one_open_per_contact; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_conversations_one_open_per_contact ON public.conversations USING btree (brand_id, contact_id) WHERE (state <> 'closed'::public.conversation_state);
+
+
+--
+-- Name: index_conversations_resolved; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversations_resolved ON public.conversations USING btree (brand_id, resolved_at) WHERE (state = 'resolved'::public.conversation_state);
+
+
+--
 -- Name: index_customer_memories_on_brand_id_and_contact_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1310,6 +1594,13 @@ CREATE INDEX index_messages_on_brand_id_and_attendant_id ON public.messages USIN
 
 
 --
+-- Name: index_messages_on_brand_id_and_brand_channel_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_messages_on_brand_id_and_brand_channel_id ON public.messages USING btree (brand_id, brand_channel_id);
+
+
+--
 -- Name: index_messages_on_brand_id_and_conversation_id_and_sequence; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1321,6 +1612,13 @@ CREATE UNIQUE INDEX index_messages_on_brand_id_and_conversation_id_and_sequence 
 --
 
 CREATE UNIQUE INDEX index_messages_on_brand_id_and_id ON public.messages USING btree (brand_id, id);
+
+
+--
+-- Name: index_messages_on_external_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_messages_on_external_id ON public.messages USING btree (brand_id, channel, external_id) WHERE (external_id IS NOT NULL);
 
 
 --
@@ -1811,6 +2109,14 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: messages fk_rails_785c2d5e0a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.messages
+    ADD CONSTRAINT fk_rails_785c2d5e0a FOREIGN KEY (brand_id, brand_channel_id) REFERENCES public.brand_channels(brand_id, id);
+
+
+--
 -- Name: solid_queue_batch_executions fk_rails_7c5e073422; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1832,6 +2138,14 @@ ALTER TABLE ONLY public.solid_queue_ready_executions
 
 ALTER TABLE ONLY public.contact_identities
     ADD CONSTRAINT fk_rails_8b672ddc5b FOREIGN KEY (brand_id, contact_id) REFERENCES public.contacts(brand_id, id);
+
+
+--
+-- Name: active_storage_variant_records fk_rails_993965df05; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_variant_records
+    ADD CONSTRAINT fk_rails_993965df05 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
 
 
 --
@@ -1872,6 +2186,14 @@ ALTER TABLE ONLY public.audit_events
 
 ALTER TABLE ONLY public.solid_queue_batch_executions
     ADD CONSTRAINT fk_rails_bc9f981155 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: active_storage_attachments fk_rails_c3b3935057; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_attachments
+    ADD CONSTRAINT fk_rails_c3b3935057 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
 
 
 --
@@ -1920,6 +2242,14 @@ ALTER TABLE ONLY public.conversations
 
 ALTER TABLE ONLY public.messages
     ADD CONSTRAINT fk_rails_d6e9406403 FOREIGN KEY (brand_id, attendant_id) REFERENCES public.attendants(brand_id, id);
+
+
+--
+-- Name: brand_channels fk_rails_e62ea09426; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brand_channels
+    ADD CONSTRAINT fk_rails_e62ea09426 FOREIGN KEY (brand_id) REFERENCES public.brands(id);
 
 
 --
@@ -2093,13 +2423,25 @@ ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261119120200'),
+('20261119120100'),
+('20261119120000'),
 ('20261115130000'),
 ('20261115120000');
 
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.action_mailbox_inbound_emails TO cloudesk_app;
+GRANT SELECT,USAGE ON SEQUENCE public.action_mailbox_inbound_emails_id_seq TO cloudesk_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.active_storage_attachments TO cloudesk_app;
+GRANT SELECT,USAGE ON SEQUENCE public.active_storage_attachments_id_seq TO cloudesk_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.active_storage_blobs TO cloudesk_app;
+GRANT SELECT,USAGE ON SEQUENCE public.active_storage_blobs_id_seq TO cloudesk_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.active_storage_variant_records TO cloudesk_app;
+GRANT SELECT,USAGE ON SEQUENCE public.active_storage_variant_records_id_seq TO cloudesk_app;
 GRANT SELECT ON TABLE public.ar_internal_metadata TO cloudesk_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.attendants TO cloudesk_app;
 GRANT SELECT,INSERT ON TABLE public.audit_events TO cloudesk_app;
+GRANT SELECT ON TABLE public.brand_channels TO cloudesk_app;
 GRANT SELECT ON TABLE public.brands TO cloudesk_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.contact_identities TO cloudesk_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.contacts TO cloudesk_app;

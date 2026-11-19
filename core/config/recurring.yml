@@ -1,15 +1,18 @@
-# examples:
-#   periodic_cleanup:
-#     class: CleanSoftDeletedRecordsJob
-#     queue: background
-#     args: [ 1000, { batch_size: 500 } ]
-#     schedule: every hour
-#   periodic_cleanup_with_command:
-#     command: "SoftDeletedRecord.due.delete_all"
-#     priority: 2
-#     schedule: at 5am every day
+# Tarefas recorrentes do Solid Queue, executadas pelo serviço jobs-default.
+#   close_expired_conversations: fecha as conversas resolvidas com prazo de reabertura vencido;
+#   sweep_mailpit:               traz do Mailpit os e-mails que o webhook perdeu.
+development: &channels
+  close_expired_conversations:
+    class: Conversations::CloseExpiredJob
+    queue: default
+    schedule: every minute
+  sweep_mailpit:
+    class: Channels::Email::SweepJob
+    queue: default
+    schedule: every minute
 
 production:
+  <<: *channels
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12

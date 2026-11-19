@@ -1,9 +1,14 @@
+# Worker do serviço jobs-default: todas as filas, exceto webhooks, que fica para o jobs-webhooks.
+#   default:                     ingestão e varredura do Mailpit, prazo de reabertura;
+#   channels:                    entrega das respostas aos canais;
+#   action_mailbox_routing:      roteamento dos e-mails recebidos;
+#   action_mailbox_incineration: incineração dos e-mails processados.
 default: &default
   dispatchers:
     - polling_interval: 1
       batch_size: 500
   workers:
-    - queues: "*"
+    - queues: [ default, channels, action_mailbox_routing, action_mailbox_incineration ]
       threads: 3
       processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
       polling_interval: 1

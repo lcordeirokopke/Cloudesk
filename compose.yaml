@@ -17,6 +17,16 @@ x-rails: &rails
     DB_DEVELOPMENT_NAME: ${DB_DEVELOPMENT_NAME}
     DB_TEST_NAME: ${DB_TEST_NAME}
     CONTRACTS_PATH: /contracts
+    MAILPIT_API_URL: http://mailpit:8025
+    SMTP_HOST: mailpit
+    SMTP_PORT: "1025"
+    WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+    WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+    WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+    WHATSAPP_API_URL: ${WHATSAPP_API_URL}
+    CHAT_SIGNING_SECRET: ${CHAT_SIGNING_SECRET}
+    MAILPIT_WEBHOOK_USER: ${MAILPIT_WEBHOOK_USER}
+    MAILPIT_WEBHOOK_PASSWORD: ${MAILPIT_WEBHOOK_PASSWORD}
   volumes:
     - ./core:/rails
     - ./contracts:/contracts:ro
@@ -81,6 +91,9 @@ services:
 
   mailpit:
     image: axllent/mailpit
+    environment:
+      MP_WEBHOOK_URL: http://${MAILPIT_WEBHOOK_USER}:${MAILPIT_WEBHOOK_PASSWORD}@web:3000/channels/email/mailpit
+      MP_WEBHOOK_LIMIT: "0"
     ports:
       - "1025:1025"
       - "8025:8025"
@@ -90,6 +103,10 @@ services:
     command: ["bin/rails", "server", "-b", "0.0.0.0", "-p", "3000"]
     ports:
       - "3000:3000"
+
+  jobs-default:
+    <<: *rails
+    command: ["bin/jobs"]
 
 volumes:
   postgres-data:

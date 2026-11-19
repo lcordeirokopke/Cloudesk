@@ -36,6 +36,11 @@ module Cloudesk
     # acontece na mesma transação (outbox implícito).
     config.active_job.queue_adapter = :solid_queue
 
+    # Filas próprias do Action Mailbox; o load_defaults as deixa vazias, o que manda os jobs para a
+    # fila default.
+    config.action_mailbox.queues.routing = :action_mailbox_routing
+    config.action_mailbox.queues.incineration = :action_mailbox_incineration
+
     # Schema em db/structure.sql: o formato :ruby não expressa políticas, triggers e permissões.
     config.active_record.schema_format = :sql
 

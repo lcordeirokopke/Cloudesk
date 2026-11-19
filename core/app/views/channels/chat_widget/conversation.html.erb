@@ -1,0 +1,20 @@
+<% content_for :title, "Chat #{@brand.name}" %>
+
+<main class="chat">
+  <h1>Chat <%= @brand.name %></h1>
+  <p class="chat__contact"><%= @contact.name %> · <%= link_to "trocar lojista", chat_path(@brand.slug) %></p>
+  <% if flash[:alert] %><p class="chat__alert"><%= flash[:alert] %></p><% end %>
+
+  <%= turbo_stream_from(*Channels::Chat.streamables(@contact)) %>
+
+  <div id="<%= Channels::Chat::TARGET %>" class="chat__messages">
+    <%= render partial: Channels::Chat::PARTIAL, collection: @messages, as: :message %>
+  </div>
+
+  <%= form_with url: chat_messages_path(@brand.slug), method: :post, class: "chat__form",
+                data: { controller: "chat-message", action: "submit->chat-message#assignId" } do |form| %>
+    <%= form.hidden_field :client_message_id, data: { chat_message_target: "id" } %>
+    <%= form.text_field :text, autocomplete: "off", autofocus: true, placeholder: "Escreva uma mensagem" %>
+    <%= form.submit "Enviar" %>
+  <% end %>
+</main>

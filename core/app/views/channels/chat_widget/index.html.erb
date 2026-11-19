@@ -1,0 +1,13 @@
+<% content_for :title, "Chat #{@brand.name}" %>
+
+<main class="chat">
+  <h1>Chat <%= @brand.name %></h1>
+  <p>Login simulado: escolha o lojista que vai conversar.</p>
+  <% if flash[:alert] %><p class="chat__alert"><%= flash[:alert] %></p><% end %>
+
+  <%= form_with url: chat_session_path(@brand.slug), method: :post do |form| %>
+    <%= form.label :app_user_id, "Lojista" %>
+    <%= form.select :app_user_id, @identities.map { |identity| [ "#{identity.contact.name} (#{identity.value})", identity.value ] } %>
+    <%= form.submit "Entrar" %>
+  <% end %>
+</main>

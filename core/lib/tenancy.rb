@@ -43,14 +43,20 @@ module Tenancy
       ActiveSupport::IsolatedExecutionState[STATE_KEY] = value
     end
 
+    # As duas consultas rodam sem o query cache, que o Rails liga em requisições e jobs: o cache
+    # devolveria um valor antigo de current_setting e deixaria de executar um set_config repetido.
     def read_setting
-      connection.select_value("SELECT current_setting(#{connection.quote(SETTING)}, true)", "Tenancy")
+      connection.uncached do
+        connection.select_value("SELECT current_setting(#{connection.quote(SETTING)}, true)", "Tenancy")
+      end
     end
 
     def write_setting(value)
-      connection.select_value(
-        "SELECT set_config(#{connection.quote(SETTING)}, #{connection.quote(value.to_s)}, true)", "Tenancy"
-      )
+      connection.uncached do
+        connection.select_value(
+          "SELECT set_config(#{connection.quote(SETTING)}, #{connection.quote(value.to_s)}, true)", "Tenancy"
+        )
+      end
     end
 
     def connection

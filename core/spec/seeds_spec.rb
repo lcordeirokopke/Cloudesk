@@ -10,7 +10,7 @@ RSpec.describe "Seeds" do
     per_brand = brands.to_h do |brand|
       [ brand.slug, Tenancy.with_brand(brand) { DatabaseHelpers::DOMAIN_MODELS.to_h { |model| [ model.name, model.count ] } } ]
     end
-    per_brand.merge("brands" => brands.size)
+    per_brand.merge("brands" => brands.size, "brand_channels" => BrandChannel.order(:channel, :value).pluck(:channel, :value))
   end
 
   def identity_values
@@ -19,7 +19,7 @@ RSpec.describe "Seeds" do
     end
   end
 
-  it "criam marcas, equipes, filas, regras, atendentes e lojistas em cada marca" do
+  it "criam marcas, canais das marcas, equipes, filas, regras, atendentes e lojistas em cada marca" do
     expected = {
       "Team" => 2, "Routing::Queue" => 3, "RoutingRule" => 3, "Attendant" => 5,
       "Contact" => 50, "ContactIdentity" => 150
@@ -30,6 +30,14 @@ RSpec.describe "Seeds" do
     expect(counts["jim"]).to include(expected)
     expect(infinitepay.locale).to eq("pt-BR")
     expect(jim.locale).to eq("en-US")
+    expect(infinitepay.brand_channels.pluck(:channel, :value)).to contain_exactly(
+      [ "whatsapp", "110000000000001" ], [ "whatsapp", "110000000000002" ],
+      [ "email", "suporte@infinitepay.test" ], [ "email", "financeiro@infinitepay.test" ]
+    )
+    expect(jim.brand_channels.pluck(:channel, :value)).to contain_exactly(
+      [ "whatsapp", "120000000000001" ], [ "whatsapp", "120000000000002" ],
+      [ "email", "support@jim.test" ], [ "email", "payouts@jim.test" ]
+    )
   end
 
   it "rodar de novo no mesmo banco mantém a mesma contagem de registros" do

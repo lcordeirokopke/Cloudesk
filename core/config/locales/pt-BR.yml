@@ -1,0 +1,8 @@
+pt-BR:
+  channels:
+    attachment_text:
+      image: "[imagem enviada]"
+      document: "[documento enviado]"
+      audio: "[áudio enviado]"
+      video: "[vídeo enviado]"
+      other: "[conteúdo enviado]"

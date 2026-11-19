@@ -162,7 +162,8 @@ Toda transição gera um evento de auditoria; uma conversa resolvida volta à tr
 
 ### Componentes simulados
 
-- **Canais:** WhatsApp com payloads no formato da Cloud API da Meta; e-mail via Mailpit (SMTP local); chat in-app como widget web.
+- **Canais:** WhatsApp com payloads no formato da Cloud API da Meta; e-mail via Mailpit (SMTP local); chat in-app como widget web. Cada marca tem números de WhatsApp e e-mails de suporte próprios, na tabela `brand_channels`, e o chat leva a marca na URL.
+- **Entrada do e-mail:** o webhook do Mailpit avisa o Core de cada e-mail recebido; o Core baixa o original pela API do Mailpit e cria o `InboundEmail` do Action Mailbox só quando o e-mail é endereçado a um e-mail de suporte de uma marca. Um job recorrente busca no Mailpit os e-mails sem tag e recupera o que o webhook perde. A resposta sai por SMTP para o Mailpit. O detalhamento está em `documents/fases/05-canais-de-entrada-e-identidade.md`.
 - **Simulador de canais:** envia mensagens sintéticas nos três formatos e recebe as respostas de saída, registrando cada uma para a reconciliação.
 - **Agente mock:** determinístico por intenção, com ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) , latência artificial configurável e modos de falha configuráveis (ver Diferenciais); modo LLM opcional com modelo aberto, registrando modelo, versão e parâmetros.
 - **Dados sintéticos:** lojistas, transações e conversas gerados com seeds fixas (Faker pt\_BR e en\_US), sem nenhum dado real. Rodar as seeds de novo no mesmo banco não duplica registros.
@@ -346,7 +347,6 @@ Por configuração, o agente mock atrasa, não responde, publica a mesma ação 
 | - | - | - |
 | 1 | Login e perfis dos usuários do painel e do admin (analista, operador) | Autor das edições de regra na auditoria; painel do analista |
 | 2 | Regra do timeout: quando enviar mensagem de espera e quando escalar | Varredura de SLA |
-| 3 | Ligação entre Mailpit e Action Mailbox (ingress usado) | Canal de e-mail |
 
 ## Evolução
 

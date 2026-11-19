@@ -85,6 +85,7 @@ SELECT set_config('app.brand_id', '<id da marca>', true);
 - O terceiro argumento `true` limita o valor à transação corrente. O pool de conexões do Rails reutiliza conexões entre requisições; um valor de sessão passaria de uma requisição para a seguinte.
 - Em blocos aninhados, o valor dura até o fim da transação externa. Por isso o bloco restaura o valor anterior ao sair. O RSpec envolve cada teste em uma transação, e essa restauração impede que a marca de um bloco alcance o seguinte dentro do mesmo teste.
 - Nos jobs, a marca vem nos argumentos do job e é definida da mesma forma.
+- A leitura e a gravação de `app.brand_id` rodam sem o query cache (`connection.uncached`). O Rails liga o cache em requisições e jobs; com ele, um `current_setting` devolveria um valor antigo, um `set_config` repetido deixaria de ser executado, e o bloco externo ficaria sem marca depois de um bloco aninhado.
 
 **Embasamento.**
 
@@ -279,9 +280,9 @@ Os testes, conectados com o papel da aplicação, provam que:
 - a segunda inserção da mesma `Idempotency-Key` na mesma marca é rejeitada pelo índice único;
 - rodar as seeds duas vezes no mesmo banco mantém a mesma contagem de registros.
 
-## Ponto em aberto ligado à F1
+## Prazo de reabertura
 
-O valor do prazo de reabertura e o lugar onde ele é configurado não estão definidos. A F1 entrega as transições `resolved → triage` e `resolved → closed`; o prazo é necessário na F4.
+A F1 entrega as transições `resolved → triage` e `resolved → closed`. O prazo fica na coluna `brands.reopen_window_minutes`, com padrão de 1440 minutos (24 h), e os gatilhos das duas transições são da F4 (`documents/fases/05-canais-de-entrada-e-identidade.md`).
 
 ## Fontes
 

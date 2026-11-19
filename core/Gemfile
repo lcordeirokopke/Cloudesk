@@ -56,3 +56,8 @@ group :development do
 end
 
 gem "rspec-rails", "~> 8.1", groups: [:development, :test]
+
+group :test do
+  # Simula as chamadas HTTP de saída (Mailpit, WhatsApp) nos testes [https://github.com/bblimke/webmock]
+  gem "webmock"
+end

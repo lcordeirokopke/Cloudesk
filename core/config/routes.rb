@@ -5,6 +5,22 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
+  # Entrada dos canais: WhatsApp (formato da Cloud API), chat (JSON assinado) e webhook do Mailpit.
+  scope "channels", module: "channels" do
+    get "whatsapp/webhook", to: "whatsapp_webhooks#verify", as: :whatsapp_webhook
+    post "whatsapp/webhook", to: "whatsapp_webhooks#receive"
+    post "chat/messages", to: "chat_messages#create", as: :chat_api_messages
+    post "email/mailpit", to: "mailpit_webhooks#create", as: :mailpit_webhook
+  end
+
+  # Widget de chat in-app, por marca.
+  scope "chat/:brand", module: "channels", controller: "chat_widget" do
+    get "/", action: :index, as: :chat
+    post "session", action: :create_session, as: :chat_session
+    get "conversation", action: :conversation, as: :chat_conversation
+    post "messages", action: :create_message, as: :chat_messages
+  end
+
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker

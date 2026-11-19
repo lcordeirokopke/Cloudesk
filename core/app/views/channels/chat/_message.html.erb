@@ -1,0 +1,4 @@
+<%= tag.div id: dom_id(message), class: "chat-message chat-message-#{message.author}", data: { sequence: message.sequence, channel: message.channel } do %>
+  <span class="chat-message__meta"><%= message.author %> · <%= message.channel %></span>
+  <p class="chat-message__body"><%= message.body %></p>
+<% end %>

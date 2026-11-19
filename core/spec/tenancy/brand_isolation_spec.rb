@@ -139,6 +139,25 @@ RSpec.describe "Isolamento por marca" do
       end
     end
 
+    # O Rails liga o query cache em requisições e jobs.
+    it "mantém a marca do bloco externo depois de blocos aninhados com o query cache ligado" do
+      connection = ApplicationRecord.lease_connection
+      setting = -> { connection.uncached { current_setting(connection) } }
+
+      ApplicationRecord.cache do
+        Tenancy.with_brand(infinitepay) do
+          2.times do
+            Tenancy.with_brand(infinitepay) { expect(setting.call).to eq(infinitepay.id) }
+            expect(setting.call).to eq(infinitepay.id)
+          end
+          Tenancy.with_brand(jim) { expect(setting.call).to eq(jim.id) }
+
+          expect(setting.call).to eq(infinitepay.id)
+          expect(Contact.distinct.pluck(:brand_id)).to eq([ infinitepay.id ])
+        end
+      end
+    end
+
     it "recusa marca vazia" do
       expect { Tenancy.with_brand(nil) { } }.to raise_error(ArgumentError)
     end

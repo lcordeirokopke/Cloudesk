@@ -1,4 +1,4 @@
-# Seeds do Cloudesk: marcas, equipes, filas, regras, atendentes e lojistas sintéticos.
+# Seeds do Cloudesk: marcas, canais das marcas, equipes, filas, regras, atendentes e lojistas sintéticos.
 # Nenhum dado real. Rodam com o papel dono, que grava em brands, e definem a marca por transação
 # com Tenancy.with_brand, o mesmo caminho da aplicação.
 #
@@ -21,6 +21,11 @@ catalog = [
     ai_attendant: "Agente IA InfinitePay",
     segments: %w[alto_tpv medio_tpv baixo_tpv],
     phone: { country: "+55", areas: %w[11 21 31 41 51 61 71 81], prefix: "9", digits: 8 },
+    whatsapp_numbers: [
+      { phone_number_id: "110000000000001", display: "551140000001" },
+      { phone_number_id: "110000000000002", display: "551140000002" }
+    ],
+    support_emails: %w[suporte@infinitepay.test financeiro@infinitepay.test],
     teams: [
       { name: "Financeiro", skills: %w[repasse taxas transacao],
         business_hours: weekdays.merge("timezone" => "America/Sao_Paulo") },
@@ -52,6 +57,11 @@ catalog = [
     ai_attendant: "JIM AI Agent",
     segments: %w[high_tpv mid_tpv low_tpv],
     phone: { country: "+1", areas: %w[212 305 415 512 617], prefix: "", digits: 7 },
+    whatsapp_numbers: [
+      { phone_number_id: "120000000000001", display: "15555550101" },
+      { phone_number_id: "120000000000002", display: "15555550102" }
+    ],
+    support_emails: %w[support@jim.test payouts@jim.test],
     teams: [
       { name: "Finance", skills: %w[payout fees transaction],
         business_hours: weekdays.merge("timezone" => "America/New_York") },
@@ -89,6 +99,22 @@ begin
     brand = Brand.find_or_create_by!(slug: entry[:slug]) do |record|
       record.name = entry[:name]
       record.locale = entry[:locale]
+    end
+
+    # Números de WhatsApp e e-mails de suporte da marca. brand_channels fica fora do RLS e é
+    # buscada pelo par (channel, value), único entre as marcas.
+    entry[:whatsapp_numbers].each do |number|
+      BrandChannel.find_or_create_by!(channel: "whatsapp", value: number[:phone_number_id]) do |record|
+        record.brand = brand
+        record.display_value = number[:display]
+      end
+    end
+
+    entry[:support_emails].each do |email|
+      BrandChannel.find_or_create_by!(channel: "email", value: email) do |record|
+        record.brand = brand
+        record.display_value = email
+      end
     end
 
     Tenancy.with_brand(brand) do

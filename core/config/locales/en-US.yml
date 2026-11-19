@@ -1,0 +1,8 @@
+en-US:
+  channels:
+    attachment_text:
+      image: "[image sent]"
+      document: "[document sent]"
+      audio: "[audio sent]"
+      video: "[video sent]"
+      other: "[content sent]"
