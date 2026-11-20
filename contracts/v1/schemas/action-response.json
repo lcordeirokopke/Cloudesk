@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:cloudesk:contract:v1:action-response",
   "title": "Resposta da API de ações",
-  "description": "Corpo da resposta do Core ao Broker. accepted acompanha 2xx; a repetição da mesma Idempotency-Key devolve o corpo da primeira execução. stale acompanha 409. error acompanha os demais 4xx.",
+  "description": "Corpo da resposta do Core ao Broker. accepted acompanha 2xx; a repetição da mesma Idempotency-Key devolve o corpo da primeira execução. stale e rejected acompanham 409; a repetição da mesma Idempotency-Key também devolve o corpo da primeira recusa. error acompanha os demais 4xx.",
   "type": "object",
   "required": ["status"],
   "unevaluatedProperties": false,
   "properties": {
-    "status": { "enum": ["accepted", "stale", "error"] }
+    "status": { "enum": ["accepted", "stale", "rejected", "error"] }
   },
   "oneOf": [
     {
@@ -33,6 +33,19 @@
         "event_id": { "$ref": "#/$defs/uuid", "description": "event_id do audit_event da rejeição." },
         "based_on_sequence": { "type": "integer", "minimum": 1 },
         "last_customer_sequence": { "type": "integer", "minimum": 1 }
+      }
+    },
+    {
+      "title": "rejected",
+      "required": ["conversation_id", "event_id", "state"],
+      "properties": {
+        "status": { "const": "rejected" },
+        "conversation_id": { "$ref": "#/$defs/uuid" },
+        "event_id": { "$ref": "#/$defs/uuid", "description": "event_id do audit_event da recusa." },
+        "state": {
+          "enum": ["triage", "awaiting_human", "with_human", "resolved", "closed"],
+          "description": "Estado da conversa, fora de with_ai, que recusou a ação."
+        }
       }
     },
     {

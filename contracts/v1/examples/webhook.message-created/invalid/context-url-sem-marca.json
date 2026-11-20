@@ -1,0 +1,15 @@
+{
+  "event_id": "019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d",
+  "type": "message.created",
+  "brand": "infinitepay",
+  "conversation_id": "019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f",
+  "sequence": 7,
+  "received_at": "2026-11-13T14:02:11.482Z",
+  "message": {
+    "author": "customer",
+    "channel": "whatsapp",
+    "text": "Meu repasse de ontem não caiu"
+  },
+  "context_url": "/api/v1/agent/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}

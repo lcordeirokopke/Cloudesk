@@ -28,9 +28,14 @@ RSpec.describe Contract::MessageCreated do
       "conversation_id" => result.audit_event.conversation_id,
       "sequence" => 1,
       "message" => { "author" => "customer", "channel" => "whatsapp", "text" => "Meu repasse não caiu" },
-      "context_url" => "/api/v1/agent/conversations/#{result.audit_event.conversation_id}/context",
+      "context_url" => "/api/v1/agent/brands/infinitepay/conversations/#{result.audit_event.conversation_id}/context",
       "traceparent" => result.envelope.traceparent.to_s
     )
+  end
+
+  it "monta a context_url com o slug da marca e a conversa" do
+    expect(described_class.context_url("jim", "019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f"))
+      .to eq("/api/v1/agent/brands/jim/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context")
   end
 
   it "recusa envelope de outro tipo de evento" do

@@ -21,6 +21,12 @@ Rails.application.routes.draw do
     post "messages", action: :create_message, as: :chat_messages
   end
 
+  # API do agente: ações chamadas pelo Broker e contexto lido pelo agente, ambas assinadas.
+  scope "api/v1/agent", module: "api/v1/agent" do
+    post "actions", to: "actions#create", as: :agent_actions
+    get "brands/:brand/conversations/:conversation_id/context", to: "contexts#show", as: :agent_conversation_context
+  end
+
   # Painel dos jobs do Solid Queue (Mission Control - Jobs), com HTTP basic auth.
   mount MissionControl::Jobs::Engine, at: "/jobs"
 

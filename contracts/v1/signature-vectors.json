@@ -9,17 +9,17 @@
       "timestamp": "1794578531",
       "method": "POST",
       "path": "/webhooks",
-      "body": "{\"event_id\":\"019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d\",\"type\":\"message.created\",\"brand\":\"infinitepay\",\"conversation_id\":\"019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f\",\"sequence\":7,\"received_at\":\"2026-11-13T14:02:11.482Z\",\"message\":{\"author\":\"customer\",\"channel\":\"whatsapp\",\"text\":\"Meu repasse de ontem não caiu\"},\"context_url\":\"/api/v1/agent/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context\",\"traceparent\":\"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\"}",
-      "signature": "d9931ea095608c11e1fe22a790e27f758a5d91bb562dca464d7862c72ca8ee33"
+      "body": "{\"event_id\":\"019a8f3e-5b7a-7c21-9d43-1f2e3a4b5c6d\",\"type\":\"message.created\",\"brand\":\"infinitepay\",\"conversation_id\":\"019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f\",\"sequence\":7,\"received_at\":\"2026-11-13T14:02:11.482Z\",\"message\":{\"author\":\"customer\",\"channel\":\"whatsapp\",\"text\":\"Meu repasse de ontem não caiu\"},\"context_url\":\"/api/v1/agent/brands/infinitepay/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context\",\"traceparent\":\"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\"}",
+      "signature": "00e89ff13c9d2ed20aa77745fc707ac99d5f7c61e62866c56823cbc8a53a6c56"
     },
     {
       "description": "GET sem corpo",
       "secret": "segredo-do-agente",
       "timestamp": "1794578532",
       "method": "GET",
-      "path": "/api/v1/agent/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context",
+      "path": "/api/v1/agent/brands/infinitepay/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context",
       "body": "",
-      "signature": "ab0bfa1c79130435b334ea875a902b7f9af20956719e283d00eaa9a02d11880b"
+      "signature": "c55c020c22e491efa0ad9c8cf2b89897a277a234e3991200ac4f0c8424186750"
     },
     {
       "description": "POST de ação",
@@ -35,9 +35,9 @@
       "secret": "segredo-do-agente",
       "timestamp": "1794578534",
       "method": "GET",
-      "path": "/api/v1/agent/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context?limit=50",
+      "path": "/api/v1/agent/brands/infinitepay/conversations/019a8f3d-11aa-7b02-8c55-0a1b2c3d4e5f/context?limit=50",
       "body": "",
-      "signature": "c1c71660a906cde43a24fba24178d66de2b824ef4e8a9242bbb80dc2047499c3"
+      "signature": "e5e102c96f023a9b7a1b151eff6d0e9a38141eff24d90d37f2788eec8932cd43"
     }
   ]
 }

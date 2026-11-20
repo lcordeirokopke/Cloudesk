@@ -1,14 +1,15 @@
 module Contract
   # Corpo do webhook message.created, montado a partir do envelope canônico do evento
   # (Audit::EventEnvelope#to_h). O conteúdo de payload sobe para o nível raiz, e a context_url
-  # aponta para o contexto da conversa no Core.
+  # aponta para o contexto da conversa no Core, com o slug da marca no caminho: o RLS exige a marca
+  # antes da leitura da conversa, e o caminho assinado pelo agente a inclui.
   module MessageCreated
     TYPE = "message.created".freeze
     SCHEMA = "webhook.message-created".freeze
 
     class << self
-      def context_url(conversation_id)
-        "/api/v1/agent/conversations/#{conversation_id}/context"
+      def context_url(brand, conversation_id)
+        "/api/v1/agent/brands/#{brand}/conversations/#{conversation_id}/context"
       end
 
       def build(envelope)
@@ -23,7 +24,7 @@ module Contract
           "sequence" => envelope["sequence"],
           "received_at" => envelope["received_at"],
           "message" => envelope.fetch("payload").fetch("message"),
-          "context_url" => context_url(envelope["conversation_id"]),
+          "context_url" => context_url(envelope["brand"], envelope["conversation_id"]),
           "traceparent" => envelope["traceparent"]
         }
         Schemas.validate!(SCHEMA, body)

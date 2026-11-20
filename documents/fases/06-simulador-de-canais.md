@@ -246,13 +246,6 @@ No Core, `WHATSAPP_API_URL` é `http://channel-simulator:8080/v1`.
 5. `Channels::DeliveryJob.perform_now` repetido para a resposta do WhatsApp: o mesmo `core_message_id` duas vezes em `received.jsonl`.
 6. Reinício do `channel-simulator`: o Core confirma a assinatura de todos os streams, os e-mails já vistos não são registrados de novo, e uma resposta de chat posterior chega.
 
-## Pronto quando
-
-O critério é o de `contexto/ordem-de-implementacao.md`:
-
-- o simulador alimenta os três canais do Core: passos 2 e 3 da checagem;
-- o simulador registra todas as respostas recebidas, o que permite reconciliar o que foi enviado com o que voltou: passos 4 a 6.
-
 ## Pontos de atenção
 
 - **Respostas de chat durante a queda do WebSocket.** O Turbo Stream não reenvia o que foi transmitido enquanto o simulador estava desconectado. Na F17, o simulador fica de pé durante a carga, e as falhas da H3 atingem Broker e worker, não o simulador.

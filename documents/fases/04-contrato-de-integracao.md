@@ -16,7 +16,7 @@ Este documento detalha cada decisão e a fonte que a sustenta. O resumo está em
 | Testes de contrato | RSpec e pytest leem os mesmos schemas, exemplos e vetores |
 | Assinatura | HMAC-SHA256 de `<timestamp>.<MÉTODO>.<caminho>.<corpo>`, em dois headers, janela de 300 s |
 | `Idempotency-Key` | `<inbound_event_id>:<type>`, calculada pelo Broker |
-| Leitura do contexto | O agente assina o `GET` da `context_url` com o mesmo esquema de HMAC |
+| Leitura do contexto | O agente assina o `GET` da `context_url` com o mesmo esquema de HMAC e com o segredo próprio `AGENT_CONTEXT_SECRET` |
 | Horário de gravação no Kafka | Timestamp do registro de `agent.inbound` (`LogAppendTime`), devolvido pelo agente na ação |
 | Campos | Nomes em inglês, `snake_case`; horários em ISO 8601, UTC, com milissegundos |
 
@@ -75,7 +75,7 @@ Schema: `webhook.message-created`. É o corpo do webhook do Core para o Broker e
 | `sequence` | Sequência da mensagem na conversa, a partir de 1 |
 | `received_at` | Horário em que o Core recebeu a mensagem do canal |
 | `message` | `author` (`customer`, `ai`, `analyst`, `system`), `channel` (`chat`, `whatsapp`, `email`) e `text` |
-| `context_url` | `/api/v1/agent/conversations/<conversation_id>/context` |
+| `context_url` | `/api/v1/agent/brands/<brand>/conversations/<conversation_id>/context`, com o slug da marca: o RLS exige a marca antes da leitura da conversa, e a marca entra no caminho assinado |
 | `traceparent` | Contexto de trace W3C |
 
 O corpo é montado por `Contract::MessageCreated.build` a partir do envelope canônico da F2: o conteúdo de `payload` sobe para o nível raiz e a `context_url` é acrescentada. Um teste grava um evento pelo serviço de comando e afirma que o webhook resultante segue o schema.
@@ -150,9 +150,10 @@ Schema: `action-response`. É o corpo da resposta do Core ao Broker.
 | - | - | - |
 | `accepted` | 2xx | `type`, `conversation_id`, `event_id` do `audit_event` da ação e `message_sequence` (sequência da mensagem gravada, ou nulo) |
 | `stale` | 409 | `conversation_id`, `event_id` do `audit_event` da rejeição, `based_on_sequence` e `last_customer_sequence` |
+| `rejected` | 409 | `conversation_id`, `event_id` do `audit_event` da recusa e `state`, o estado da conversa fora de `with_ai` |
 | `error` | demais 4xx | `error` (`invalid_signature`, `expired_timestamp`, `invalid_payload`, `missing_idempotency_key`, `not_found`) e `message` |
 
-A repetição de uma ação com a mesma `Idempotency-Key` devolve o corpo da primeira execução, guardado em `processed_events.result`.
+A repetição de uma ação com a mesma `Idempotency-Key` devolve o corpo e o código da primeira execução, guardado em `processed_events.result`; `accepted`, `stale` e `rejected` são resultado final da chave. O Broker trata os dois `409` como resultado final.
 
 ### Contexto da conversa
 
@@ -185,15 +186,15 @@ Todas as chamadas HTTP entre os três componentes são assinadas da mesma forma.
 - Assinar o método e o caminho amarra a assinatura a um endpoint: um corpo capturado não vale em outra rota.
 - O emissor assina no momento do envio. Um job reenviado pelo Solid Queue gera timestamp e assinatura próprios a cada tentativa.
 - Dentro da janela, a repetição de uma ação é contida pela idempotência do Core.
-- O segredo é argumento das funções de assinatura. As variáveis de ambiente dos segredos entram junto com cada emissor e receptor: F7 e F9 para o webhook, F8 e F9 para a API de ações, F8 e F10 para o contexto.
+- O segredo é argumento das funções de assinatura. Cada chamada tem um segredo próprio, em variável de ambiente do emissor e do receptor (tabela abaixo).
 
 Chamadas assinadas:
 
-| Chamada | Emissor | Receptor |
-| - | - | - |
-| Webhook `message.created` | Core (`jobs-webhooks`) | Broker (`broker-web`) |
-| API de ações | Broker (`broker-consumer`) | Core (`web`) |
-| `GET` da `context_url` | Agente | Core (`web`) |
+| Chamada | Emissor | Receptor | Segredo |
+| - | - | - | - |
+| Webhook `message.created` | Core (`jobs-webhooks`) | Broker (`broker-web`) | `BROKER_WEBHOOK_SECRET` |
+| API de ações (`POST /api/v1/agent/actions`) | Broker (`broker-consumer`) | Core (`web`) | `AGENT_ACTIONS_SECRET` |
+| `GET` da `context_url` | Agente | Core (`web`) | `AGENT_CONTEXT_SECRET` |
 
 **Embasamento.**
 
@@ -215,7 +216,7 @@ Chamadas assinadas:
 | Ruby | `core/spec/contract/schemas_spec.rb` | Cada schema é um JSON Schema 2020-12 válido; todo exemplo de `valid/` passa; todo exemplo de `invalid/` falha |
 | Ruby | `core/spec/contract/signature_spec.rb` | Os vetores de assinatura; a janela de tempo; a recusa de corpo, caminho, método, timestamp ou segredo diferentes |
 | Ruby | `core/spec/contract/idempotency_key_spec.rb` | Os vetores da chave; a mesma chave para o mesmo evento e tipo |
-| Ruby | `core/spec/contract/message_created_spec.rb` | O evento gravado pelo serviço de comando vira um webhook que segue o schema |
+| Ruby | `core/spec/contract/message_created_spec.rb` | O evento gravado pelo serviço de comando vira um webhook que segue o schema, com a `context_url` com a marca |
 | Python | `agent_mock/tests/contract/test_contract.py` | Os mesmos schemas, exemplos e vetores de assinatura |
 
 Os testes em Python rodam com `pip install -e ".[test]"` e `pytest`, em `agent_mock/`. O extra `test` do `pyproject.toml` inclui o `jsonschema`.
@@ -230,9 +231,9 @@ O critério é o de `contexto/ordem-de-implementacao.md`: os schemas estão no r
 | - | - | - |
 | F5 | O simulador de canais usa do contrato só a assinatura, na entrada JSON do chat | `channel_simulator/signature.py` é cópia de `agent_mock/signature.py`, testada com `contracts/v1/signature-vectors.json`; detalhes em `documents/fases/06-simulador-de-canais.md` |
 | F7 | O corpo do webhook vem de `Contract::MessageCreated.build` e os headers de `Contract::Signature.headers` | O job assina e envia; o caminho do endpoint do Broker é definido na F9 |
-| F8 | A API valida a assinatura, o schema `action` e a `Idempotency-Key`, e responde conforme `action-response` | Os caminhos dos endpoints de ação são definidos na F8; o endpoint de contexto valida a assinatura do agente |
+| F8 | A API valida a assinatura, o schema `action` e a `Idempotency-Key`, e responde conforme `action-response` | Endpoint único `POST /api/v1/agent/actions` com `AGENT_ACTIONS_SECRET`; contexto em `GET /api/v1/agent/brands/<brand>/conversations/<conversation_id>/context` com `AGENT_CONTEXT_SECRET`; detalhes em `documents/fases/09-api-de-acoes-e-contexto.md` |
 | F9 | O Broker calcula a `Idempotency-Key`, grava `broker_received_at` no header e publica o corpo do webhook sem alterar | O `broker-web` e o `broker-consumer` usam `core/lib/contract/` |
-| F10 | O agente lê o timestamp do registro, devolve os carimbos e assina o `GET` do contexto | O agente usa `agent_mock/signature.py`; o segredo do agente é ponto em aberto, decidido antes da F8 |
+| F10 | O agente lê o timestamp do registro, devolve os carimbos e assina o `GET` do contexto | O agente usa `agent_mock/signature.py` e assina com `AGENT_CONTEXT_SECRET` |
 | F16 | O modo LLM usa o campo `model` da ação | O contrato não muda |
 
 ## Fontes

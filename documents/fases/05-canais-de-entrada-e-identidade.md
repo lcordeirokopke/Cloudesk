@@ -277,7 +277,7 @@ mensagem do atendente → Conversations::Outbound.append! → Channels::Delivery
 - grava a mensagem por `Audit::Command` (`message.created`, `actor_type` igual ao autor, payload com `in_reply_to_sequence`, sem webhook ao Broker);
 - enfileira `Channels::DeliveryJob` com `brand_id`, `message_id` e `traceparent` dentro do bloco do comando, na mesma transação (outbox).
 
-A F8 (agente) e a F11 (analista) chamam esse serviço; na F8, `in_reply_to_sequence` é o `based_on_sequence` da ação.
+A F8 (agente) e a F11 (analista) chamam esse serviço; na F8, `in_reply_to_sequence` é a última mensagem do lojista com sequência menor ou igual ao `based_on_sequence` da ação. A entrega lê o destinatário (`identity`) do `message.created` da mensagem respondida, campo que só a mensagem do lojista tem.
 
 `Channels::DeliveryJob` (fila `channels`, `enqueue_after_transaction_commit = false`) lê a mensagem e os payloads dos `message.created` em `audit_events`:
 
@@ -380,7 +380,7 @@ O analista une dois `Contact` do mesmo lojista, por exemplo um WhatsApp e um e-m
 | F5 | O simulador faz o papel da Meta e do lojista | Envia nos formatos desta fase, assina o WhatsApp e o chat, assina o stream Turbo devolvido pelo chat e recebe o `POST` do envio do WhatsApp; define `WHATSAPP_API_URL` |
 | F6 | A conversa em `triage` passa por `Routing::Route` na transação do Intake | O webhook do `message.created` sai só com a conversa em `with_ai` |
 | F7 | A fila `webhooks` não está no worker do `jobs-default` | O `jobs-webhooks` processa a fila |
-| F8 | A resposta sai por `Conversations::Outbound.append!` | A ação `reply` chama o serviço com `in_reply_to_sequence` igual ao `based_on_sequence` |
+| F8 | A resposta sai por `Conversations::Outbound.append!` | A ação `reply` chama o serviço com `in_reply_to_sequence` igual à última mensagem do lojista até o `based_on_sequence` |
 | F11 | O analista responde pelo mesmo serviço | Autor `analyst`, com o `Attendant` |
 | F17 | `message.delivered` tem o horário da entrega | É o fim da medida da H4 e a base da reconciliação |
 

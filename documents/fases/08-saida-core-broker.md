@@ -105,7 +105,7 @@ O `Conversations::Intake` enfileira o webhook só com a conversa em `with_ai` (F
 | `payload` | `event_id` do `message.created` e `state` |
 | webhook | não |
 
-A conferência reduz trabalho inútil do agente, mas não fecha a corrida entre o envio e a ação. A barreira é a recusa da ação com a conversa fora de `with_ai` na API de ações (F8), descrita em `documents/arquitetura.md`, seção "Ação com a conversa fora da IA".
+A conferência reduz trabalho inútil do agente, mas não fecha a corrida entre o envio e a ação. A barreira é a recusa da ação com a conversa fora de `with_ai` na API de ações, com `409 rejected`, descrita em `documents/arquitetura.md`, seção "Ação com a conversa fora da IA".
 
 ### Auditoria e linha do tempo
 
@@ -210,7 +210,7 @@ Com `web`, `jobs-default` e `jobs-webhooks` no ar e sem o `broker-web`:
 
 | Fase | Fato | Tratamento |
 | - | - | - |
-| F8 | O job confere o estado só antes do envio | A API de ações recusa a ação com a conversa fora de `with_ai` e grava `audit_event`; o código HTTP da recusa é decidido na F8 |
+| F8 | O job confere o estado só antes do envio | A API de ações recusa a ação com a conversa fora de `with_ai` com `409` e status `rejected`, e grava `agent.action.rejected`; o Broker trata o `409` como resultado final |
 | F9 | O Core envia a `BROKER_WEBHOOK_URL` com `BROKER_WEBHOOK_SECRET` | O `broker-web` atende `POST /webhooks/message-created`, confere a assinatura com o mesmo segredo e o caminho com a query string, e responde 2xx só depois da confirmação do Kafka; 408, 429 e 5xx geram nova tentativa, e os demais status vão para a fila de falhas |
 | F14 | As tentativas ficam no Solid Queue | A profundidade da fila `webhooks` e as falhas entram nas métricas |
 | F15 | Threads, polling, pool e heartbeat são valores iniciais | Dimensionamento por medida, com réplicas do `jobs-webhooks`, e ajuste de `process_heartbeat_interval` e `process_alive_threshold` |

@@ -168,10 +168,8 @@ module Routing
       end
     end
 
-    # O atendente IA da marca; com mais de um, o primeiro por nome.
     def ai_attendant
-      Attendant.where(kind: "ai").order(:name, :id).first ||
-        raise(Error, "a marca #{@brand.slug} não tem atendente IA")
+      Attendant.first_ai || raise(Error, "a marca #{@brand.slug} não tem atendente IA")
     end
 
     def unrouted(reason, rule = nil)

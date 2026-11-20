@@ -94,16 +94,17 @@ O detalhamento da triagem, do roteamento e da distribuição está em `documents
   "sequence": 7,
   "received_at": "2026-11-13T14:02:11.482Z",
   "message": { "author": "customer", "channel": "whatsapp", "text": "Meu repasse de ontem não caiu" },
-  "context_url": "/api/v1/agent/conversations/01a1d5e8-…/context",
+  "context_url": "/api/v1/agent/brands/infinitepay/conversations/01a1d5e8-…/context",
   "traceparent": "00-4bf9…-00f0…-01"
 }
 ```
 
 - **Assinatura na ida:** o webhook Core → Broker leva HMAC-SHA256 com timestamp no header; reenvios antigos são rejeitados (anti-replay).
-- **Assinatura na volta:** as chamadas do Broker à API de ações do Core e a leitura da `context_url` pelo agente usam o mesmo esquema de HMAC-SHA256 com timestamp.
+- **Assinatura na volta:** as chamadas do Broker à API de ações do Core (`POST /api/v1/agent/actions`) e a leitura da `context_url` pelo agente (`GET /api/v1/agent/brands/<brand>/conversations/<conversation_id>/context`) usam o mesmo esquema de HMAC-SHA256 com timestamp.
+- **Segredos:** cada chamada tem o seu: `BROKER_WEBHOOK_SECRET` no webhook, `AGENT_ACTIONS_SECRET` na API de ações e `AGENT_CONTEXT_SECRET` na leitura do contexto. A marca fica no caminho da `context_url` e entra na assinatura, porque o RLS exige a marca antes da leitura da conversa.
 - **Formato da assinatura:** HMAC-SHA256 de `<timestamp>.<MÉTODO>.<caminho>.<corpo>`, nos headers `X-Cloudesk-Timestamp` e `X-Cloudesk-Signature`, com janela de 300 segundos.
 - **Contrato versionado:** os schemas, exemplos e vetores ficam em `contracts/v1/`; o detalhamento está em `documents/fases/04-contrato-de-integracao.md`.
-- **Ações do agente** (tópico de saída): `reply`, `escalate`, `categorize`, `resolve` e o registro das ferramentas consultadas. Toda ação leva `based_on_sequence`, a sequência da última mensagem que o agente considerou.
+- **Ações do agente** (tópico de saída): `reply`, `escalate`, `categorize`, `resolve` e o registro das ferramentas consultadas. Toda ação leva `based_on_sequence`, a sequência da última mensagem que o agente considerou. O Broker envia o valor Kafka da ação, sem alteração, a um endpoint único da API de ações; marca e conversa vêm do corpo assinado.
 - **Entrega:** at-least-once em todo o caminho + idempotência no Core = efeito exactly-once para o cliente.
 - **Falhas:** retries com backoff exponencial e jitter, tópico DLQ para mensagens problemáticas, preservando chave, headers e payload originais, e reprocessamento pelo painel.
 
@@ -118,7 +119,8 @@ A chave da partição Kafka é o `conversation_id`, o que preserva a ordem em qu
 #### Idempotência
 
 - A `Idempotency-Key` de cada ação é derivada do `event_id` de entrada e do tipo da ação, no formato `<inbound_event_id>:<type>`. O Broker a calcula a partir do corpo da ação. Um evento reentregue ao agente produz a mesma chave.
-- O Core mantém a tabela de eventos processados, com `brand_id`, RLS e índice único em `(brand_id, idempotency_key)`; a segunda ação com a mesma chave não produz efeito e devolve o resultado da primeira.
+- O Core mantém a tabela de eventos processados, com `brand_id`, RLS e índice único em `(brand_id, idempotency_key)`; a segunda ação com a mesma chave não produz efeito e devolve o corpo e o código da primeira. A aceitação e as duas recusas com `409` (`stale` e `rejected`) são resultado final da chave.
+- As ações da mesma conversa são processadas com a linha da conversa travada (`FOR UPDATE`), o que serializa inclusive as duplicadas simultâneas.
 - O Core é a única barreira de deduplicação. O agente não guarda estado, o que permite reiniciá-lo e rodar várias instâncias.
 
 #### Ação sobre contexto desatualizado
@@ -130,7 +132,8 @@ A chave da partição Kafka é o `conversation_id`, o que preserva a ordem em qu
 
 #### Ação com a conversa fora da IA
 
-- O Core aceita ação do agente só com a conversa em `with_ai`. Com a conversa em outro estado (por exemplo, assumida por um analista ou resolvida), a ação é rejeitada e a rejeição gera `audit_event`.
+- O Core aceita ação do agente só com a conversa em `with_ai`. Com a conversa em outro estado (por exemplo, assumida por um analista ou resolvida), a ação é rejeitada com `409` e status `rejected`, com o estado da conversa, e a rejeição gera `audit_event`. O Broker trata esse `409` como resultado final, como o da ação desatualizada.
+- A conferência do estado vem antes da conferência de `based_on_sequence`.
 - A comparação de `based_on_sequence` não cobre esse caso: a conversa pode mudar de estado sem mensagem nova do lojista, e a ação chega com a sequência em dia.
 - O job de webhook confere o estado antes de enviar e não envia com a conversa fora de `with_ai`. A conferência evita trabalho do agente, mas não fecha a corrida entre o envio e a ação; a barreira é a rejeição no Core.
 
@@ -140,7 +143,7 @@ Um job recorrente varre as conversas atribuídas à IA cuja última mensagem do 
 
 ### Handoff com resumo e contexto
 
-Na ação `escalate`, o agente envia motivo, resumo curto e contexto estruturado: intenção, entidades (ex.: id da transação sintética), ferramentas consultadas e seus retornos, tentativas feitas, sentimento, próximo passo sugerido e confiança. A plataforma muda o estado, roteia para a fila humana pela regra de escalação e notifica analistas em tempo real; o histórico completo segue anexado.
+Na ação `escalate`, o agente envia motivo, resumo curto e contexto estruturado: intenção, entidades (ex.: id da transação sintética), ferramentas consultadas e seus retornos, tentativas feitas, sentimento, próximo passo sugerido e confiança. A plataforma grava o Handoff com esses dados, leva a conversa de `with_ai` a `awaiting_human`, sem atendente, roteia para a fila humana pela regra de escalação e notifica analistas em tempo real; o histórico completo segue anexado.
 
 &#91;embedded content: Ciclo de vida do atendimento · 6 estados\]
 
@@ -160,7 +163,8 @@ Toda transição gera um evento de auditoria; uma conversa resolvida volta à tr
 - `audit_events` append-only: ator, ação, alvo, antes/depois, payload do evento, motivo, regra e versão que casou, `trace_id`.
 - `UPDATE` e `DELETE` bloqueados por permissão de banco e trigger.
 - `traceparent` (W3C) propagado em headers HTTP e Kafka, ligando cada salto da mensagem.
-- **Linha do tempo por mensagem:** cada salto carimba seu horário e o repassa adiante. O Broker registra o recebimento do webhook no header da mensagem, e o timestamp do registro Kafka marca a gravação no tópico; o agente devolve esses dois carimbos e os seus próprios (consumo, ferramentas, publicação) na ação. O Core grava tudo no `audit_event` da ação. O painel monta a linha do tempo canal → Core → Broker → Kafka → agente → Broker → cliente a partir de `audit_events` e `trace_id`, sem serviço de tracing externo.
+- **Linha do tempo por mensagem:** cada salto carimba seu horário e o repassa adiante. O Broker registra o recebimento do webhook no header da mensagem, e o timestamp do registro Kafka marca a gravação no tópico; o agente devolve esses dois carimbos e os seus próprios (consumo, ferramentas, publicação) na ação. O Core grava tudo no `audit_event` da ação.
+- **Evento próprio de cada ação:** cada ação aceita grava `agent.reply`, `agent.escalate`, `agent.categorize` ou `agent.resolve`, com o corpo completo da ação (ferramentas, `model`, carimbos), a `Idempotency-Key` e o `received_at` do Core; os eventos de domínio da ação são gravados à parte, na mesma transação. As recusas gravam `agent.action.stale` e `agent.action.rejected`. O painel monta a linha do tempo canal → Core → Broker → Kafka → agente → Broker → cliente a partir de `audit_events` e `trace_id`, sem serviço de tracing externo.
 
 ### Memória e contexto
 
@@ -232,7 +236,7 @@ Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-w
 5. O Broker valida a assinatura, publica em `agent.inbound` com chave `conversation_id` e responde 2xx **somente depois da confirmação do Kafka**. Sem confirmação, responde erro e o Solid Queue reenvia.
 6. O agente mock consome, lê o contexto na `context_url`, consulta ferramentas falsas e publica a ação em `agent.outbound`.
 7. O Broker consome e chama a API de ações do Core com `Idempotency-Key` e assinatura HMAC.
-8. O Core valida `based_on_sequence`, grava a resposta, entrega no canal e atualiza a tela; em `escalate`, cria o Handoff e roteia para a fila humana.
+8. O Core confere o estado da conversa e o `based_on_sequence`, grava a resposta, entrega no canal e atualiza a tela; em `escalate`, cria o Handoff e roteia para a fila humana.
 
 ## Decisões de design
 
