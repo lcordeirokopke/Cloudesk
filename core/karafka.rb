@@ -6,6 +6,9 @@
 # Os offsets são marcados pelo Broker::ActionsConsumer só depois do resultado final de cada ação.
 require_relative "lib/broker"
 
+# Log sem buffer: a saída do contêiner não é um terminal.
+$stdout.sync = true
+
 class KarafkaApp < Karafka::App
   setup do |config|
     config.client_id = "cloudesk-broker-consumer"

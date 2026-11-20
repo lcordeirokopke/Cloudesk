@@ -64,7 +64,8 @@ module Broker
 
     def classify(response)
       status = response.code.to_i
-      body = response.body.to_s
+      # O Net::HTTP entrega o corpo em BINARY; o Core responde JSON em UTF-8.
+      body = response.body.to_s.dup.force_encoding(Encoding::UTF_8)
       return Result.new(outcome: :final, status: status, body: body) if FINAL_STATUSES.include?(status)
       if status >= 500 || TRANSIENT_STATUSES.include?(status)
         raise TransientError.new("Core respondeu #{status}: #{body[0, 500]}", status: status)

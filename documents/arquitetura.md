@@ -106,7 +106,7 @@ O detalhamento da triagem, do roteamento e da distribuição está em `documents
 - **Contrato versionado:** os schemas, exemplos e vetores ficam em `contracts/v1/`; o detalhamento está em `documents/fases/04-contrato-de-integracao.md`.
 - **Ações do agente** (tópico de saída): `reply`, `escalate`, `categorize`, `resolve` e o registro das ferramentas consultadas. Toda ação leva `based_on_sequence`, a sequência da última mensagem que o agente considerou. O Broker envia o valor Kafka da ação, sem alteração, a um endpoint único da API de ações; marca e conversa vêm do corpo assinado.
 - **Entrega:** at-least-once em todo o caminho + idempotência no Core = efeito exactly-once para o cliente.
-- **Falhas:** retries com backoff exponencial e jitter, tópico DLQ para mensagens problemáticas, preservando chave, headers e payload originais, e reprocessamento pelo painel.
+- **Falhas:** retries com backoff exponencial, com jitter no webhook de ida (Solid Queue) e pela pausa do Karafka, sem jitter, na volta; tópico DLQ para mensagens problemáticas, preservando chave, headers e payload originais, com headers de diagnóstico (schema `kafka.dlq-headers`), e reprocessamento pelo painel.
 
 #### Ordem das mensagens
 
@@ -252,7 +252,7 @@ Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-w
 
 **Broker como papel do mesmo código.** O contrato e a assinatura têm uma única implementação em Ruby, e o Broker segue como processo isolado, com fronteira HTTP.
 
-**Broker em dois processos.** O Broker roda como `broker-web` e `broker-consumer`, da mesma imagem. O `broker-web` é um Puma que serve o endpoint Rack e publica em `agent.inbound`; o `broker-consumer` é o `karafka server`, que consome `agent.outbound` e chama a API de ações do Core. Cada sentido escala pela sua própria carga (volume de webhooks na ida, partições na volta), e a queda de um não interrompe o outro.
+**Broker em dois processos.** O Broker roda como `broker-web` e `broker-consumer`, da mesma imagem. O `broker-web` é um Puma que serve o endpoint Rack e publica em `agent.inbound`; o `broker-consumer` é o `karafka server`, que consome `agent.outbound` e chama a API de ações do Core. Cada sentido escala pela sua própria carga (volume de webhooks na ida, partições na volta), e a queda de um não interrompe o outro. Os dois rodam sem Rails e sem banco; o detalhamento está em `documents/fases/10-broker.md`.
 
 **Rastreabilidade a partir da auditoria.** A linha do tempo de cada mensagem sai de `audit_events`, que o enunciado já exige. Métricas agregadas ficam no Prometheus.
 

@@ -64,6 +64,15 @@ RSpec.describe Broker::CoreClient, broker: true do
     end
   end
 
+  it "devolve o corpo da resposta em UTF-8" do
+    stub_request(:post, url).to_return(status: 422, body: '{"message":"corpo JSON inválido"}'.b)
+
+    result = deliver
+
+    expect(result.body.encoding).to eq(Encoding::UTF_8)
+    expect("recusada: #{result.body}").to include("inválido")
+  end
+
   [ 408, 429, 500, 502, 503 ].each do |status|
     it "lança TransientError em #{status}" do
       stub_request(:post, url).to_return(status: status)
