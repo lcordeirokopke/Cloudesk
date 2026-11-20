@@ -1,0 +1,192 @@
+[
+  {
+    "locale": "pt-BR",
+    "intent": "transacao",
+    "text": "Olá, a transação TX4815162342 de R$ 1.532,40 do dia 12/11/2026 não aparece no meu extrato."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "transacao",
+    "text": "Fiz uma venda de R$ 1.532,40 em 12/11/2026 (id TX4815162342) e o cliente diz que foi cobrado duas vezes."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "transacao",
+    "text": "Podem verificar a transação TX4815162342? Ela ficou pendente desde 12/11/2026."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "repasse",
+    "text": "Meu repasse de 12/11/2026 no valor de R$ 1.532,40 ainda não caiu."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "repasse",
+    "text": "Quando cai o repasse das vendas de 12/11/2026? São R$ 1.532,40."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "repasse",
+    "text": "O repasse de R$ 1.532,40 previsto para 12/11/2026 veio com valor diferente."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "taxas",
+    "text": "Qual a taxa do crédito parcelado em 12x?"
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "taxas",
+    "text": "Fui cobrado R$ 1.532,40 de taxa na venda TX4815162342, está certo?"
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "taxas",
+    "text": "Quero entender as taxas do débito e do Pix na minha conta."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "maquininha",
+    "text": "Minha maquininha SN12345678 não liga desde 12/11/2026."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "maquininha",
+    "text": "A maquininha SN12345678 mostra erro de conexão ao passar o cartão."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "maquininha",
+    "text": "Preciso trocar a maquininha SN12345678, a bateria não segura carga."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "saudacao",
+    "text": "Oi, tudo bem? Preciso de ajuda."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "saudacao",
+    "text": "Bom dia! Alguém pode me atender?"
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "saudacao",
+    "text": "Olá, quero falar com o suporte."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "agradecimento",
+    "text": "Obrigado, deu tudo certo!"
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "agradecimento",
+    "text": "Valeu pela ajuda, resolvido."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "agradecimento",
+    "text": "Muito obrigada pelo atendimento."
+  },
+  {
+    "locale": "en-US",
+    "intent": "transacao",
+    "text": "Hi, transaction TX4815162342 for $1,532.40 on 11/12/2026 is missing from my statement."
+  },
+  {
+    "locale": "en-US",
+    "intent": "transacao",
+    "text": "I made a $1,532.40 sale on 11/12/2026 (id TX4815162342) and the customer says they were charged twice."
+  },
+  {
+    "locale": "en-US",
+    "intent": "transacao",
+    "text": "Can you check transaction TX4815162342? It has been pending since 11/12/2026."
+  },
+  {
+    "locale": "en-US",
+    "intent": "repasse",
+    "text": "My payout from 11/12/2026 for $1,532.40 has not arrived yet."
+  },
+  {
+    "locale": "en-US",
+    "intent": "repasse",
+    "text": "When will the payout for my 11/12/2026 sales arrive? It is $1,532.40."
+  },
+  {
+    "locale": "en-US",
+    "intent": "repasse",
+    "text": "The $1,532.40 payout expected on 11/12/2026 came with a different amount."
+  },
+  {
+    "locale": "en-US",
+    "intent": "taxas",
+    "text": "What is the fee for credit card installments?"
+  },
+  {
+    "locale": "en-US",
+    "intent": "taxas",
+    "text": "I was charged a $1,532.40 fee on sale TX4815162342, is that right?"
+  },
+  {
+    "locale": "en-US",
+    "intent": "taxas",
+    "text": "I want to understand the debit and instant payment fees on my account."
+  },
+  {
+    "locale": "en-US",
+    "intent": "maquininha",
+    "text": "My card reader SN12345678 has not turned on since 11/12/2026."
+  },
+  {
+    "locale": "en-US",
+    "intent": "maquininha",
+    "text": "Card reader SN12345678 shows a connection error when I swipe a card."
+  },
+  {
+    "locale": "en-US",
+    "intent": "maquininha",
+    "text": "I need to replace card reader SN12345678, the battery does not hold a charge."
+  },
+  {
+    "locale": "en-US",
+    "intent": "saudacao",
+    "text": "Hi, how are you? I need some help."
+  },
+  {
+    "locale": "en-US",
+    "intent": "saudacao",
+    "text": "Good morning! Can someone help me?"
+  },
+  {
+    "locale": "en-US",
+    "intent": "saudacao",
+    "text": "Hello, I want to talk to support."
+  },
+  {
+    "locale": "en-US",
+    "intent": "agradecimento",
+    "text": "Thanks, it worked!"
+  },
+  {
+    "locale": "en-US",
+    "intent": "agradecimento",
+    "text": "Thank you so much for the help."
+  },
+  {
+    "locale": "en-US",
+    "intent": "agradecimento",
+    "text": "Got it, appreciate it."
+  },
+  {
+    "locale": "pt-BR",
+    "intent": "desconhecida",
+    "text": "Quero mudar o endereço cadastrado na conta."
+  },
+  {
+    "locale": "en-US",
+    "intent": "desconhecida",
+    "text": "I want to change the address on my account."
+  }
+]

@@ -187,6 +187,26 @@ services:
       - web
       - mailpit
 
+  # Agente mock: consome agent.inbound no grupo cloudesk-agent e publica as ações em agent.outbound.
+  agent-mock:
+    build: ./agent_mock
+    image: cloudesk-agent-mock:dev
+    environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
+      CORE_URL: http://web:3000
+      AGENT_CONTEXT_SECRET: ${AGENT_CONTEXT_SECRET}
+      AGENT_LATENCY_MS: ${AGENT_LATENCY_MS:-0}
+      AGENT_CONCURRENCY: ${AGENT_CONCURRENCY:-100}
+      CONTRACTS_PATH: /contracts
+    volumes:
+      - ./agent_mock:/app
+      - ./contracts:/contracts:ro
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+      web:
+        condition: service_started
+
 volumes:
   postgres-data:
   redpanda-data:

@@ -7,13 +7,18 @@ name = "agent-mock"
 version = "0.1.0"
 description = "Agente mock do Cloudesk"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = ["aiokafka==0.15.0", "aiohttp==3.14.5"]
 
 [project.optional-dependencies]
-test = ["pytest", "jsonschema"]
+test = ["pytest==9.2.0", "pytest-asyncio==1.5.0", "jsonschema==4.26.0"]
+
+[project.scripts]
+agent-mock = "agent_mock.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
