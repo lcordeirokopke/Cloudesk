@@ -1,0 +1,8 @@
+{
+  "dlq_reason": "core_rejected",
+  "dlq_status": "422",
+  "dlq_source_topic": "agent.outbound",
+  "dlq_source_partition": "3",
+  "dlq_source_offset": "quarenta",
+  "dlq_failed_at": "2026-11-13T14:02:12.104Z"
+}

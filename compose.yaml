@@ -122,6 +122,42 @@ services:
       <<: *rails-environment
       RAILS_MAX_THREADS: "7"
 
+  # Broker: mesma imagem do Core, sem Rails e sem banco (core/lib/broker.rb). O ambiente não leva DB_*.
+  broker-web:
+    image: cloudesk-core:dev
+    command: ["bundle", "exec", "puma", "-C", "config/puma_broker.rb", "broker.ru"]
+    environment: &broker-environment
+      KARAFKA_REQUIRE_RAILS: "false"
+      CONTRACTS_PATH: /contracts
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
+      BROKER_WEBHOOK_SECRET: ${BROKER_WEBHOOK_SECRET}
+      AGENT_ACTIONS_SECRET: ${AGENT_ACTIONS_SECRET}
+      CORE_ACTIONS_URL: ${CORE_ACTIONS_URL:-http://web:3000/api/v1/agent/actions}
+    volumes:
+      - ./core:/rails
+      - ./contracts:/contracts:ro
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "ruby -rnet/http -e 'exit Net::HTTP.get_response(URI(\"http://localhost:3000/up\")).is_a?(Net::HTTPSuccess)'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+
+  broker-consumer:
+    image: cloudesk-core:dev
+    command: ["bundle", "exec", "karafka", "server"]
+    environment: *broker-environment
+    volumes:
+      - ./core:/rails
+      - ./contracts:/contracts:ro
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+
   channel-simulator:
     build: ./channel_simulator
     image: cloudesk-channel-simulator:dev

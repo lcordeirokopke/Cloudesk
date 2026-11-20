@@ -38,6 +38,10 @@ gem "json_schemer"
 # A json_schemer 2.5.0 chama Regexp::Syntax::Base.implements, que é método privado na regexp_parser 2.13.
 gem "regexp_parser", "< 2.13"
 
+# Broker: consumidor Kafka (karafka server) e produtor WaterDrop. Carregado só por lib/broker.rb,
+# fora do boot do Rails [https://github.com/karafka/karafka]
+gem "karafka", "~> 2.6.1", require: false
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
@@ -62,4 +66,6 @@ gem "rspec-rails", "~> 8.1", groups: [:development, :test]
 group :test do
   # Simula as chamadas HTTP de saída (Mailpit, WhatsApp) nos testes [https://github.com/bblimke/webmock]
   gem "webmock"
+  # Testes do consumidor do Broker sem Kafka [https://github.com/karafka/karafka-testing]
+  gem "karafka-testing", "~> 2.6.4", require: false
 end

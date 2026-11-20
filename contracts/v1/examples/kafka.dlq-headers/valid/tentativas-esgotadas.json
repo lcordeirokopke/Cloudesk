@@ -1,0 +1,10 @@
+{
+  "brand": "jim",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "dlq_reason": "retries_exhausted",
+  "dlq_status": "503",
+  "dlq_source_topic": "agent.outbound",
+  "dlq_source_partition": "5",
+  "dlq_source_offset": "1280",
+  "dlq_failed_at": "2026-11-13T14:08:15.000Z"
+}

@@ -8,7 +8,7 @@ RSpec.describe Contract::Schemas do
 
   it "encontra os schemas do contrato" do
     expect(schema_names).to eq(
-      %w[action action-response context kafka.inbound-headers kafka.outbound-headers webhook.message-created]
+      %w[action action-response context kafka.dlq-headers kafka.inbound-headers kafka.outbound-headers webhook.message-created]
     )
   end
 

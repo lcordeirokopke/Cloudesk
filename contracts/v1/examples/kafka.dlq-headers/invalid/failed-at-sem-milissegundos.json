@@ -1,0 +1,7 @@
+{
+  "dlq_reason": "retries_exhausted",
+  "dlq_source_topic": "agent.outbound",
+  "dlq_source_partition": "3",
+  "dlq_source_offset": "42",
+  "dlq_failed_at": "2026-11-13T14:02:12Z"
+}

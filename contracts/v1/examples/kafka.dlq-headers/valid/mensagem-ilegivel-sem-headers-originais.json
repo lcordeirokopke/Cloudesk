@@ -1,0 +1,7 @@
+{
+  "dlq_reason": "invalid_message",
+  "dlq_source_topic": "agent.outbound",
+  "dlq_source_partition": "0",
+  "dlq_source_offset": "7",
+  "dlq_failed_at": "2026-11-13T14:02:12.104Z"
+}

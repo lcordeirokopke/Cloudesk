@@ -1,68 +1,52 @@
-# Cloudesk · F5 · Simulador de canais
+# Cloudesk · Simulador de canais
 
-## Objetivo
+## O que é
 
-O simulador de canais faz o papel do lojista e dos provedores dos três canais (Meta no WhatsApp, app no chat, cliente de e-mail). Ele envia mensagens sintéticas ao Core, recebe as respostas que o Core entrega a cada canal e registra o que enviou e o que recebeu, para a reconciliação de perdas e duplicações da F17.
+O simulador de canais faz o papel de tudo o que fica do lado de fora do Cloudesk nos três canais de atendimento:
 
-Este documento detalha cada decisão e a fonte que a sustenta. O resumo está em `documents/arquitetura.md`, que prevalece; a lista de entregas e o critério de pronto estão em `contexto/ordem-de-implementacao.md`. Os formatos de entrada e de saída de cada canal são os de `documents/fases/05-canais-de-entrada-e-identidade.md`.
+- **o lojista**, que escreve por WhatsApp, pelo chat do app ou por e-mail;
+- **os provedores dos canais**: a Meta, que entrega o webhook do WhatsApp e recebe as respostas pela Cloud API; o app, que envia a mensagem do chat e recebe as respostas em tempo real; e o cliente de e-mail, que envia pelo SMTP e lê a caixa de entrada.
 
-## Resumo das decisões
+Ele envia ao Core mensagens sintéticas no formato real de cada canal, recebe as respostas que o Core entrega e registra o que enviou e o que recebeu. Com isso, o Cloudesk roda de ponta a ponta sem nenhuma integração externa e sem nenhum dado real.
 
-| # | Tema | Decisão |
-| - | - | - |
-| 1 | Escopo | Uma versão só, completa: envio, recepção e registro. A recepção é testada com respostas gravadas por `Conversations::Outbound.append!`; Broker, agente e API de ações ficam nas suas fases |
-| 2 | Forma | Serviço `channel-simulator` no Compose, imagem própria. Processo longo `serve` com os três receptores; comandos de linha de comando para gerar tráfego, rodados com `docker compose exec` |
-| 3 | Dependências | `aiohttp` (servidor HTTP, cliente HTTP e WebSocket); SMTP com `smtplib` da biblioteca padrão |
-| 4 | Entrada WhatsApp | Payload da Cloud API no formato lido pela F4, uma mensagem por `POST`, id `wamid.<uuid>`, `X-Hub-Signature-256` com `WHATSAPP_APP_SECRET`; tipos `text`, `image` e `document` com legenda |
-| 5 | Saída WhatsApp | `POST /{versão}/{phone_number_id}/messages`, qualquer segmento de versão; Bearer conferido com `WHATSAPP_ACCESS_TOKEN`; 200 no formato da Meta; `WHATSAPP_API_URL=http://channel-simulator:8080/v1` |
-| 6 | Verificação `GET` | Comando `verify-whatsapp`, com `WHATSAPP_VERIFY_TOKEN` |
-| 7 | Modos de falha no receptor | Não existem |
-| 8 | Entrada chat | `POST /channels/chat/messages` assinado com `CHAT_SIGNING_SECRET`. A assinatura é tudo o que o simulador consome do contrato da F3 |
-| 9 | Saída chat | WebSocket em `ws://web:3000/cable`, `Origin: http://web:3000`, sem configuração nova no Core; inscrição no `Turbo::StreamsChannel` com o `stream` devolvido pela entrada |
-| 10 | Streams | Endpoint `POST /chat/streams` no simulador, com `stream` e `app_user_id` obrigatórios; usado pelo comando `send` e pelo k6 |
-| 11 | Entrada e-mail | SMTP para `mailpit:1025`; From do lojista, To do e-mail de suporte, `Message-ID` `<uuid@simulator.cloudesk.test>`, anexo opcional |
-| 12 | Saída e-mail | Polling da API do Mailpit pelas mensagens com a tag `cloudesk-ignored` e o header `X-Cloudesk-Message-Id`; deduplicação pelo ID do Mailpit, sem gravar tag |
-| 13 | Personas | Task `bin/rails simulator:personas` exporta lojistas das seeds e canais das marcas para `core/tmp/simulator/personas.json`; o simulador monta a pasta só leitura. Opção de lojistas novos com identidades aleatórias |
-| 14 | Texto | Modelos fixos por intenção (transação, repasse, taxas, maquininha, saudação), em `pt-BR` e `en-US`; campos sintéticos de `random.Random(seed)`; sem Faker no Python; fração configurável com anexo |
-| 15 | Registro | JSONL em `channel_simulator/data/`, fora do Git. Duplicada é o mesmo id da `Message` do Core recebido duas vezes |
-| 16 | Testes | pytest das partes do simulador; checagem ponta a ponta no Compose; sem teste cruzado em Ruby além dos vetores de assinatura |
+## Onde fica no fluxo
 
-## Arquivos
+```text
+                 ┌──────────────────── channel-simulator ────────────────────┐
+                 │  send / scenario                          serve           │
+                 │  (lojista)                         (provedores, recepção) │
+                 └────┬───────────────┬──────────────────────▲───────▲───▲───┘
+   WhatsApp: POST assinado            │                      │       │   │
+                      │       chat: POST assinado            │       │   │
+                      │               │      e-mail: SMTP    │       │   │
+                      ▼               ▼          │           │       │   │
+              Core: /channels/whatsapp/webhook   ▼           │       │   │
+                    /channels/chat/messages    Mailpit ──────┼───────┼───┘ poller da API
+                      │                                      │       │
+                      └── Intake → ... → Channels::DeliveryJob       │
+                                     ├─ WhatsApp: POST /v1/<id>/messages
+                                     └─ chat: Turbo Stream no Action Cable
+```
 
-### Simulador (`channel_simulator/`)
+O simulador roda como o serviço `channel-simulator` do Compose. O processo `serve` fica de pé com os receptores; os comandos que geram tráfego rodam no mesmo contêiner, com `docker compose exec`.
 
-| Arquivo | Conteúdo |
-| - | - |
-| `Dockerfile` | `python:3.13-slim`, instalação editável com o extra `test`; comando padrão `channel-simulator serve` |
-| `pyproject.toml` | Dependência `aiohttp`; extra `test` com `pytest` e `pytest-aiohttp`; script `channel-simulator` |
-| `src/channel_simulator/config.py` | Leitura do ambiente |
-| `src/channel_simulator/signature.py` | Cópia de `agent_mock/src/agent_mock/signature.py` |
-| `src/channel_simulator/personas.py` | Leitura do `personas.json`; lojistas novos |
-| `src/channel_simulator/templates.py` | Modelos de texto por intenção e locale; anexos sintéticos |
-| `src/channel_simulator/records.py` | Escrita JSONL com append e `flush` por linha |
-| `src/channel_simulator/whatsapp.py` | Payload da Cloud API, assinatura, envio, verificação e receptor |
-| `src/channel_simulator/chat.py` | Envio assinado, registro de streams, parser do Turbo Stream e cliente Action Cable |
-| `src/channel_simulator/email.py` | Montagem do e-mail, envio SMTP e poller do Mailpit |
-| `src/channel_simulator/server.py` | App `aiohttp` do `serve`: rotas e tarefas de fundo |
-| `src/channel_simulator/sender.py` | Envio com taxa controlada e cenário entre canais |
-| `src/channel_simulator/cli.py` | Comandos |
-| `tests/` | Testes |
-| `data/` | Registros, criado em tempo de execução, fora do Git |
+## Por que existe e que valor gera
 
-### Core e raiz
+**O sistema completo sem integrações reais.** O enunciado exclui sistemas de produção e dados reais. O simulador ocupa o lugar da Meta, do app e do cliente de e-mail com os formatos e as assinaturas que esses provedores usam, e o Core trata as mensagens dele exatamente como trataria as reais: o mesmo webhook, a mesma assinatura, o mesmo caminho de entrada e de saída.
 
-| Arquivo | Conteúdo |
-| - | - |
-| `core/lib/tasks/simulator.rake` | Task `simulator:personas` |
-| `core/spec/tasks/simulator_personas_spec.rb` | Teste da task |
-| `core/db/seeds.rb` | E-mail do lojista em ASCII (ver "Personas") |
-| `compose.yaml` | Serviço `channel-simulator` |
-| `.env.example` | `WHATSAPP_API_URL=http://channel-simulator:8080/v1` |
-| `.gitignore` | `channel_simulator/data/` |
+**Recebimento multicanal demonstrável.** Um comando envia mensagens pelos três canais, das duas marcas, com texto, imagem ou documento, e outro mostra o mesmo lojista escrevendo por WhatsApp, chat e e-mail. A plataforma pode ser demonstrada e testada sem nenhum celular, navegador ou cliente de e-mail.
 
-## Personas
+**Respostas verificáveis.** O simulador não só envia: ele recebe as respostas do Core em cada canal e as registra com o id da mensagem do Core. Uma resposta que chegou duas vezes aparece como o mesmo id repetido. Esse registro é a base da reconciliação da hipótese H3 (nenhuma mensagem perdida nem duplicada).
 
-A task `simulator:personas` roda com o papel da aplicação. Para cada marca, em ordem de `slug`, lê os `BrandChannel` (fora do RLS) e, em `Tenancy.with_brand`, os `Contact` que têm as três identidades (`whatsapp`, `email` e `chat`), em ordem de `id`. O destino é `ENV["SIMULATOR_PERSONAS_PATH"]`, padrão `tmp/simulator/personas.json`.
+**Tráfego reproduzível.** Marca, canal, lojista, intenção, texto e anexo vêm de uma semente: a mesma semente gera o mesmo tráfego. Os ids externos são novos a cada execução, e uma execução repetida não vira reenvio para o Core.
+
+**Dados sintéticos de ponta a ponta.** Os lojistas vêm das seeds, geradas com Faker, ou são criados na hora com identidades aleatórias. Os textos são modelos fixos, e os ids de transação, valores, datas e números de série são gerados. Nenhum dado real entra no sistema (LGPD).
+
+## Como funciona
+
+### Lojistas e canais das marcas
+
+A task `bin/rails simulator:personas`, no Core, exporta para `core/tmp/simulator/personas.json` os lojistas das seeds com as três identidades (WhatsApp, e-mail e chat) e os canais de cada marca: os números de WhatsApp e os e-mails de suporte.
 
 ```json
 {
@@ -78,125 +62,124 @@ A task `simulator:personas` roda com o papel da aplicação. Para cada marca, em
 }
 ```
 
-- A ordem é fixa e o arquivo não tem horário de geração: duas execuções no mesmo banco geram o mesmo arquivo.
-- No Compose, `core/tmp/simulator` é montada só leitura em `/personas`. O simulador lê o arquivo a cada comando; o `serve` não depende dele.
-- **Lojistas novos** (`contacts` igual a `new`): nome de listas fixas por locale, telefone com o código do país da marca (`+55` em `pt-BR`, `+1` em `en-US`), e-mail `sim.<token>@example.com` e id do app `app-sim-<token>`, todos de `random.Random(seed)`. O Core cria o `Contact` na primeira mensagem.
-- **E-mail em ASCII.** O e-mail dos lojistas das seeds passa por `I18n.transliterate` (`documents/fases/02-banco-multi-marca-e-entidades.md`, seção "Seeds"). O `formataddr` do Python recusa endereço com acento na parte local; esse endereço exigiria SMTPUTF8 do simulador ao Mailpit e ao Action Mailbox.
+- A task roda com o papel da aplicação e lê os lojistas marca por marca, dentro do RLS. A ordem é fixa e o arquivo não tem horário de geração: o mesmo banco gera sempre o mesmo arquivo.
+- No Compose, a pasta é montada só leitura no simulador, que lê o arquivo a cada comando. O `serve` não depende dele.
+- Com `contacts` igual a `new`, o simulador cria lojistas novos: nome de listas fixas por idioma, telefone com o código do país da marca (`+55` ou `+1`), e-mail `sim.<token>@example.com` e id do app `app-sim-<token>`. O Core cria o lojista na primeira mensagem.
+- Os e-mails dos lojistas das seeds são ASCII. O `formataddr` do Python recusa endereço com acento na parte local, que exigiria SMTPUTF8 do simulador ao Mailpit e ao Action Mailbox.
 
-## Conteúdo das mensagens
+### Conteúdo das mensagens
 
-- Intenções `transacao`, `repasse`, `taxas`, `maquininha` e `saudacao`, com três modelos cada em `pt-BR` e `en-US`, e um assunto de e-mail por intenção.
-- Campos sintéticos: id de transação (`TX` e 10 dígitos), valor (formato do locale), data (até 30 dias antes de uma data de referência fixa) e número de série da maquininha (`SN` e 8 dígitos).
-- Anexos: `image` (`comprovante.jpg`, `image/jpeg`) e `document` (`extrato.pdf`, `application/pdf`), com bytes gerados. O e-mail leva os bytes; o WhatsApp e o chat levam só os metadados.
-- A semente define marca, canal, lojista, intenção, texto e anexo. Os ids externos (`wamid`, `Message-ID`, `client_message_id`) vêm de `uuid4` e são únicos a cada execução: o mesmo id é reenvio para o Core.
-
-## Envio
-
-### WhatsApp
-
-- Payload da Cloud API: `object: "whatsapp_business_account"`, `entry[].changes[]` com `field: "messages"` e `value` com `messaging_product`, `metadata` (`display_phone_number`, `phone_number_id`), `contacts` (`profile.name`, `wa_id`) e `messages` (`from` sem `+`, `id`, `timestamp`, `type` e o objeto do tipo). `image` e `document` levam `mime_type` e `caption`; o documento leva também `filename`.
-- O corpo é serializado uma vez, e `X-Hub-Signature-256` é `sha256=` seguido do HMAC-SHA256 hexadecimal desses bytes.
-- `POST {CORE_URL}/channels/whatsapp/webhook`. O número da marca é sorteado entre os dois da marca.
-
-### Chat
-
-- Corpo `{ brand, app_user_id, client_message_id, text, attachments }`, assinado com `signature.headers(CHAT_SIGNING_SECRET, "POST", "/channels/chat/messages", corpo)`.
-- A resposta 200 traz `conversation_id`, `sequence` e `stream`. O comando registra o par `stream` e `app_user_id` no `serve`, por `POST /chat/streams`.
-
-### E-mail
-
-- `EmailMessage` com From `"<nome>" <e-mail do lojista>`, To o e-mail de suporte, Subject do modelo, `Message-ID` `<uuid4@simulator.cloudesk.test>`, corpo `text/plain` e anexo opcional.
-- `smtplib.SMTP(SMTP_HOST, SMTP_PORT).send_message`, em `asyncio.to_thread`.
-- O `external_id` registrado é o `Message-ID` sem `<` e `>`, igual ao que o `SupportMailbox` grava.
-- O status é 250 quando o envio termina sem exceção. No `smtplib` 3.13, `sendmail` lança `SMTPDataError` para qualquer resposta diferente de 250 ao `DATA`, e o destinatário único recusado vira `SMTPRecipientsRefused`. Em erro, o status é o código SMTP da exceção, quando ela traz um, ou o nome da exceção.
-
-### Verificação do webhook
-
-`verify-whatsapp` faz `GET {CORE_URL}/channels/whatsapp/webhook` com `hub.mode=subscribe`, `hub.verify_token` e um `hub.challenge` aleatório. Sucesso é 200 com o próprio `challenge`.
-
-## Recepção (`serve`)
-
-App `aiohttp` na porta `SIMULATOR_PORT` (8080):
-
-| Rota | Função |
+| Item | Como é gerado |
 | - | - |
-| `POST /{versão}/{phone_number_id}/messages` | Receptor do envio do WhatsApp |
-| `POST /chat/streams` | Registro dos streams do chat |
-| `GET /health` | Saúde do processo |
+| Intenções | `transacao`, `repasse`, `taxas`, `maquininha` e `saudacao`, com três modelos cada em `pt-BR` e `en-US`, e um assunto de e-mail por intenção |
+| Campos | Id de transação (`TX` e 10 dígitos), valor no formato do idioma, data até 30 dias antes de uma data de referência fixa e número de série da maquininha (`SN` e 8 dígitos) |
+| Anexos | `image` (`comprovante.jpg`) e `document` (`extrato.pdf`), numa fração configurável das mensagens. O e-mail leva os bytes gerados; WhatsApp e chat levam os metadados |
+| Ids externos | `wamid.<uuid>` no WhatsApp, `client_message_id` no chat e `Message-ID` `<uuid@simulator.cloudesk.test>` no e-mail, novos a cada envio |
 
-O cliente Action Cable e o poller do Mailpit rodam como tarefas de fundo do app.
+Os modelos e os assuntos de e-mail fazem parte do corpus do classificador do roteamento (`documents/fases/07-triagem-roteamento-e-distribuicao.md`): cada intenção cai na categoria esperada, e a saudação, sem categoria, cai na regra genérica.
 
-### WhatsApp
+### Envio
 
-- Sem `Authorization: Bearer <WHATSAPP_ACCESS_TOKEN>` correto: 401.
-- Corpo sem `messaging_product: "whatsapp"`, `to` ou `text.body`: 400 com `{"error": {"message": "…"}}`.
-- Válido: grava em `received.jsonl` e responde 200 com `{"messaging_product": "whatsapp", "contacts": [{"input": to, "wa_id": to}], "messages": [{"id": "wamid.<uuid>"}]}`.
-
-### Registro de streams
-
-- `POST /chat/streams` com `{"stream": "…", "app_user_id": "…"}`. Sem um dos dois: 400. Par novo ou o mesmo par de novo: 200. Stream já registrado com outro `app_user_id`: 409, mantendo o par original.
-- O stream do Core é por lojista; o mesmo stream com outro `app_user_id` indica erro de quem chamou, e o 409 deixa a anomalia visível.
-- Quem registra sempre conhece o `app_user_id`: acabou de enviar a mensagem com ele. Com o campo obrigatório, o `recipient` do chat nunca fica nulo, também na carga do k6.
-- Os pares ficam em memória e em `data/streams.jsonl`, relido na partida do `serve`.
-
-### Chat (Action Cable)
-
-- Conecta em `CORE_CABLE_URL` com `Origin: CORE_ORIGIN` e o subprotocolo `actioncable-v1-json`.
-- No `welcome`, envia `{"command": "subscribe", "identifier": "{\"channel\":\"Turbo::StreamsChannel\",\"signed_stream_name\":\"…\"}"}` para cada stream registrado. Um stream registrado com a conexão aberta é assinado na hora.
-- Ignora `ping` e `confirm_subscription`; registra `reject_subscription` em log.
-- Cada `message` é um `<turbo-stream action="append" target="messages">` com o partial `channels/chat/_message.html.erb`. O parser (`html.parser`) lê do `div` o `id` (`message_<uuid>`), `data-sequence`, `data-channel`, o autor (classe `chat-message-<autor>`) e o texto de `.chat-message__body`.
-- As mensagens com autor diferente de `customer` vão a `received.jsonl`.
-- **Reconexão:** na queda da conexão, reconecta com backoff exponencial (0,5 s, dobrando até 30 s) e assina de novo todos os streams.
-- **Conexão parada:** sem `welcome` em 6 s depois de abrir, ou sem nenhum frame por 6 s, a conexão é fechada e refeita. O servidor envia `ping` a cada 3 s, e o cliente JS oficial usa o mesmo limite de 6 s.
-- **Falha ao assinar:** uma falha no envio de uma assinatura fecha a conexão; a reconexão assina de novo todos os streams.
-- Os logs registram cada conexão (quantos streams são assinados) e cada assinatura enviada.
-
-**Origem do WebSocket.** Na gem `actioncable` 8.1.4.1, `ActionCable::Connection::Base` aceita a conexão quando `allow_same_origin_as_host` está ligado (padrão `true`) e o `Origin` é igual a `<protocolo>://<Host>`, ou quando o `Origin` casa com `allowed_request_origins`. O simulador conecta em `web:3000` com `Origin: http://web:3000`, igual ao Host, como um navegador com o widget aberto nesse endereço; `config.hosts` já inclui `web`.
-
-### E-mail (poller do Mailpit)
-
-A cada `MAILPIT_POLL_SECONDS`:
-
-- `GET {MAILPIT_API_URL}/api/v1/search?query=tag:cloudesk-ignored&start=<n>&limit=50`, página a página, até uma página em que todos os IDs já foram vistos ou até o fim (`messages_count`);
-- para cada ID novo, `GET /api/v1/message/{ID}/headers`; com `X-Cloudesk-Message-Id`, grava a resposta em `received.jsonl`; sem o header, o ID é marcado como visto e não gera registro;
-- a API devolve o valor bruto dos headers; To, From e Subject passam por `email.header.decode_header`, que decodifica as palavras codificadas da RFC 2047 (`=?UTF-8?Q?Re:_Repasse_n=C3=A3o_recebido?=` vira `Re: Repasse não recebido`);
-- os IDs vistos ficam em memória e em `data/mailpit_seen.jsonl`, relidos na partida;
-- com o Mailpit fora do ar, o ciclo registra o erro em log e tenta de novo no ciclo seguinte.
-
-O simulador não grava tags no Mailpit: o `PUT /api/v1/tags` substitui todas as tags das mensagens informadas, e não existe rota para acrescentar uma tag sozinha. A resposta do Core recebe `cloudesk-ignored` do `IngestJob` (F4).
-
-## Registro
-
-Cada linha é um objeto JSON, gravado com append e `flush`.
-
-| Arquivo | Campos |
+| Canal | Como o simulador envia |
 | - | - |
-| `data/runs/<run_id>/sent.jsonl` | `run_id`, `channel`, `brand`, `contacts` (`seed` ou `new`), `identity`, `external_id`, `intent`, `attachment`, `sent_at`, `status`, `duration_ms`; no chat, `conversation_id`, `sequence` e `stream_status`; `error` quando a montagem ou o envio falha |
-| `data/received.jsonl` | `channel`, `core_message_id`, `recipient`, `sender` (`phone_number_id` ou e-mail de suporte; nulo no chat), `received_at`; WhatsApp: `text` e `traceparent`; chat: `stream`, `author`, `text` e `sequence`; e-mail: `subject` e `mailpit_id` |
-| `data/streams.jsonl` | `stream`, `app_user_id`, `registered_at` |
-| `data/mailpit_seen.jsonl` | `mailpit_id` |
+| WhatsApp | `POST {CORE_URL}/channels/whatsapp/webhook` com o payload da Cloud API (`whatsapp_business_account`, `entry[].changes[].value` com `metadata`, `contacts` e `messages`), uma mensagem por chamada, tipos `text`, `image` e `document`. O corpo é serializado uma vez e assinado em `X-Hub-Signature-256` com `WHATSAPP_APP_SECRET`, como a Meta faz. O número da marca é sorteado entre os dela |
+| Chat | `POST {CORE_URL}/channels/chat/messages` com `brand`, `app_user_id`, `client_message_id`, `text` e `attachments`, assinado com `CHAT_SIGNING_SECRET` no esquema HMAC com timestamp do contrato. A resposta traz `conversation_id`, `sequence` e o `stream` do lojista, que o comando registra no `serve` para receber as respostas |
+| E-mail | SMTP ao Mailpit, com From do lojista, To de um e-mail de suporte da marca, assunto do modelo, corpo em texto e anexo opcional. O Mailpit avisa o Core, que lê o e-mail pelo Action Mailbox |
 
-- `run_id`: horário UTC da execução (`20261119T171041Z`) e quatro caracteres aleatórios.
-- `status`: status HTTP no WhatsApp e no chat; 250 no e-mail. Uma falha de montagem ou de envio vira registro com `status` igual ao nome da exceção (ou ao código SMTP) e `error`, e o comando segue com as demais mensagens.
-- `recipient`: `to` do envio no WhatsApp (telefone sem `+`), `app_user_id` do stream no chat, To no e-mail.
-- **Reconciliação (F17):** `core_message_id` repetido em `received.jsonl` é resposta duplicada. A mensagem perdida é medida contra `audit_events` (mensagem do lojista sem ação aceita que a cubra); `sent.jsonl` traz o `external_id` de cada envio, que o Core grava em `messages.external_id`.
+O comando `verify-whatsapp` faz o handshake `GET` do webhook do WhatsApp com `WHATSAPP_VERIFY_TOKEN`, como a Meta faz ao configurar o webhook; o sucesso é 200 com o próprio `challenge`.
 
-## Comandos
+O `send` agenda cada mensagem no instante `início + i / rate` e envia de forma concorrente: uma resposta lenta do Core não atrasa as seguintes, e a taxa pedida é mantida. Uma falha de montagem ou de envio vira um registro com o erro, e o comando segue com as demais mensagens.
 
-Rodados no contêiner com `docker compose exec channel-simulator channel-simulator <comando>`. Os parâmetros são opções longas; aqui aparecem só pelo nome.
+### Recepção (`serve`)
 
-| Comando | Parâmetros | Efeito |
+O `serve` é um app `aiohttp` na porta 8080 com três receptores.
+
+**WhatsApp.** O Core envia as respostas a `WHATSAPP_API_URL`, que aponta para o simulador (`http://channel-simulator:8080/v1`). O receptor atende `POST /{versão}/{phone_number_id}/messages`, como a Cloud API:
+
+- sem o Bearer certo (`WHATSAPP_ACCESS_TOKEN`), responde 401;
+- sem `messaging_product: "whatsapp"`, `to` ou `text.body`, responde 400 com o erro no formato da Meta;
+- válido, registra a resposta e responde 200 no formato da Meta, com um `wamid` novo.
+
+**Chat.** O simulador se conecta ao Action Cable do Core (`ws://web:3000/cable`) como o widget de um navegador, com `Origin: http://web:3000`, e se inscreve no `Turbo::StreamsChannel` de cada stream registrado. Cada resposta chega como um `<turbo-stream action="append">` com o HTML da mensagem, do qual o simulador lê o id, a sequência, o canal, o autor e o texto; as mensagens com autor diferente do lojista são registradas.
+
+- A conexão que cai é refeita com backoff exponencial, de 0,5 s dobrando até 30 s, e todos os streams são inscritos de novo.
+- A conexão sem `welcome` ou sem nenhum frame por 6 s é dada como parada e refeita. O Core envia `ping` a cada 3 s, e o cliente JavaScript oficial do Action Cable usa o mesmo limite de 6 s.
+- Uma falha ao enviar uma inscrição fecha a conexão, e a reconexão inscreve todos os streams.
+
+Os streams são registrados em `POST /chat/streams`, com `stream` e `app_user_id` obrigatórios. O par novo ou repetido responde 200; o mesmo stream com outro `app_user_id` responde 409 e mantém o par original. Como o stream do Core é por lojista, o 409 deixa visível um erro de quem registrou. Os pares ficam em `data/streams.jsonl` e são relidos na partida do `serve`.
+
+**E-mail.** A cada 2 s, um poller consulta a API do Mailpit pelas mensagens com a tag `cloudesk-ignored`, que o Core grava nas respostas que ele mesmo envia. Para cada mensagem nova, lê os headers e, com `X-Cloudesk-Message-Id`, registra a resposta. Os headers são decodificados da RFC 2047 (`=?UTF-8?Q?Re:_Repasse_n=C3=A3o_recebido?=` vira `Re: Repasse não recebido`). Os ids já vistos ficam em `data/mailpit_seen.jsonl`, e com o Mailpit fora do ar o ciclo registra o erro e tenta de novo no seguinte. O simulador não grava tags no Mailpit: a API substitui todas as tags de uma mensagem e não tem rota para acrescentar uma.
+
+### Registro
+
+Cada linha é um objeto JSON, gravado com append e `flush`, em `channel_simulator/data/`, fora do Git.
+
+| Arquivo | Conteúdo |
+| - | - |
+| `runs/<run_id>/sent.jsonl` | Uma linha por envio: execução, canal, marca, origem do lojista (`seed` ou `new`), identidade, `external_id`, intenção, anexo, horário, status (HTTP, ou 250 no SMTP) e duração; no chat, `conversation_id`, `sequence` e o status do registro do stream; `error` quando a montagem ou o envio falha |
+| `received.jsonl` | Uma linha por resposta recebida: canal, `core_message_id` (o id da `Message` do Core), destinatário, remetente e horário; no WhatsApp, texto e `traceparent`; no chat, stream, autor, texto e sequência; no e-mail, assunto e id do Mailpit |
+| `streams.jsonl` | Streams do chat registrados |
+| `mailpit_seen.jsonl` | Ids do Mailpit já tratados |
+
+O `run_id` é o horário UTC da execução e quatro caracteres aleatórios (`20261119T171041Z-1kr1`).
+
+**Como os registros servem à reconciliação.** Um `core_message_id` repetido em `received.jsonl` é uma resposta entregue duas vezes ao lojista. O `external_id` de cada envio em `sent.jsonl` é o mesmo que o Core grava em `messages.external_id`, e com ele cada mensagem enviada é localizada no banco e na auditoria. A mensagem perdida é a mensagem do lojista sem ação aceita que a cubra, medida em `audit_events`.
+
+### Comandos
+
+Rodados no contêiner com `docker compose exec channel-simulator channel-simulator <comando>`:
+
+| Comando | Opções | Efeito |
 | - | - | - |
-| `serve` | nenhum | Sobe os receptores (comando padrão da imagem) |
-| `send` | `channel` (`whatsapp`, `chat`, `email` ou `all`), `brand` (`infinitepay`, `jim` ou `all`), `count`, `rate` (msg/s), `contacts` (`seed` ou `new`), `attachments` (fração de 0 a 1), `seed` | Envia `count` mensagens na taxa pedida, sorteando marca, canal, lojista e intenção com a semente; grava `data/runs/<run_id>/sent.jsonl` e imprime o resumo (enviadas e contagem por canal e status) |
-| `scenario cross-channel` | `brand`, `seed` | Um lojista das seeds escreve por WhatsApp, chat e e-mail, nessa ordem; grava `sent.jsonl` e imprime o `conversation_id` devolvido pelo chat |
-| `verify-whatsapp` | nenhum | Handshake `GET` do webhook |
+| `serve` | nenhuma | Sobe os receptores; é o comando padrão da imagem |
+| `send` | `channel` (`whatsapp`, `chat`, `email` ou `all`), `brand` (`infinitepay`, `jim` ou `all`), `count`, `rate` (msg/s), `contacts` (`seed` ou `new`), `attachments` (fração de 0 a 1), `seed` | Envia `count` mensagens na taxa pedida, grava `sent.jsonl` e imprime o resumo por canal e status |
+| `scenario cross-channel` | `brand`, `seed` | Um lojista das seeds escreve por WhatsApp, chat e e-mail, nessa ordem, e o comando imprime o `conversation_id` |
+| `verify-whatsapp` | nenhuma | Handshake `GET` do webhook do WhatsApp |
 
-O `send` agenda cada mensagem em `início + i / rate` e envia de forma concorrente: uma resposta lenta do Core não atrasa as seguintes. Os comandos registram os streams no `serve` em `http://localhost:<SIMULATOR_PORT>`, porque rodam no mesmo contêiner.
+## O que o sistema garante
 
-## Configuração
+- Toda mensagem enviada usa o formato e a assinatura do canal real, e o Core a trata pelo mesmo caminho de uma mensagem real.
+- Toda mensagem enviada fica em `sent.jsonl`, inclusive as que falharam, com o status e o erro.
+- Toda resposta recebida fica em `received.jsonl` com o id da mensagem do Core, e uma entrega repetida aparece como id repetido.
+- A mesma semente gera o mesmo tráfego, com ids externos novos.
+- O receptor do chat se recupera sozinho de queda e de conexão parada, e o do e-mail de queda do Mailpit, sem perder o que já registrou.
 
-Serviço `channel-simulator` no `compose.yaml`, imagem `cloudesk-channel-simulator:dev`, porta 8080, dependente de `web` e `mailpit`. Volumes: `./channel_simulator` em `/app`, `./contracts` em `/contracts` (só leitura) e `./core/tmp/simulator` em `/personas` (só leitura).
+## Como compõe os entregáveis do projeto
+
+| Entregável | O que esta parte entrega | O que fica com outras partes |
+| - | - | - |
+| Recebimento multicanal simulado: chat, WhatsApp (Cloud API) e e-mail (Mailpit) | O lado de fora dos três canais: o lojista que escreve e o provedor que recebe as respostas | Entradas, identidade e saída de cada canal no Core (F4) |
+| Interface de conversa entre cliente e atendente | O cliente de cada canal, que recebe as respostas da IA e do analista como o lojista as receberia | Widget de chat e telas (F4 e F11) |
+| Memória e contexto entre canais | O cenário `cross-channel`, em que o mesmo lojista escreve pelos três canais e as mensagens caem na mesma conversa | Identidade unificada (F4) e memória do lojista (F12) |
+| Dados sintéticos (LGPD) | Textos, ids, valores e lojistas novos gerados, e lojistas das seeds | Seeds com Faker (F1) |
+
+### No experimento técnico
+
+| Hipótese | Contribuição |
+| - | - |
+| H3 · nenhuma mensagem perdida nem duplicada | O `received.jsonl` mostra as respostas duplicadas pelo id da mensagem do Core, e o `sent.jsonl` liga cada envio à mensagem gravada pelo `external_id` |
+| H1, H2 e H4 | A carga vem do k6, direto nas entradas de WhatsApp e chat; o simulador é o destino das respostas. Sem ele, a entrega do WhatsApp não tem para onde ir e o chat não tem quem receba. O `POST /chat/streams` existe para que o k6 registre os streams do chat, com o `app_user_id` |
+
+## Diferenciais
+
+Nenhum diferencial é implementado aqui. O simulador é o que torna a demonstração deles possível sem integrações reais: as mensagens que ele envia são as que passam pelo roteamento explicado no "Por que caiu aqui?", pelo agente com os modos de falha e pelo handoff ao analista.
+
+## Limitações
+
+- **Respostas de chat durante a queda do WebSocket.** O Turbo Stream não reenvia o que foi transmitido enquanto o simulador estava desconectado. No experimento, o simulador fica de pé durante a carga, e as falhas da H3 atingem Broker e worker, não o simulador.
+- **Conexão do Action Cable sem inscrições.** Existe um caso sem causa determinada em que o WebSocket fica aberto sem nenhuma inscrição enviada, e as respostas de chat não são registradas; o processo reiniciado se inscreve normalmente. O monitor de conexão parada e o fechamento na falha de inscrição cobrem `welcome` perdido, conexão sem ping e erro de envio, e os logs de conexão e de inscrição identificam o caso. Antes da carga, a confirmação de cada stream é conferida no log do `web` (`Turbo::StreamsChannel is transmitting the subscription confirmation`).
+- **E-mail fora da carga.** O poller do Mailpit atende o teste funcional, não 250 msg/s. O e-mail fica fora da carga do experimento, como prevê a arquitetura.
+- **Personas atualizadas à mão.** Se as seeds mudam, a task `simulator:personas` precisa rodar de novo antes dos comandos.
+- **Lojistas já gravados.** As seeds buscam o lojista pelo telefone e não alteram um lojista existente: um e-mail gravado com acento continua assim até que a identidade seja atualizada.
+- **Textos fixos.** São três modelos por intenção e idioma, sem variação de escrita, erros de digitação ou mensagens longas. Exercitam o caminho, não a qualidade do classificador.
+- **Sem modos de falha no receptor.** O receptor do WhatsApp sempre aceita uma resposta válida; ele não simula indisponibilidade da Meta.
+- **Sem Python na máquina.** O simulador e seus testes rodam no contêiner.
+
+## Operação
+
+### Configuração
+
+Serviço `channel-simulator` no `compose.yaml`, imagem `cloudesk-channel-simulator:dev` (`python:3.13-slim`, dependência `aiohttp`), porta 8080, com `./channel_simulator` em `/app`, `./contracts` em `/contracts` e `./core/tmp/simulator` em `/personas`, os dois últimos só leitura.
 
 | Variável | Uso |
 | - | - |
@@ -205,7 +188,7 @@ Serviço `channel-simulator` no `compose.yaml`, imagem `cloudesk-channel-simulat
 | `MAILPIT_API_URL` | API do Mailpit, para o poller |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP do Mailpit, para o envio |
 | `WHATSAPP_APP_SECRET` | Assinatura `X-Hub-Signature-256` da entrada |
-| `WHATSAPP_VERIFY_TOKEN` | Handshake `GET` |
+| `WHATSAPP_VERIFY_TOKEN` | Handshake `GET` do webhook |
 | `WHATSAPP_ACCESS_TOKEN` | Bearer conferido no receptor |
 | `CHAT_SIGNING_SECRET` | Assinatura da entrada do chat |
 | `CONTRACTS_PATH` | Vetores de assinatura nos testes |
@@ -216,56 +199,59 @@ Serviço `channel-simulator` no `compose.yaml`, imagem `cloudesk-channel-simulat
 
 No Core, `WHATSAPP_API_URL` é `http://channel-simulator:8080/v1`.
 
-**Ordem de uso:** seeds; `docker compose exec web bin/rails simulator:personas`; `docker compose up -d channel-simulator`. Os comandos leem as personas a cada execução.
+**Ordem de uso:** seeds; `docker compose exec web bin/rails simulator:personas`; `docker compose up -d channel-simulator`.
 
-## Testes
+### Arquivos principais
 
-| Arquivo | Cobertura |
+| Arquivo | Conteúdo |
 | - | - |
-| `tests/test_signature.py` | Vetores de assinatura do contrato |
-| `tests/test_personas.py` | Leitura do arquivo; lojistas novos determinísticos com o código do país da marca |
-| `tests/test_records.py` | JSONL com append e `flush` |
-| `tests/test_templates.py` | Determinismo, locale, modelos por intenção, anexos |
-| `tests/test_whatsapp.py` | Payload de texto, imagem e documento; assinatura; verificação com resposta certa e errada; receptor com Bearer certo, errado e ausente, corpo inválido e registro |
-| `tests/test_chat.py` | Envio assinado; registro de streams (200, 400, 409, persistido e relido); parser do partial; cliente Action Cable (welcome, assinatura, mensagem, reconexão, assinatura recusada, welcome ausente, conexão parada) |
-| `tests/test_email.py` | Montagem com e sem anexo; envio SMTP com 250, destinatário recusado e servidor fora do ar; poller (paginação, header ausente, ID já visto, IDs relidos, headers RFC 2047, Mailpit fora do ar) |
-| `tests/test_sender.py` | Sorteio determinístico; `send` nos três canais; cenário entre canais; erro de montagem registrado; Core fora do ar |
-| `tests/test_server.py` | Rotas, `GET /health` e streams relidos na partida |
-| `core/spec/tasks/simulator_personas_spec.rb` | Marcas e canais, lojistas da própria marca com as três identidades, lojista incompleto fora, mesma saída em duas execuções |
+| `channel_simulator/src/channel_simulator/cli.py` | Comandos |
+| `channel_simulator/src/channel_simulator/sender.py` | Envio com taxa controlada e cenário entre canais |
+| `channel_simulator/src/channel_simulator/whatsapp.py` | Payload da Cloud API, assinatura, envio, verificação e receptor |
+| `channel_simulator/src/channel_simulator/chat.py` | Envio assinado, registro de streams, leitura do Turbo Stream e cliente Action Cable |
+| `channel_simulator/src/channel_simulator/email.py` | Montagem do e-mail, envio SMTP e poller do Mailpit |
+| `channel_simulator/src/channel_simulator/templates.py` | Modelos de texto por intenção e idioma, e anexos |
+| `channel_simulator/src/channel_simulator/personas.py` | Leitura do `personas.json` e lojistas novos |
+| `channel_simulator/src/channel_simulator/signature.py` | Assinatura HMAC com timestamp do contrato, a mesma implementação do agente mock |
+| `channel_simulator/src/channel_simulator/server.py` | App do `serve`: rotas e tarefas de fundo |
+| `core/lib/tasks/simulator.rake` | Task `simulator:personas` |
+
+### Verificação
+
+Os testes do simulador rodam no contêiner com `docker compose exec channel-simulator pytest`. Os servidores falsos (Core, Action Cable e Mailpit) são apps `aiohttp` de teste, e o SMTP falso é um `socketserver` em thread.
+
+| Arquivo | O que comprova |
+| - | - |
+| `channel_simulator/tests/test_signature.py` | Vetores de assinatura do contrato |
+| `channel_simulator/tests/test_personas.py` | Leitura do arquivo e lojistas novos determinísticos, com o código do país da marca |
+| `channel_simulator/tests/test_records.py` | JSONL com append e `flush` |
+| `channel_simulator/tests/test_templates.py` | Determinismo, idioma, modelos por intenção e anexos |
+| `channel_simulator/tests/test_whatsapp.py` | Payload de texto, imagem e documento; assinatura; verificação; receptor com Bearer certo, errado e ausente, corpo inválido e registro |
+| `channel_simulator/tests/test_chat.py` | Envio assinado; registro de streams (200, 400, 409, persistido e relido); leitura do Turbo Stream; cliente Action Cable com welcome, inscrição, mensagem, reconexão, inscrição recusada, welcome ausente e conexão parada |
+| `channel_simulator/tests/test_email.py` | Montagem com e sem anexo; envio SMTP com sucesso, destinatário recusado e servidor fora do ar; poller com paginação, header ausente, id já visto, ids relidos, headers RFC 2047 e Mailpit fora do ar |
+| `channel_simulator/tests/test_sender.py` | Sorteio determinístico; `send` nos três canais; cenário entre canais; erro de montagem registrado; Core fora do ar |
+| `channel_simulator/tests/test_server.py` | Rotas, `GET /health` e streams relidos na partida |
+| `core/spec/tasks/simulator_personas_spec.rb` | Marcas e canais, lojistas da própria marca com as três identidades, lojista incompleto fora e mesma saída em duas execuções |
 | `core/spec/seeds_spec.rb` | E-mails dos lojistas em ASCII |
 
-- Os testes do simulador rodam no contêiner: `docker compose exec channel-simulator pytest`.
-- Os servidores falsos (Core, Action Cable, Mailpit) são apps `aiohttp` de teste; o SMTP falso é um `socketserver` em thread.
+No Compose, com `web`, `jobs-default`, `mailpit` e `channel-simulator`: o `verify-whatsapp` responde 200 com o `challenge`; o `scenario cross-channel` grava três mensagens do mesmo lojista na mesma conversa; o `send` nos três canais e nas duas marcas grava uma mensagem por envio, com `message.created`, e o job de webhook para as conversas que ficaram com a IA; as respostas do Core chegam a `received.jsonl`, uma por canal, com o id da mensagem do Core; a mesma entrega repetida aparece como o mesmo `core_message_id` duas vezes; e, depois de um reinício do `channel-simulator`, os streams são inscritos de novo e os e-mails já vistos não são registrados outra vez.
 
-**Checagem ponta a ponta no Compose**, com `web`, `jobs-default`, `mailpit` e `channel-simulator`:
+## Relação com as outras partes
 
-1. `verify-whatsapp`: 200 com o `challenge`.
-2. `scenario cross-channel` na InfinitePay: três mensagens do mesmo `Contact` na mesma conversa, cada uma com `message.created`; o job de webhook existe quando o roteamento atribui a conversa à IA (`with_ai`), conforme `documents/fases/07-triagem-roteamento-e-distribuicao.md`.
-3. `send` com `channel` e `brand` iguais a `all`, `count` 30, `rate` 5 e `attachments` 0,3: 30 linhas em `sent.jsonl` (10 por canal), status 200 ou 250, 30 mensagens no banco com `message.created`, e job de webhook para as mensagens das conversas em `with_ai`.
-4. Respostas por `Conversations::Outbound.append!` a uma mensagem de cada canal da conversa do passo 2: três linhas em `received.jsonl`, uma por canal, com o id da `Message` do Core.
-5. `Channels::DeliveryJob.perform_now` repetido para a resposta do WhatsApp: o mesmo `core_message_id` duas vezes em `received.jsonl`.
-6. Reinício do `channel-simulator`: o Core confirma a assinatura de todos os streams, os e-mails já vistos não são registrados de novo, e uma resposta de chat posterior chega.
-
-## Pontos de atenção
-
-- **Respostas de chat durante a queda do WebSocket.** O Turbo Stream não reenvia o que foi transmitido enquanto o simulador estava desconectado. Na F17, o simulador fica de pé durante a carga, e as falhas da H3 atingem Broker e worker, não o simulador.
-- **Conexão do Action Cable sem assinaturas.** Caso observado uma vez na checagem ponta a ponta, sem causa determinada: o WebSocket aberto, nenhuma assinatura enviada e as respostas de chat sem registro; o processo reiniciado assina normalmente. O monitor de conexão parada e o fechamento na falha de assinatura cobrem `welcome` perdido, conexão sem ping e erro de envio; os logs de conexão e de assinatura identificam o caso. Antes da carga da F17, conferir no log do `web` a confirmação de cada stream (`Turbo::StreamsChannel is transmitting the subscription confirmation`).
-- **E-mail fora da carga.** O poller do Mailpit atende o teste funcional, não 250 msg/s, conforme a arquitetura.
-- **Personas desatualizadas.** Se as seeds mudarem, a task precisa ser rodada de novo antes dos comandos.
-- **Lojistas já gravados.** As seeds buscam o lojista pelo telefone e não alteram um lojista existente: um e-mail gravado com acento no banco continua assim até que a identidade seja atualizada.
-- **Sem Python na máquina.** Os testes do simulador rodam no contêiner.
-
-## Reflexos em outras fases
-
-| Fase | Fato | Tratamento |
-| - | - | - |
-| F3 | O simulador usa do contrato só a assinatura, no chat | `signature.py` é cópia do agente mock e roda os mesmos vetores |
-| F8 | A resposta do agente sai por `Conversations::Outbound.append!` e chega ao simulador pelo canal de origem | O `received.jsonl` registra as respostas da ação `reply` sem mudança no simulador |
-| F11 | A resposta do analista sai pelo mesmo serviço | O registro guarda o autor no chat (`author`) |
-| F17 | O k6 chama direto as entradas de WhatsApp e chat | O k6 registra cada stream do chat em `POST /chat/streams`, com o `app_user_id`; a reconciliação lê `sent.jsonl`, `received.jsonl` e `audit_events` |
+| Parte | Relação |
+| - | - |
+| Banco e seeds (F1) | Os lojistas e os canais das marcas vêm das seeds, pela task `simulator:personas` |
+| Contrato (F3) | O simulador usa do contrato a assinatura HMAC com timestamp, na entrada do chat, e roda os mesmos vetores de teste |
+| Canais (F4) | O simulador fala com as entradas e é o destino das saídas de cada canal |
+| Roteamento (F6) | Os modelos de texto e os assuntos de e-mail fazem parte do corpus do classificador |
+| API de ações (F8) | A resposta do agente sai por `Conversations::Outbound.append!` e chega ao simulador pelo canal de origem |
+| Handoff e painel (F11) | A resposta do analista sai pelo mesmo caminho, e o registro do chat guarda o autor |
+| Experimento (F17) | O k6 registra os streams do chat no simulador pelo `POST /chat/streams`; a reconciliação lê `sent.jsonl`, `received.jsonl` e `audit_events` |
 
 ## Fontes
 
+- `documents/arquitetura.md`, seções "Componentes simulados" e "Experimento técnico"
+- `documents/fases/05-canais-de-entrada-e-identidade.md`, formatos de entrada e de saída de cada canal
 - Código da gem `actioncable` 8.1.4.1 na imagem `cloudesk-core:dev` (`server/connections.rb`: `BEAT_INTERVAL = 3`; `connection/base.rb`; `app/assets/javascripts/actioncable.js`: `ConnectionMonitor.staleThreshold = 6`)
 - Código do `smtplib` na imagem `python:3.13-slim` (`sendmail`: `SMTPDataError` para resposta diferente de 250 ao `DATA`)
 - [Mailpit · API v1](https://mailpit.axllent.org/docs/api-v1/)

@@ -44,6 +44,7 @@ def test_encontra_os_schemas_do_contrato():
         "action",
         "action-response",
         "context",
+        "kafka.dlq-headers",
         "kafka.inbound-headers",
         "kafka.outbound-headers",
         "webhook.message-created",

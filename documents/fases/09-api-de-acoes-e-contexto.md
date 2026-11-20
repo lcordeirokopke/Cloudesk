@@ -1,146 +1,197 @@
-# Cloudesk · F8 · API de ações e de contexto
+# Cloudesk · API de ações e de contexto
 
-## Objetivo
+## O que é
 
-A F8 permite que o agente atue na plataforma como um atendente. A API de ações recebe do Broker as ações `reply`, `escalate`, `categorize` e `resolve`, assinadas com HMAC-SHA256 e timestamp, com idempotência por `Idempotency-Key` e recusa com `409` da ação desatualizada ou com a conversa fora de `with_ai`. O `audit_event` de cada ação guarda as ferramentas consultadas e os carimbos de horário de cada salto. O endpoint de contexto entrega ao agente o histórico da conversa.
+A API de ações e de contexto é a porta por onde o agente de IA atua no Cloudesk. Ela dá ao agente dois movimentos, os mesmos de um atendente humano:
 
-Este documento detalha cada decisão e a fonte que a sustenta. O resumo está em `documents/arquitetura.md`, que prevalece; a lista de entregas e o critério de pronto estão em `contexto/ordem-de-implementacao.md`.
+- **ler** a conversa antes de decidir, pelo endpoint de contexto;
+- **agir** sobre ela, pela API de ações: responder ao lojista (`reply`), escalar para um analista (`escalate`), reclassificar o assunto (`categorize`) ou encerrar o atendimento (`resolve`).
 
-## Resumo das decisões
+O agente não acessa o banco nem conhece as regras internas da plataforma. Tudo o que ele faz passa por esses dois endpoints, e o Core decide se cada ação vale, executa o efeito e registra a decisão. É assim que o princípio "o agente é um atendente da plataforma" se concretiza: a IA tem as mesmas portas de entrada que um usuário, sujeitas às mesmas regras e à mesma auditoria.
 
-| Tema | Decisão |
-| - | - |
-| Segredos | `AGENT_ACTIONS_SECRET` assina as chamadas do Broker à API de ações; `AGENT_CONTEXT_SECRET` assina o `GET` da `context_url` pelo agente. Os dois ficam no `.env` e no bloco `rails-environment` do Compose |
-| Endpoint de ações | Único: `POST /api/v1/agent/actions`. O corpo é o valor Kafka de `agent.outbound`, sem alteração; marca e conversa vêm do corpo assinado |
-| Endpoint de contexto | `GET /api/v1/agent/brands/<brand>/conversations/<conversation_id>/context`. A marca fica no caminho e entra na assinatura |
-| Conversa fora de `with_ai` | `409` com status `rejected`: `conversation_id`, `event_id` do `audit_event` da recusa e `state` da conversa |
-| Ação desatualizada | `409` com status `stale` quando `based_on_sequence` é menor que a sequência da última mensagem do lojista. Vale para as quatro ações |
-| Recusas guardadas | `stale` e `rejected` são resultado final da chave e ficam em `processed_events`. A repetição devolve o mesmo corpo e o mesmo código, sem novo `audit_event` |
-| Evento da ação | `agent.reply`, `agent.escalate`, `agent.categorize` e `agent.resolve`, com o corpo completo da ação, a `Idempotency-Key` e o `received_at` do Core. Os eventos de domínio são gravados à parte, na mesma transação. As recusas gravam `agent.action.stale` e `agent.action.rejected` |
-| Ator | `actor_type: "ai"`; `actor_id` é o atendente da conversa e, na recusa por estado, o atendente IA da marca |
-| Concorrência | Um único `Tenancy.with_brand` com `FOR UPDATE` na conversa: as ações da mesma conversa, inclusive as duplicadas simultâneas, ficam serializadas |
-| Contexto | Histórico em ordem crescente de `sequence`, `customer_memory` nulo até a F12, sem cache |
-| Prova sem Broker | `bin/rails agent:action` e `bin/rails agent:context` |
+## Onde fica no fluxo
 
-## Arquivos
+```text
+Canal → Core → webhook → Broker → agent.inbound → agente
+                                                    │
+                     GET context_url  ◄─────────────┤  (lê a conversa)
+                                                    │
+agente → agent.outbound → Broker → POST /api/v1/agent/actions → Core → canal do lojista
+```
 
-### Contrato (`contracts/v1/`)
+O webhook `message.created` avisa o agente de uma mensagem nova e traz a `context_url`. O agente lê o contexto, decide e publica a ação em `agent.outbound`; o Broker entrega a ação ao Core. Esta parte do sistema cobre os dois pontos em que o Core recebe o agente: a leitura do contexto e o recebimento da ação.
 
-| Arquivo | Conteúdo |
-| - | - |
-| `schemas/action-response.json` | Status `rejected` com `conversation_id`, `event_id` e `state` (um dos estados fora de `with_ai`) |
-| `examples/action-response/valid/rejected.json` | Recusa com a conversa em `with_human` |
-| `examples/action-response/invalid/rejected-sem-state.json` | Recusa sem `state` |
-| `schemas/webhook.message-created.json` | Pattern da `context_url` com o slug da marca |
-| `examples/webhook.message-created/**` | `context_url` com a marca de cada exemplo |
-| `examples/webhook.message-created/invalid/context-url-sem-marca.json` | `context_url` sem a marca |
-| `signature-vectors.json` | O corpo do vetor de webhook e os vetores de `GET` com o caminho com a marca; assinaturas conferidas por `openssl dgst -sha256 -hmac` |
+## Por que existe e que valor gera
 
-### Core (`core/`)
+**Correção diante de falhas.** A entrega entre Core, Broker e agente é at-least-once: qualquer salto pode repetir uma mensagem depois de uma queda ou de um retry. A API de ações é a única barreira de deduplicação do sistema. Com ela, a repetição não chega ao lojista, e Broker e agente podem ser reiniciados e escalados sem guardar estado. A hipótese H3 do experimento, nenhuma mensagem perdida nem duplicada com o Broker reiniciado e um worker morto, depende dessa barreira.
 
-| Arquivo | Conteúdo |
-| - | - |
-| `lib/contract/message_created.rb` | `context_url(brand, conversation_id)` |
-| `app/modules/agents/settings.rb` | `agent_actions_secret` e `agent_context_secret` |
-| `app/modules/agents/action_processor.rb` | Conferências, trava, idempotência, estado, sequência, execução de cada tipo e resultado no formato do `action-response` |
-| `app/modules/agents/conversation_context.rb` | Corpo do schema `context` |
-| `app/models/attendant.rb` | `Attendant.first_ai`: o atendente IA da marca corrente, o primeiro por nome; usado pelo `Routing::Route` e pela recusa |
-| `app/controllers/api/v1/agent/base_controller.rb` | `ActionController::API`, verificação da assinatura com o segredo de cada rota e erros no formato do contrato |
-| `app/controllers/api/v1/agent/actions_controller.rb` | `POST /api/v1/agent/actions` |
-| `app/controllers/api/v1/agent/contexts_controller.rb` | `GET /api/v1/agent/brands/:brand/conversations/:conversation_id/context` |
-| `config/routes.rb` | Rotas da API do agente |
-| `lib/tasks/agent.rake` | `agent:action` e `agent:context` |
+**Correção diante da desordem.** Eventos da mesma conversa podem chegar ao agente fora de ordem, porque passam por jobs paralelos com retry antes do Kafka. A API recusa a ação baseada em uma conversa que já mudou, e a resposta ao lojista vem sempre de uma decisão tomada sobre o estado mais recente. A ordem fica garantida pelo estado da conversa, sem depender do transporte.
 
-### Raiz
+**Fronteira entre IA e humano.** Quando um analista assume a conversa, ou quando ela é encerrada, nenhuma ação atrasada da IA tem efeito. O lojista não recebe uma resposta automática no meio de um atendimento humano.
 
-| Arquivo | Conteúdo |
-| - | - |
-| `.env.example` | `AGENT_ACTIONS_SECRET` e `AGENT_CONTEXT_SECRET` |
-| `compose.yaml` | As duas variáveis no bloco `rails-environment` |
+**Rastreabilidade.** Cada ação, aceita ou recusada, vira um registro de auditoria com o corpo completo do que o agente enviou: ferramentas consultadas com entradas e saídas, modelo quando a decisão vem de um LLM e os horários de cada salto. Esse registro é a base da linha do tempo por mensagem e responde, para qualquer resposta dada ao lojista, o que a IA consultou e quanto tempo cada etapa levou.
 
-## Contexto da conversa
+**Isolamento entre marcas.** Toda leitura e escrita acontece dentro da marca da conversa, com o Row-Level Security do Postgres. O agente de uma marca não lê nem altera conversas de outra, mesmo com um identificador correto em mãos.
 
-`GET /api/v1/agent/brands/<brand>/conversations/<conversation_id>/context`, assinado pelo agente com `AGENT_CONTEXT_SECRET` sobre o caminho com a query string (`request.fullpath`).
+## Como funciona
 
-- A assinatura é conferida antes de qualquer leitura do banco.
-- A marca vem do slug do caminho. A conversa é lida dentro de `Tenancy.with_brand` dessa marca; com o RLS, a conversa de outra marca não é visível e responde `404`.
-- Marca inexistente e id que não é UUID também respondem `404 not_found`.
-- O corpo vem de `Agents::ConversationContext`: `conversation` (`id`, `brand`, `channel`, `state`, `last_sequence`), `messages` em ordem crescente de `sequence` (`sequence`, `author`, `channel`, `text`, `created_at`) e `customer_memory` nulo.
-- O endpoint responde em qualquer estado da conversa: é o agente quem decide, pelo estado e pelas sequências, se o evento ainda pede ação.
+### Autenticação
 
-**Por que a marca no caminho.** O RLS exige a marca na transação antes de qualquer linha de domínio ficar visível (`documents/fases/02-banco-multi-marca-e-entidades.md`). Com a marca no caminho, ela entra no texto assinado: uma assinatura válida para uma marca não serve para outra.
+As duas chamadas são assinadas com HMAC-SHA256 e timestamp, no esquema comum do contrato (`documents/fases/04-contrato-de-integracao.md`): o texto assinado é `<timestamp>.<MÉTODO>.<caminho>.<corpo>`, com janela de 300 segundos.
 
-## API de ações
-
-`POST /api/v1/agent/actions`, assinado pelo Broker com `AGENT_ACTIONS_SECRET`, com o header `Idempotency-Key`.
-
-### Códigos
-
-| Código | Corpo | Quando |
+| Chamada | Quem chama | Segredo |
 | - | - | - |
-| `200` | `accepted` | Ação aceita, inclusive a repetição da chave |
-| `409` | `stale` | `based_on_sequence` menor que a última mensagem do lojista |
-| `409` | `rejected` | Conversa fora de `with_ai` |
-| `400` | `error` `missing_idempotency_key` | Sem o header `Idempotency-Key` |
-| `401` | `error` `invalid_signature` ou `expired_timestamp` | Assinatura ausente ou que não confere; timestamp fora da janela de 300 s |
-| `404` | `error` `not_found` | Marca do corpo inexistente; conversa inexistente na marca |
-| `422` | `error` `invalid_payload` | JSON inválido; corpo fora do schema `action`; `Idempotency-Key` diferente da derivada do corpo (`Contract::IdempotencyKey.for_action`); `inbound_event_id` que não é um `message.created` da conversa; `based_on_sequence` maior que `last_sequence` |
+| `POST /api/v1/agent/actions` | Broker (`broker-consumer`) | `AGENT_ACTIONS_SECRET` |
+| `GET /api/v1/agent/brands/<brand>/conversations/<conversation_id>/context` | Agente | `AGENT_CONTEXT_SECRET` |
 
-Os dois `409` são resultado final para o Broker: sem retry e sem DLQ. Os demais `4xx` vão para a DLQ no Broker (F9).
+- Cada chamada tem o seu segredo. O agente conhece só o segredo de leitura do contexto e não consegue forjar uma ação; o Broker conhece só o das ações.
+- A assinatura cobre o método e o caminho com a query string: uma assinatura capturada não vale em outro endpoint nem em outra conversa.
+- A assinatura é conferida antes de qualquer leitura do banco. Uma chamada sem assinatura válida não revela se a marca ou a conversa existem.
 
-### Ordem do processamento
+### Contexto da conversa
 
-O controller confere a assinatura, o header `Idempotency-Key` e o JSON, e chama `Agents::ActionProcessor`. O processador:
-
-1. confere o schema `action` e a `Idempotency-Key` derivada, sem tocar no banco;
-2. busca a marca pelo slug do corpo;
-3. abre um único `Tenancy.with_brand` e trava a conversa com `FOR UPDATE`;
-4. consulta `processed_events`: com a chave existente, devolve o corpo guardado, com o código do status dele;
-5. confere o `inbound_event_id` e o limite de `based_on_sequence` (`422`);
-6. confere o estado: fora de `with_ai`, grava `agent.action.rejected` e responde `rejected`;
-7. confere a sequência: com mensagem do lojista mais nova, grava `agent.action.stale` e responde `stale`;
-8. executa a ação dentro do `Audit::Command` do evento da ação;
-9. grava o corpo da resposta em `processed_events` (`ProcessedEvent.record`).
-
-Os erros `invalid_payload` e `not_found` não ficam em `processed_events`: uma ação corrigida com a mesma chave ainda pode ser aceita.
-
-**Concorrência.** A trava na linha da conversa serializa as ações da mesma conversa. Duas ações com a mesma chave, enviadas ao mesmo tempo, chegam ao passo 3 juntas; a segunda espera o commit da primeira. No nível de isolamento `READ COMMITTED`, padrão do PostgreSQL, cada comando lê o que já foi confirmado no início dele: a consulta a `processed_events` da segunda transação, feita depois da trava, encontra a linha gravada pela primeira e devolve o mesmo corpo. Se `ProcessedEvent.record` encontrasse a chave já gravada, a exceção desfaria a transação inteira, sem efeito.
-
-**Por que o estado antes da sequência.** A conversa pode mudar de estado sem mensagem nova do lojista (analista assume, `resolve` aceito), e com o estado fora de `with_ai` nenhuma ação do agente vale, atual ou não.
-
-### Evento da ação
-
-Cada ação aceita grava um evento próprio, `agent.<type>`, por `Audit::Command`:
+O endpoint de contexto devolve a conversa como o agente precisa vê-la para decidir:
 
 | Campo | Conteúdo |
 | - | - |
-| `actor_type`, `actor_id` | `ai` e o atendente da conversa |
-| `target` | A mensagem gravada no `reply`; a conversa nas demais |
-| envelope `sequence` | A sequência da mensagem do `reply`; nulo nas demais |
-| envelope `received_at` | Horário em que o Core recebeu a chamada do Broker (`TraceContextMiddleware`) |
-| envelope `traceparent`, `trace_id` | O trace do header `traceparent` da chamada |
-| `payload` | `idempotency_key` e `action`, o corpo completo da ação: ferramentas com entradas, saídas e horários, `model` quando existe e os carimbos `broker_received_at`, `kafka_appended_at`, `agent_consumed_at` e `agent_published_at` |
+| `conversation` | `id`, `brand`, `channel`, `state` e `last_sequence` |
+| `messages` | Histórico completo, em ordem crescente de `sequence`: autor, canal, texto e horário de cada mensagem |
+| `customer_memory` | Resumo das conversas anteriores do lojista; nulo enquanto a memória não existe (F12) |
 
-Os eventos de domínio da ação (`message.created`, `conversation.escalated`, `conversation.classified`, `conversation.routed`, `conversation.resolved`) são gravados à parte, na mesma transação. O `event_id` da resposta `accepted` é o do evento da ação.
+A marca fica no caminho. O RLS exige a marca na transação antes de qualquer linha ficar visível, e a marca no caminho entra no texto assinado: o acesso a uma conversa depende de conhecer a marca certa e de ter a assinatura certa. Conversa de outra marca, marca inexistente e identificador inválido respondem `404`.
 
-As recusas gravam `agent.action.stale` (payload com a ação, a chave, `based_on_sequence` e `last_customer_sequence`) e `agent.action.rejected` (payload com a ação, a chave e `state`), com a conversa como alvo. Na recusa por estado, o atendente da conversa pode ser um analista ou nenhum; o ator é o atendente IA da marca (`Attendant.first_ai`), porque quem tentou agir foi a IA.
+O endpoint responde em qualquer estado da conversa. Quem decide se o evento ainda pede ação é o agente: se o contexto traz uma mensagem do lojista mais nova que a do evento recebido, o agente descarta o evento, porque o evento da mensagem mais nova produz a resposta.
 
-### Ações
+A resposta é montada por `Agents::ConversationContext` a cada leitura, direto do banco, sem cache.
 
-| Ação | Efeito | `message_sequence` |
+### Recebimento de uma ação
+
+O corpo da chamada é a ação do agente, exatamente como ela está no Kafka. A marca e a conversa vêm desse corpo, que é assinado. O header `Idempotency-Key` leva a chave calculada pelo Broker, no formato `<inbound_event_id>:<type>`: o evento de entrada que motivou a ação e o tipo dela.
+
+`Agents::ActionProcessor` trata a ação em uma sequência fixa:
+
+1. **Formato.** O corpo segue o schema `action` do contrato, e a `Idempotency-Key` é a derivada do próprio corpo. Uma chave que não corresponde à ação seria uma forma de burlar a deduplicação, e é recusada.
+2. **Marca e conversa.** A marca vem do slug do corpo; a conversa é lida dentro da marca e travada com `FOR UPDATE`.
+3. **Repetição.** Se a chave já foi processada, o Core devolve o mesmo corpo e o mesmo código da primeira vez, sem novo efeito nem novo registro.
+4. **Coerência.** O evento de entrada citado é uma mensagem da própria conversa, e o `based_on_sequence` não passa da última sequência dela. Uma ação que fala de mensagens inexistentes é recusada como inválida.
+5. **Estado.** A conversa está com a IA (`with_ai`). Em qualquer outro estado, a ação é recusada com `rejected`.
+6. **Atualidade.** Nenhuma mensagem do lojista é mais nova que o `based_on_sequence`. Se existe, a ação é recusada com `stale`.
+7. **Execução.** O efeito da ação, o registro de auditoria dela e a chave processada são gravados na mesma transação.
+
+**Por que travar a conversa.** A trava na linha da conversa faz com que as ações de uma mesma conversa sejam tratadas uma de cada vez. Duas cópias da mesma ação, chegando juntas, não produzem dois efeitos: a segunda espera a primeira terminar e, quando segue, encontra a chave já processada e devolve o mesmo resultado. No nível de isolamento `READ COMMITTED`, padrão do PostgreSQL, cada comando enxerga o que já estava confirmado no instante em que começou, e por isso a consulta da segunda cópia, feita depois da trava, enxerga o que a primeira gravou. A mesma trava serializa a ação com uma mensagem nova do lojista, que atualiza a mesma linha: a ação é avaliada com a conversa em um estado definido.
+
+**Por que o estado vem antes da atualidade.** A conversa pode sair da IA sem mensagem nova do lojista, quando um analista assume ou quando ela é resolvida. Nesses casos a ação chega com a sequência em dia e mesmo assim não pode valer.
+
+### Os quatro efeitos
+
+| Ação | O que acontece |
+| - | - |
+| `reply` | A resposta é gravada como mensagem da IA, com o atendente da conversa, e a entrega ao lojista é enfileirada na mesma transação, pelo mesmo canal e pelo mesmo número ou e-mail da marca que recebeu a mensagem respondida |
+| `escalate` | O Core grava o handoff com motivo, resumo e contexto estruturado (intenção, entidades, ferramentas e retornos, tentativas, sentimento, próximo passo sugerido e confiança). A conversa vai para `awaiting_human`, na fila em que estava, sem atendente e com o horário de entrada na espera |
+| `categorize` | A categoria informada pelo agente dispara um novo roteamento pelas regras da marca. Conforme a regra que casar, a conversa volta à IA, vai para uma fila humana ou fica em triagem |
+| `resolve` | A conversa vai para `resolved`, com o horário de resolução, e o atendente continua registrado nela. Nenhuma mensagem vai ao lojista; se ele escrever dentro do prazo de reabertura, a conversa volta à triagem |
+
+A mensagem respondida pelo `reply` é a última mensagem do lojista até o `based_on_sequence`. É dela que a entrega lê o destinatário, que só existe em mensagens do lojista.
+
+Cada evento de entrada admite uma ação de cada tipo, porque a chave combina evento e tipo. O agente pode, por exemplo, reclassificar e responder ao mesmo evento. Se a reclassificação leva a conversa para um humano, a resposta seguinte é recusada com `rejected`, como deve ser.
+
+### Respostas ao Broker
+
+| Código | Status | Significado para o Broker |
 | - | - | - |
-| `reply` | Grava a mensagem com autor `ai` e o atendente da conversa por `Conversations::Outbound.append!`, que enfileira `Channels::DeliveryJob` na mesma transação | Sequência da mensagem gravada |
-| `escalate` | Grava o `Handoff` (`reason`, `summary`, `context` da ação) e `conversation.escalated`; a conversa vai de `with_ai` a `awaiting_human` na fila atual, sem atendente e com `queued_at` | Nulo |
-| `categorize` | Chama `Routing::Route` com `trigger: "categorize"`, a categoria e o atendente IA como `actor_id`. A conversa volta a `with_ai`, vai para fila humana ou fica em `triage`. O webhook não é reenviado | Nulo |
-| `resolve` | `with_ai → resolved` (`conversation.resolved`, com o `reason` da ação quando existe), grava `resolved_at` e mantém o atendente. Nenhuma mensagem vai ao lojista | Nulo |
+| `200` | `accepted` | Ação aplicada; também a resposta da repetição |
+| `409` | `stale` | A conversa avançou; resultado final, sem retry e sem DLQ |
+| `409` | `rejected` | A conversa não está com a IA; resultado final, sem retry e sem DLQ |
+| `400` | `missing_idempotency_key` | Chamada sem a chave |
+| `401` | `invalid_signature`, `expired_timestamp` | Assinatura ausente, errada ou fora da janela |
+| `404` | `not_found` | Marca ou conversa inexistente |
+| `422` | `invalid_payload` | Ação fora do contrato ou incoerente com a conversa |
 
-**`in_reply_to_sequence` do `reply`.** É a última mensagem do lojista com `sequence` menor ou igual ao `based_on_sequence`. A entrega (`Channels::DeliveryJob`) lê o destinatário (`identity`) do `message.created` da mensagem respondida, e esse campo existe só em mensagem do lojista. Como a ação aceita não está desatualizada, a mensagem respondida é a última do lojista na conversa.
+Os dois `409` são decisões de negócio, não falhas: reenviar não mudaria o resultado. A aceitação e as duas recusas ficam guardadas com a chave, e a repetição recebe sempre a mesma resposta. Os erros `400`, `401`, `404` e `422` não ficam guardados: uma ação corrigida com a mesma chave ainda pode ser aceita.
 
-**Uma ação de cada tipo por evento.** A `Idempotency-Key` é `<inbound_event_id>:<type>`: o agente pode enviar `categorize` e `reply` para o mesmo evento. Se o `categorize` leva a conversa para fila humana ou a deixa em `triage`, o `reply` seguinte recebe `409 rejected`.
+### Auditoria e linha do tempo
 
-## Task `agent:`
+Toda ação tratada deixa um registro em `audit_events`:
 
-Prova da API sem o Broker, rodada no contêiner `web`:
+| Situação | Evento |
+| - | - |
+| Ação aceita | `agent.reply`, `agent.escalate`, `agent.categorize` ou `agent.resolve` |
+| Ação desatualizada | `agent.action.stale`, com a sequência usada pelo agente e a última do lojista |
+| Conversa fora da IA | `agent.action.rejected`, com o estado da conversa |
+
+O registro guarda o corpo completo da ação e a `Idempotency-Key`. O envelope do evento traz o horário em que o Core recebeu a chamada e o trace do header `traceparent`. Os efeitos de domínio, como a mensagem gravada, o handoff, a mudança de estado e o novo roteamento, têm os seus próprios eventos, gravados na mesma transação.
+
+Com isso, a linha do tempo de uma resposta é montada só a partir da auditoria:
+
+```text
+Core recebe a mensagem (received_at do message.created)
+  → Broker recebe o webhook (broker_received_at)
+  → Kafka grava o evento (kafka_appended_at)
+  → agente consome (agent_consumed_at) e consulta ferramentas (started_at, finished_at)
+  → agente publica (agent_published_at)
+  → Core recebe a ação (received_at do agent.<type>)
+  → canal entrega a resposta (message.delivered)
+```
+
+O ator de todos esses eventos é a IA. Na recusa por estado, a conversa pode estar com um analista ou sem atendente; o registro atribui a tentativa ao atendente IA da marca, que é quem tentou agir.
+
+## O que o sistema garante
+
+- Uma ação entregue várias vezes produz um único efeito, e todas as entregas recebem a mesma resposta.
+- Uma ação baseada em uma conversa que já recebeu mensagem nova do lojista não tem efeito.
+- Uma ação sobre uma conversa que não está com a IA não tem efeito.
+- Toda ação tratada, aceita ou recusada, deixa registro de auditoria; a repetição não deixa.
+- Efeito, auditoria, entrega ao canal e registro da chave são gravados juntos ou não são gravados.
+- Nenhuma chamada lê ou altera dados de uma marca diferente da sua.
+
+## Como compõe os entregáveis do projeto
+
+Esta parte fecha o caminho de volta do agente à plataforma. Sem ela, o Core avisa o agente de cada mensagem, mas nenhuma decisão da IA chega ao lojista. Cada entregável abaixo depende dela em algum ponto.
+
+| Entregável | O que esta parte entrega | O que fica com outras partes |
+| - | - | - |
+| Integração com o atendente por webhooks e broker | O lado do Core na volta: recebe a ação do Broker, aplica e responde conforme o contrato; e a leitura do contexto pelo agente | Webhook de ida (F7), Broker (F9) e agente mock (F10) |
+| Interface de conversa entre cliente e atendente (IA) | A resposta da IA vira mensagem da conversa e chega ao lojista pelo canal em que ele escreveu, pelo mesmo caminho de saída do analista | Telas de conversa (F4 e F11) |
+| Triagem, priorização e distribuição entre IA e analistas | A IA participa da triagem: o `categorize` reclassifica e dispara novo roteamento pelas regras da marca, e o `escalate` tira a conversa da IA e a coloca em espera por um humano | Classificador, regras e distribuição por capacidade (F6); fila humana pela regra de escalação e painel do analista (F11) |
+| Handoff com resumo e contexto, preservando o histórico | O `escalate` grava o handoff com motivo, resumo e contexto estruturado, e o histórico continua na mesma conversa | Painel do analista e notificação (F11) |
+| Rastreabilidade e auditoria das decisões | Cada ação, aceita ou recusada, tem registro próprio com o corpo completo, as ferramentas e os horários de cada salto | Linha do tempo na tela (F14) |
+| Memória e contexto entre interações | O agente lê o histórico completo da conversa antes de cada decisão | Memória do lojista entre conversas (F12) |
+| Agente mock com ferramentas falsas e modo LLM | A API registra as ferramentas consultadas e, no modo LLM, o modelo, a versão e os parâmetros de cada decisão | Agente (F10) e modo LLM (F16) |
+| Multi-marca | Toda leitura e ação acontece dentro da marca da conversa, com assinatura que inclui a marca no contexto | RLS e papéis de banco (F1) |
+
+### No experimento técnico
+
+| Hipótese | Contribuição |
+| - | - |
+| H3 · nenhuma mensagem perdida nem duplicada com falhas | A deduplicação pela `Idempotency-Key` impede que reentregas causadas pelo reinício do Broker ou pela morte de um worker cheguem ao lojista. A recusa `stale` define quando uma mensagem do lojista conta como atendida: existe uma ação aceita com `based_on_sequence` maior ou igual à sequência dela, e essa é a regra da reconciliação |
+| H4 · latência ponta a ponta com p95 < 1 s, descontada a latência do agente | O registro da ação guarda os horários de consumo e publicação do agente e de cada ferramenta, o que separa o tempo do agente do tempo da plataforma |
+| H1 e H2 | Não dependem desta parte diretamente, mas a carga dela no `web` e a trava por conversa entram nas medidas (ver "Limitações") |
+
+## Diferenciais
+
+| Diferencial | Contribuição desta parte |
+| - | - |
+| 5 · Modos de falha do agente mock | Dois dos quatro modos são tratados aqui. A **ação duplicada** produz um único efeito e recebe a mesma resposta; a **ação desatualizada** recebe `409 stale` e fica registrada. Os modos de atraso e sem resposta são tratados pela varredura de SLA (F11). Com isso, a robustez pode ser demonstrada ligando um modo no agente e mostrando a resposta da API e o registro de auditoria |
+| 1 · Briefing de handoff avaliado pelo analista | O `escalate` grava todo o conteúdo do briefing: problema resumido, intenção, entidades, ferramentas e retornos, tentativas, sentimento, próximo passo sugerido e confiança. O contrato recusa um `escalate` sem próximo passo ou sem confiança, o que garante que todo handoff tem esses campos. O cartão e a avaliação pelo analista são da F11 |
+| 4 · "Por que caiu aqui?" | Quando o agente reclassifica a conversa, o novo roteamento grava a regra e a versão que casaram, com a indicação de que o gatilho foi o `categorize` da IA. A tela consegue explicar a fila atual mesmo quando ela é resultado de uma decisão do agente |
+| 2 · Cockpit operacional | O motivo de cada escalação fica gravado no handoff e no registro da ação, e é o dado de origem do Pareto de motivos de escalação; o painel é da F14 |
+
+## Limitações
+
+- **Uma conversa de cada vez.** A trava serializa tudo o que acontece em uma conversa: ações do agente e mensagens do lojista. Conversas diferentes seguem em paralelo, mas uma conversa muito ativa forma fila. O efeito na carga é medido na F15.
+- **Carga no `web`.** Cada mensagem do lojista gera duas chamadas a mais no processo `web`, a leitura do contexto e a ação; na meta de 250 msg/s, são cerca de 500 requisições por segundo. O contexto é montado do banco a cada leitura, e o cache fica para a F15, se a medida pedir.
+- **Histórico inteiro.** O contexto traz todas as mensagens da conversa, sem paginação. O tamanho é limitado pelo ciclo de vida da conversa, que fecha depois do prazo de reabertura.
+- **Escalação na fila de origem.** A conversa escalada fica em `awaiting_human` na fila em que estava, com a prioridade que tinha nela. As filas da IA nas seeds pertencem a uma equipe, e os analistas dessa equipe recebem o caso pela distribuição (`Routing::Distributor.next_for`), com a prioridade da fila da IA. O roteamento para a fila humana pela regra de escalação e o painel em que o analista pede o próximo caso são da F11.
+- **Memória do lojista.** `customer_memory` é sempre nulo; o resumo das conversas anteriores entra na F12.
+- **Uma ação por tipo e evento.** A chave não distingue duas ações do mesmo tipo para o mesmo evento: a segunda é tratada como repetição da primeira.
+- **Ordem das chaves.** O corpo guardado para a repetição fica em `jsonb`, que não preserva a ordem das chaves: a repetição traz o mesmo conteúdo com as chaves em outra ordem.
+- **Horários de máquinas diferentes.** A linha do tempo compara horários carimbados por processos distintos e depende de os relógios estarem alinhados; no ambiente local, todos usam o relógio da mesma máquina.
+
+## Operação
+
+### Sem o Broker
+
+A task `agent:` faz o papel do Broker e do agente, no contêiner `web`:
 
 ```text
 bin/rails agent:context CONVERSATION=<id>
@@ -150,74 +201,44 @@ bin/rails agent:action CONVERSATION=<id> TYPE=escalate [REASON=...] [SUMMARY=...
 bin/rails agent:action CONVERSATION=<id> TYPE=resolve [REASON=...]
 ```
 
-- A ação nasce do `message.created` da última mensagem do lojista: `inbound_event_id` e `based_on_sequence` vêm dele; `INBOUND_EVENT_ID` e `BASED_ON` os substituem.
-- Carimbos e `traceparent` são gerados na hora; a lista de ferramentas é vazia. A ação é validada pelo schema `action` antes do envio.
-- O endereço do Core é `CORE_URL`, com padrão `http://localhost:3000`, o próprio `web`.
-- A mesma ação enviada de novo tem a mesma `Idempotency-Key` e recebe o resultado da primeira.
+A ação nasce da última mensagem do lojista; `BASED_ON` e `INBOUND_EVENT_ID` permitem simular uma ação atrasada. A mesma ação enviada de novo tem a mesma chave e recebe a mesma resposta. O endereço do Core é `CORE_URL`, com padrão `http://localhost:3000`.
 
-## Testes
+### Configuração
 
-| Arquivo | Cobertura |
+`AGENT_ACTIONS_SECRET` e `AGENT_CONTEXT_SECRET` ficam no `.env` e chegam aos serviços Rails pelo bloco `rails-environment` do `compose.yaml`. São textos aleatórios gerados para o projeto, por exemplo com `openssl rand -hex 32`.
+
+### Verificação
+
+| Arquivo | O que comprova |
 | - | - |
-| `spec/modules/agents/action_processor_spec.rb` | Cada tipo de ação e seus eventos; ação duplicada com um único efeito; duplicadas simultâneas, em threads com commit; `stale` e `rejected` com `audit_event` e repetição sem novo evento; `stale` nas quatro ações; estado conferido antes da sequência; conferências do `422`; `404`; corpo, ferramentas, `model` e carimbos no evento da ação; `in_reply_to_sequence`; transições e campos de `escalate`, `categorize` e `resolve` |
-| `spec/modules/agents/conversation_context_spec.rb` | Corpo segue o schema `context`; ordem das mensagens; isolamento por marca |
-| `spec/requests/api/v1/agent/actions_spec.rb` | `200` e repetição; `trace_id` do header `traceparent`; `409 stale` e `409 rejected`; assinatura inválida, com o segredo do contexto e vencida; sem `Idempotency-Key`; corpo inválido; marca inexistente e conversa de outra marca; corpos validados pelo schema `action-response` |
-| `spec/requests/api/v1/agent/contexts_spec.rb` | Assinatura com `AGENT_CONTEXT_SECRET`; query string assinada; recusa com o segredo das ações; timestamp vencido; marca no caminho assinado; `404` para conversa de outra marca, marca inexistente e id que não é UUID; corpo validado pelo schema `context` |
-| `spec/contract/message_created_spec.rb` | `context_url` com a marca |
+| `core/spec/modules/agents/action_processor_spec.rb` | Os quatro efeitos e seus eventos; repetição com um único efeito, inclusive com duas cópias simultâneas em transações reais; `stale` e `rejected` com auditoria e repetição sem novo registro; estado conferido antes da atualidade; recusas por formato e coerência; corpo, ferramentas, modelo e horários no registro da ação |
+| `core/spec/modules/agents/conversation_context_spec.rb` | Contexto conforme o contrato, em ordem, e isolado por marca |
+| `core/spec/requests/api/v1/agent/actions_spec.rb` | Códigos HTTP, assinatura, chave obrigatória, trace do header e respostas validadas pelo contrato |
+| `core/spec/requests/api/v1/agent/contexts_spec.rb` | Assinatura com o segredo certo e a marca no caminho, recusa do segredo das ações, `404` entre marcas e corpo validado pelo contrato |
+| `core/spec/contract/` e `agent_mock/tests/contract/` | Os mesmos schemas, exemplos e vetores de assinatura em Ruby e em Python |
 
-O `contract/schemas_spec.rb`, o `contract/signature_spec.rb`, o `agent_mock/tests/contract/test_contract.py` e o `channel_simulator/tests/test_signature.py` leem os exemplos e vetores sem mudança de código.
+No Compose, sem o Broker, uma mensagem de WhatsApp enviada pelo simulador recebe a resposta da IA pelo mesmo número; a repetição do `reply` não duplica a mensagem; uma ação atrasada recebe `409 stale`; depois de `resolve` ou `escalate`, uma nova ação recebe `409 rejected`; e a auditoria mostra cada passo.
 
-Resultado: suíte completa do RSpec com 592 exemplos sem falha; `pytest` do `agent_mock` com 78 testes e do simulador (`test_signature.py`) com 7, sem falha.
+## Relação com as outras partes
 
-## Pronto quando
-
-- A mesma ação enviada duas vezes produz um único efeito e a segunda recebe o corpo da primeira: `action_processor_spec.rb`, `actions_spec.rb` e a prova no Compose.
-- Uma ação com `based_on_sequence` desatualizado recebe `409 stale` e gera `audit_event`: idem.
-- Uma ação com a conversa fora de `with_ai` recebe `409 rejected` e gera `audit_event`: idem.
-- Um `reply` chega ao canal de origem: prova no Compose, com a resposta registrada pelo simulador.
-- O `audit_event` da ação guarda as ferramentas e os carimbos de cada salto: `action_processor_spec.rb`.
-- O `GET` assinado da `context_url` devolve o histórico conforme o schema `context`: `contexts_spec.rb` e a prova no Compose.
-- Os testes de contrato em RSpec e em pytest passam com os exemplos novos.
-
-### Prova no Compose
-
-Com `web`, `jobs-default`, `jobs-webhooks` e `channel-simulator` no ar e sem o Broker:
-
-1. `send` do simulador com uma mensagem de WhatsApp de lojista novo da InfinitePay: conversa em `with_ai`, sequência 1.
-2. `agent:context`: `200` com a conversa e a mensagem do lojista, `customer_memory` nulo.
-3. `agent:action TYPE=reply`: `200 accepted`, `message_sequence` 2; a resposta chega ao `received.jsonl` do simulador pelo mesmo número da marca, com o id da mensagem do Core.
-4. O mesmo `reply` de novo: `200` com o mesmo corpo (o `jsonb` devolve as chaves em outra ordem) e uma única mensagem da IA.
-5. Nova mensagem do lojista (sequência 3) e `agent:action TYPE=resolve BASED_ON=1` com o evento da sequência 1: `409 stale`, `last_customer_sequence` 3.
-6. `agent:action TYPE=resolve`: `200 accepted`; a conversa vai a `resolved`. `agent:action TYPE=reply` em seguida: `409 rejected`, `state` `resolved`.
-7. Em outra conversa, levada a `awaiting_human` por um `escalate`, uma ação recebe `409 rejected`, `state` `awaiting_human`.
-8. Os `audit_events` das conversas mostram, em ordem: `message.created` da IA e `agent.reply`, com a chave e o corpo da ação; `message.delivered`; `agent.action.stale`; `conversation.resolved` e `agent.resolve`; `conversation.escalated` e `agent.escalate`; `agent.action.rejected` com o motivo `conversa em <estado>`. A repetição do passo 4 não grava evento.
-
-## Pontos de atenção
-
-- **Trava na conversa.** O `FOR UPDATE` serializa as ações da mesma conversa e também as mensagens de entrada, que atualizam `last_sequence` na mesma linha. A F15 mede o efeito na carga.
-- **Volume no `web`.** Cada mensagem de entrada gera, no `web`, o `GET` de contexto e o `POST` da ação; a 250 msg/s são cerca de 500 req/s a mais. O contexto sem cache é medido na F15.
-- **Ordem entre ações do mesmo evento.** A ordem entre `categorize` e `reply` do mesmo evento vem da partição de `agent.outbound`.
-- **Conversa escalada.** Até a F11, a conversa escalada fica em `awaiting_human` na fila da IA, que não tem equipe; o `Routing::Distributor` não a entrega a analista.
-- **Outros `4xx`.** As respostas `4xx` que não são `409` vão para a DLQ no Broker (F9).
-- **Ordem das chaves na repetição.** O corpo guardado em `processed_events.result` é `jsonb`, que não preserva a ordem das chaves: a repetição devolve o mesmo conteúdo com as chaves em outra ordem.
-
-## Reflexos em outras fases
-
-| Fase | Fato | Tratamento |
-| - | - | - |
-| F9 | O `broker-consumer` chama a API de ações | `POST /api/v1/agent/actions` com `AGENT_ACTIONS_SECRET`, `Idempotency-Key` e `traceparent`; `409 stale` e `409 rejected` são resultado final; os demais `4xx` vão para a DLQ |
-| F10 | O agente lê a `context_url` | `GET` assinado com `AGENT_CONTEXT_SECRET` sobre o caminho com a marca |
-| F11 | O `escalate` leva a conversa a `awaiting_human` na fila atual | A F11 acrescenta o roteamento para a fila humana pela regra de escalação, a notificação e o painel |
-| F12 | `customer_memory` é nulo | A F12 preenche a memória do lojista no `Agents::ConversationContext` |
-| F14 | O evento da ação guarda os carimbos de cada salto | A linha do tempo por mensagem lê `agent.<type>` e o `trace_id` |
-| F15 | Contexto sem cache e trava por conversa | Medidas na carga; cache no Solid Cache se a medida pedir |
+| Parte | Relação |
+| - | - |
+| Contrato (F3) | Define os corpos da ação, da resposta e do contexto, a assinatura e a `Idempotency-Key`; a API implementa o lado do Core |
+| Canais (F4) | O `reply` sai pelo mesmo caminho de saída das respostas humanas e chega ao canal de origem |
+| Roteamento (F6) | O `categorize` usa o mesmo ponto de entrada de roteamento da triagem |
+| Saída para o Broker (F7) | O webhook leva a `context_url`; a conferência de estado antes do envio economiza trabalho do agente, e a recusa na API é a barreira final |
+| Broker (F9) | Chama a API de ações com `AGENT_ACTIONS_SECRET` e trata os `409` como resultado final; os demais `4xx` vão para a DLQ |
+| Agente mock (F10) | Lê o contexto com `AGENT_CONTEXT_SECRET` e devolve na ação os horários que recebeu e os seus |
+| Handoff e painel (F11) | Completa o `escalate` com o roteamento para a fila humana e o painel do analista |
+| Memória (F12) | Preenche `customer_memory` no contexto |
+| Observabilidade (F14) | Monta a linha do tempo por mensagem a partir dos registros das ações |
+| Robustez e escala (F15) | Mede o efeito da trava e da leitura do contexto sem cache |
 
 ## Fontes
 
-- `contexto/plano-f8-api-de-acoes-e-contexto.md`, decisões aprovadas
-- `documents/arquitetura.md`, seções "Contrato com o agente", "Idempotência", "Ação sobre contexto desatualizado", "Ação com a conversa fora da IA" e "Auditoria e rastreabilidade"
+- `documents/arquitetura.md`, seções "Contrato com o agente", "Idempotência", "Ação sobre contexto desatualizado", "Ação com a conversa fora da IA", "Handoff com resumo e contexto" e "Auditoria e rastreabilidade"
 - `documents/fases/04-contrato-de-integracao.md`, seções "Resposta da API de ações", "Contexto da conversa" e "Assinatura"
-- `documents/fases/05-canais-de-entrada-e-identidade.md`, seção da saída por `Conversations::Outbound.append!`
-- `documents/fases/07-triagem-roteamento-e-distribuicao.md`, ponto de entrada `categorize` do `Routing::Route`
+- `documents/fases/05-canais-de-entrada-e-identidade.md`, saída por `Conversations::Outbound.append!`
+- `documents/fases/07-triagem-roteamento-e-distribuicao.md`, roteamento acionado por `categorize`
 - [PostgreSQL 18 · Transaction Isolation](https://www.postgresql.org/docs/18/transaction-iso.html)
 - [PostgreSQL 18 · Explicit Locking](https://www.postgresql.org/docs/18/explicit-locking.html)
