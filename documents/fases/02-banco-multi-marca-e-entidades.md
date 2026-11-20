@@ -1,56 +1,69 @@
-# Cloudesk · F1 · Banco, multi-marca e entidades
+# Cloudesk · Banco, multi-marca e entidades
 
-## Objetivo
+## O que é
 
-A F1 fixa o modelo de dados do Cloudesk com todos os invariantes de banco: papéis, isolamento por marca, identificadores, entidades, máquina de estados da conversa, sequência de mensagens, auditoria append-only, idempotência e seeds.
+O banco é o único sistema de estado do Cloudesk: atendimentos, mensagens, filas, regras, auditoria, jobs, tempo real e cache vivem no mesmo PostgreSQL 18. Esta parte define o modelo de dados e os invariantes que o próprio banco garante, sem depender da disciplina do código:
 
-Este documento detalha cada decisão e a fonte que a sustenta. O resumo está em `documents/arquitetura.md`, que prevalece; a lista de entregas e o critério de pronto estão em `contexto/ordem-de-implementacao.md`.
+- **isolamento por marca**, com `brand_id` e Row-Level Security forçado em toda tabela de domínio;
+- **papéis separados**, para que a aplicação nunca tenha privilégio de dono;
+- **as entidades** do help desk e a **máquina de estados** da conversa;
+- **a sequência das mensagens** por conversa, sem buracos nem repetição;
+- **a auditoria append-only**, que nem o dono das tabelas altera;
+- **a idempotência** das ações do agente;
+- **as seeds** sintéticas e reproduzíveis.
 
-## Resumo das decisões
+## Onde fica no fluxo
 
-| Tema | Decisão |
-| - | - |
-| Versão do banco | PostgreSQL 18 |
-| Identificadores | UUID v7, default `uuidv7()`, nas chaves primárias e no `event_id` |
-| Papéis | Papel dono (migrações e seeds) e papel da aplicação (processos e testes); nenhum é superusuário |
-| Isolamento | `brand_id` + Row-Level Security forçado (`FORCE`) em toda tabela de domínio |
-| Marca corrente | `set_config('app.brand_id', <id>, true)`, por transação, em um único ponto do código |
-| Formato do schema | `db/structure.sql` |
-| Estados da conversa | `triage`, `with_ai`, `awaiting_human`, `with_human`, `resolved`, `closed` |
-| Sequência de mensagens | Contador na conversa + índice único `(brand_id, conversation_id, sequence)` |
-| Chaves estrangeiras | Compostas com `brand_id` entre tabelas de domínio, sem ação `ON DELETE` |
-| `audit_events` | Append-only por permissão e por trigger |
-| Eventos processados | Tabela de domínio, com `brand_id`, RLS e índice único `(brand_id, idempotency_key)` |
-| Seeds | Faker com semente fixa; rodar de novo no mesmo banco não duplica registros |
+```text
+web, jobs-webhooks, jobs-default ── papel cloudesk_app ──┐
+                                                         ├── PostgreSQL 18
+migrações e seeds ───────────────── papel cloudesk_owner ┘     │
+                                                               ├─ domínio: brand_id + RLS forçado
+   Tenancy.with_brand(marca)                                   │   (marca da transação em app.brand_id)
+     └─ BEGIN; set_config('app.brand_id', id, true); ...       ├─ brands, brand_channels: só leitura
+                                                               └─ Solid Queue, Cable, Cache; gems
+```
 
-## Papéis de banco
+O Broker não acessa o banco: fala com o Core só por HTTP.
 
-| Papel | Uso | Atributos | Permissões |
-| - | - | - | - |
-| Superusuário da imagem | Cria os dois papéis abaixo | Superusuário | Todas |
-| Papel dono | Migrações e seeds | Sem superusuário, sem `BYPASSRLS` | Dono das tabelas |
-| Papel da aplicação | `web`, `jobs-webhooks`, `jobs-default` e testes | Sem superusuário, sem `BYPASSRLS`, não é dono | Ver tabela seguinte |
+## Por que existe e que valor gera
+
+**Isolamento entre marcas garantido pelo banco.** InfinitePay e JIM compartilham as mesmas tabelas, mas cada transação enxerga só as linhas da sua marca. Um erro no código, como uma consulta sem filtro, não vaza dados de uma marca para a outra: o banco simplesmente não devolve as linhas. Sem marca definida, nenhuma linha de domínio é visível nem gravável.
+
+**A aplicação sem privilégio de dono.** O RLS não contém superusuários, papéis com `BYPASSRLS` nem, por padrão, o dono das tabelas. Por isso a aplicação conecta com um papel próprio, sem esses atributos, e as políticas são forçadas também para o dono. O isolamento vale qualquer que seja o papel conectado.
+
+**Um único sistema de estado.** Jobs, tempo real e cache ficam no mesmo PostgreSQL (Solid Queue, Solid Cable e Solid Cache). A mudança de estado, a auditoria e o job de saída cabem na mesma transação, e não existe dual-write com um Redis ou uma fila externa.
+
+**Ordem e integridade das mensagens.** A sequência de cada mensagem vem de um contador na conversa, incrementado na mesma transação: duas mensagens simultâneas na mesma conversa recebem números consecutivos e distintos. É essa sequência que a API de ações usa para recusar decisões tomadas sobre um contexto desatualizado.
+
+**Auditoria que não se altera.** `audit_events` só aceita `INSERT`. `UPDATE`, `DELETE` e `TRUNCATE` são bloqueados por permissão e por trigger, inclusive para o dono das tabelas.
+
+**Dados sintéticos reproduzíveis.** As seeds usam Faker com semente fixa, nos idiomas de cada marca. Nenhum dado real entra no sistema (LGPD), e rodar as seeds de novo não duplica registros.
+
+## Como funciona
+
+### Papéis
+
+| Papel | Uso | Atributos |
+| - | - | - |
+| Superusuário da imagem | Script de inicialização: cria os papéis e os bancos | Superusuário |
+| `cloudesk_owner` | Migrações e seeds | Dono das tabelas; sem superusuário, `BYPASSRLS` ou `CREATEDB` |
+| `cloudesk_app` | `web`, `jobs-webhooks`, `jobs-default` e testes | Sem superusuário, `BYPASSRLS` ou `CREATEDB`; não é dono |
 
 Permissões do papel da aplicação:
 
 | Tabelas | Permissões |
 | - | - |
-| Domínio (exceto `audit_events`) | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
+| Domínio, exceto `audit_events` | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
 | `audit_events` | `SELECT`, `INSERT` |
-| `brands` | `SELECT` |
-| Solid Queue, Solid Cable, Solid Cache | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
+| `brands`, `brand_channels` | `SELECT` |
+| Solid Queue, Solid Cable, Solid Cache, Active Storage, Action Mailbox | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
 | `schema_migrations`, `ar_internal_metadata` | `SELECT` |
 | Todas | Sem `TRUNCATE` |
 
-Os dois papéis (`cloudesk_owner` e `cloudesk_app`) e os bancos são criados na F0, pelo script de inicialização do Postgres (`documents/fases/01-repositorio-e-infraestrutura-local.md`). A F0 também concede as permissões nas tabelas do Solid Queue, Solid Cable e Solid Cache e nas tabelas de controle de migração; a F1 entrega as permissões nas tabelas de domínio e o RLS.
+Os nomes dos papéis são fixos, porque ficam gravados nos `GRANT` do `db/structure.sql`.
 
-As credenciais de cada papel chegam por variável de ambiente. Migrações e seeds rodam com as do papel dono; os processos da aplicação e os testes rodam com as do papel da aplicação.
-
-**Embasamento.** A documentação do PostgreSQL afirma: "Superusers and roles with the BYPASSRLS attribute always bypass the row security system when accessing a table" e "Table owners normally bypass row security as well, though a table owner can choose to be subject to row security with ALTER TABLE ... FORCE ROW LEVEL SECURITY". Uma aplicação dona das tabelas ou superusuária não é contida pelo RLS; por isso ela usa um papel separado.
-
-## Isolamento por marca
-
-### Política
+### Isolamento por marca
 
 Toda tabela de domínio tem `brand_id` e a mesma política:
 
@@ -62,112 +75,63 @@ CREATE POLICY brand_isolation ON conversations
   USING (brand_id = NULLIF(current_setting('app.brand_id', true), '')::uuid);
 ```
 
-- A política não declara `WITH CHECK`; a mesma expressão vale para leitura e escrita, de modo que a aplicação não lê nem grava linha de outra marca.
-- `current_setting('app.brand_id', true)` devolve `NULL` quando o parâmetro não existe, e o `NULLIF` trata o valor vazio da mesma forma. Com `NULL`, a comparação não casa nenhuma linha: sem marca definida, nada é visível.
-- `FORCE` submete o papel dono às políticas. Se a aplicação ou os testes conectam com o papel dono por engano, o isolamento continua valendo.
+- Sem `WITH CHECK`, a mesma expressão vale para leitura e escrita: a aplicação não lê nem grava linha de outra marca.
+- Sem o parâmetro, ou com ele vazio, a comparação com `NULL` não casa nenhuma linha: sem marca, nada é visível.
+- `FORCE` submete o dono às políticas.
 
-**Embasamento.**
-
-- "If no policy exists for the table, a default-deny policy is used, meaning that no rows are visible or can be modified."
-- "The policy above implicitly provides a WITH CHECK clause identical to its USING clause."
-- `current_setting`: "If there is no such setting, current_setting throws an error unless missing_ok is supplied and is true (in which case NULL is returned)."
-- O desenho corresponde ao modelo "pool" (tabelas compartilhadas com coluna de tenant e RLS) descrito pela AWS para isolamento multi-tenant com PostgreSQL. O TAPI recomenda a Builders' Library da AWS sobre estratégias de isolamento entre inquilinos.
-
-### Marca corrente por transação
-
-Um único ponto do código abre a transação e define a marca:
+**Marca por transação.** `Tenancy.with_brand` é o único ponto do código que define a marca:
 
 ```sql
 SELECT set_config('app.brand_id', '<id da marca>', true);
 ```
 
-- Todo acesso ao domínio, inclusive leitura, acontece dentro desse bloco.
-- O terceiro argumento `true` limita o valor à transação corrente. O pool de conexões do Rails reutiliza conexões entre requisições; um valor de sessão passaria de uma requisição para a seguinte.
-- Em blocos aninhados, o valor dura até o fim da transação externa. Por isso o bloco restaura o valor anterior ao sair. O RSpec envolve cada teste em uma transação, e essa restauração impede que a marca de um bloco alcance o seguinte dentro do mesmo teste.
-- Nos jobs, a marca vem nos argumentos do job e é definida da mesma forma.
-- A leitura e a gravação de `app.brand_id` rodam sem o query cache (`connection.uncached`). O Rails liga o cache em requisições e jobs; com ele, um `current_setting` devolveria um valor antigo, um `set_config` repetido deixaria de ser executado, e o bloco externo ficaria sem marca depois de um bloco aninhado.
-- A chave do query cache é o SQL e os binds, sem a marca, e o mesmo SQL devolve linhas diferentes em cada marca. Quando o bloco muda a marca, inclusive de "sem marca" para uma marca, `Tenancy.with_brand` limpa o query cache na entrada e na saída, também quando o bloco termina com erro. O bloco aninhado da mesma marca mantém o cache.
+- Todo acesso ao domínio, inclusive leitura, acontece dentro desse bloco, que abre a transação (ou um savepoint, quando aninhado).
+- O `true` limita o valor à transação. O pool reutiliza conexões entre requisições, e um valor de sessão passaria de uma requisição para a seguinte.
+- O bloco aninhado restaura a marca anterior ao sair, com sucesso ou com erro.
+- A leitura e a gravação de `app.brand_id` rodam sem o query cache, que devolveria um valor antigo de `current_setting` e deixaria de executar um `set_config` repetido.
+- A chave do query cache é o SQL, sem a marca, e o mesmo SQL devolve linhas diferentes em cada marca. Quando o bloco muda a marca, o cache é limpo na entrada e na saída; o bloco aninhado da mesma marca mantém o cache.
+- Nos jobs, a marca vem nos argumentos e é definida da mesma forma.
 
-**Embasamento.**
+**Tabelas fora do RLS.** Ficam fora as tabelas sem `brand_id`: Solid Queue, Solid Cable e Solid Cache (os workers atendem todas as marcas), Active Storage e Action Mailbox (o e-mail chega antes de a marca ser conhecida), `brands` e `brand_channels` (lidas para descobrir a marca antes de defini-la). As duas últimas são só leitura para a aplicação.
 
-- `set_config`: "If is_local is true, the new value will only apply during the current transaction."
-- `SET LOCAL`: "The effects of SET LOCAL last only till the end of the current transaction, whether committed or not."
-- "The effects of SET or SET LOCAL are also canceled by rolling back to a savepoint that is earlier than the command."
+**Cuidados com o que ignora o RLS.**
 
-### Tabelas fora do RLS
+- **Índices únicos incluem `brand_id`.** As checagens de unicidade ignoram o RLS, e um índice único global revelaria a uma marca a existência de um valor em outra.
+- **Chaves estrangeiras compostas com `brand_id`.** Cada tabela de domínio tem índice único em `(brand_id, id)`, e as referências são `(brand_id, <tabela>_id)` para `(brand_id, id)`. A checagem de integridade referencial também ignora o RLS; com a chave composta, o banco recusa a referência a uma linha de outra marca. Nenhuma chave estrangeira declara ação `ON DELETE`.
+- **`TRUNCATE` não é concedido**, porque não é submetido ao RLS.
 
-- **Solid Queue, Solid Cable e Solid Cache:** não têm `brand_id`; os workers processam jobs de todas as marcas.
-- **`brands`:** é lida para resolver a marca antes de ela ser definida na transação. O papel da aplicação só lê.
+### Identificadores
 
-O README do Solid Queue documenta a configuração de banco único para o app e a fila.
+Chaves primárias e `event_id` são UUID v7, gerados pelo banco com o default `uuidv7()` do PostgreSQL 18: ordenados no tempo, bons para índice e sem coordenação entre processos. O `event_id` é coluna de `audit_events`, com índice único em `(brand_id, event_id)`.
 
-### Cuidados
-
-- **Índices únicos incluem `brand_id`.** A documentação afirma: "Referential integrity checks, such as unique or primary key constraints and foreign key references, always bypass row security" e pede cuidado com vazamento por "covert channel". Um índice único global revelaria a uma marca a existência de um valor em outra.
-- **Chaves estrangeiras entre tabelas de domínio são compostas com `brand_id`.** Cada tabela de domínio tem índice único em `(brand_id, id)`, e a referência é `(brand_id, <tabela>_id)` para `(brand_id, id)`. Como a checagem de integridade referencial ignora o RLS, uma chave estrangeira só pelo `id` aceitaria a referência a uma linha de outra marca; a chave composta faz o banco recusar. Nenhuma chave estrangeira declara ação `ON DELETE`.
-- **`TRUNCATE` não é concedido.** "Operations that apply to the whole table, such as TRUNCATE and REFERENCES, are not subject to row security."
-- **Os testes conectam com o papel da aplicação.** É o papel que os processos usam, e é contra ele que o isolamento precisa ser provado.
-
-## Formato do schema
-
-O schema é versionado em `db/structure.sql` (`config.active_record.schema_format = :sql`). Políticas, triggers, funções e permissões são criados com `execute` nas migrações.
-
-- O Rails gera o `structure.sql` com `pg_dump` sem privilégios. A task `core/lib/tasks/structure_privileges.rake`, entregue na F0, estende o `db:schema:dump` e acrescenta ao arquivo os `GRANT` e `REVOKE` do banco. Os `GRANT` e `REVOKE` das migrações da F1 entram no arquivo do mesmo jeito.
-- Em banco vazio, o `db:migrate` carrega o `structure.sql` em vez de rodar as migrações. O banco de teste é montado assim, com o papel dono, e fica com as mesmas permissões do banco migrado.
-- Os nomes dos papéis ficam gravados no arquivo e por isso são fixos.
-
-**Embasamento.**
-
-- O guia de migrações do Rails 8.1 indica que o formato `:ruby` não expressa itens específicos do banco, como triggers, e recomenda o formato `:sql` nesses casos.
-- No código do ActiveRecord 8.1.4.1, `PostgreSQLDatabaseTasks#structure_dump` chama o `pg_dump` com as opções de só schema, sem privilégios e sem dono, e `DatabaseTasks#initialize_database` carrega o schema quando o banco não tem `schema_migrations`.
-
-## Identificadores
-
-- Chaves primárias de todas as tabelas de domínio e o `event_id` são UUID v7.
-- O `event_id` é coluna de `audit_events`, `NOT NULL`, com default `uuidv7()` e índice único em `(brand_id, event_id)`. `messages` não tem `event_id`.
-- O valor é gerado pelo banco, com `uuidv7()` como default da coluna:
-
-```ruby
-create_table :conversations, id: :uuid, default: -> { "uuidv7()" } do |t|
-  # colunas
-end
-```
-
-**Embasamento.** A documentação do PostgreSQL 18 descreve `uuidv7()`: "Generates a version 7 (time-ordered) UUID. The timestamp is computed using UNIX timestamp with millisecond precision + sub-millisecond timestamp + random." O guia do Rails informa que, sem a opção `:default`, o `create_table` assume `gen_random_uuid()`; por isso o default é declarado.
-
-## Entidades
-
-Todas as tabelas abaixo, exceto `brands`, têm `brand_id` e RLS.
+### Entidades
 
 | Entidade | Tabela | Conteúdo |
 | - | - | - |
-| Brand | `brands` | Marca (InfinitePay, JIM); fora do RLS |
-| Team | `teams` | Equipe de analistas, com skills e horário |
-| Queue | `queues` | SLA, capacidade, atendente inicial (`ai` ou `human`) e referência à fila de transbordo |
-| RoutingRule | `routing_rules` | Condição (`when`) e resultado (`then`) em `jsonb`, posição de avaliação, número da versão e `active`; cada versão é uma linha imutável |
-| Contact | `contacts` | Lojista sintético |
-| Identidade do contato | tabela filha de `contacts` | Canal e valor (telefone, e-mail, id do app); única por marca |
-| Conversation | `conversations` | Estado, fila, categoria, urgência, prioridade, SLA, entrada na fila humana (`queued_at`), atendente e `last_sequence` |
-| Message | `messages` | Canal, autor (cliente, IA, analista, sistema), texto e `sequence` |
-| Attendant | `attendants` | Tipo (`ai` ou `human`), capacidade simultânea e skills |
+| Brand | `brands` | Marca (InfinitePay, JIM), idioma e prazo de reabertura; fora do RLS |
+| Team | `teams` | Equipe de analistas, com skills e horário comercial |
+| Queue | `queues` | SLA, capacidade, atendente inicial (`ai` ou `human`) e fila de transbordo |
+| RoutingRule | `routing_rules` | Condição (`when`) e resultado (`then`) em `jsonb`, posição, versão e `active`; cada versão é uma linha imutável |
+| Contact | `contacts` e `contact_identities` | Lojista sintético e as identidades dele por canal (telefone, e-mail, id do app), únicas por marca |
+| Conversation | `conversations` | Estado, fila, categoria, urgência, prioridade, SLA, entrada na fila humana, atendente e `last_sequence` |
+| Message | `messages` | Canal, autor (lojista, IA, analista, sistema), texto, anexos e `sequence` |
+| Attendant | `attendants` | Tipo (`ai` ou `human`), equipe, capacidade simultânea e skills |
 | Handoff | `handoffs` | Motivo, resumo e contexto estruturado em `jsonb` |
-| AuditEvent | `audit_events` | `event_id`, ator, ação, alvo, antes e depois, payload, motivo, regra e versão, `trace_id` |
+| AuditEvent | `audit_events` | `event_id`, ator, ação, alvo, antes e depois, envelope, motivo, regra e versão, `trace_id` |
 | CustomerMemory | `customer_memories` | Resumo das interações anteriores do lojista |
-| Evento processado | `processed_events` | `idempotency_key` e resultado da primeira ação |
+| Evento processado | `processed_events` | `idempotency_key` e o resultado da primeira execução da ação |
 
-`messages` e `audit_events` são tabelas únicas, sem particionamento.
+O model da entidade Queue é `Routing::Queue`, com a tabela `queues`: `Queue` é uma classe do Ruby no nível raiz (`Thread::Queue`), e um model com esse nome entraria em conflito com ela.
 
-O model da entidade Queue é `Routing::Queue`, em `core/app/models/routing/queue.rb`, com a tabela `queues`. `Queue` é uma classe do Ruby (`Thread::Queue`, disponível no nível raiz), e um model com esse nome no nível raiz entra em conflito com ela.
+### Máquina de estados da conversa
 
-## Máquina de estados da conversa
-
-O estado é um tipo enum do PostgreSQL (`create_enum`), e as transições são validadas em um único lugar do código.
+O estado é um tipo enum do PostgreSQL, e as transições válidas ficam em um único lugar, `Conversation::TRANSITIONS`.
 
 | Estado | Significado |
 | - | - |
 | `triage` | Entrou ou reabriu; aguarda classificação e roteamento |
 | `with_ai` | Atribuída ao atendente IA |
-| `awaiting_human` | Escalada; na fila humana, sem analista |
+| `awaiting_human` | Na fila humana, sem analista |
 | `with_human` | Analista assumiu |
 | `resolved` | Resolvida; dentro do prazo de reabertura |
 | `closed` | Prazo de reabertura vencido; estado final |
@@ -182,8 +146,8 @@ flowchart LR
     C["closed"]
 
     T ==>|roteamento atribui à IA| A
-    T ==>|atendente inicial humano ou disjuntor| W
-    A ==>|escalate ou varredura de SLA| W
+    T ==>|atendente inicial humano| W
+    A ==>|escalate| W
     A ==>|resolve| R
     A ==>|categorize| T
     W ==>|analista assume| H
@@ -192,27 +156,23 @@ flowchart LR
     R ==>|prazo vence| C
 ```
 
-| De | Para | Gatilho | Fase do gatilho |
-| - | - | - | - |
-| `triage` | `with_ai` | Roteamento atribui à IA | F6 |
-| `triage` | `awaiting_human` | Fila com atendente inicial humano, ou disjuntor de IA | F6, diferencial 3 |
-| `with_ai` | `awaiting_human` | `escalate`, ou varredura de SLA | F8, F11 |
-| `with_ai` | `resolved` | `resolve` | F8 |
-| `with_ai` | `triage` | `categorize` dispara novo roteamento | F8 |
-| `awaiting_human` | `with_human` | Analista assume | F11 |
-| `with_human` | `resolved` | Analista resolve | F11 |
-| `resolved` | `triage` | Lojista escreve dentro do prazo de reabertura | F4 |
-| `resolved` | `closed` | Prazo de reabertura vence | F4 |
+| De | Para | Gatilho |
+| - | - | - |
+| `triage` | `with_ai` | Roteamento atribui à IA (F6) |
+| `triage` | `awaiting_human` | Fila com atendente inicial humano (F6); disjuntor de IA (diferencial 3) |
+| `with_ai` | `awaiting_human` | `escalate` (F8); varredura de SLA (F11) |
+| `with_ai` | `resolved` | `resolve` (F8) |
+| `with_ai` | `triage` | `categorize` dispara novo roteamento (F8) |
+| `awaiting_human` | `with_human` | Analista assume pela distribuição (F6) |
+| `with_human` | `resolved` | Analista resolve (F11) |
+| `resolved` | `triage` | Lojista escreve dentro do prazo de reabertura (F4) |
+| `resolved` | `closed` | Prazo de reabertura vence (F4) |
 
-Depois de `closed`, uma nova mensagem do lojista abre outra conversa. Toda transição gera `audit_event`. A F1 entrega os estados e a validação das transições; os gatilhos nascem nas fases indicadas.
+A conversa abre sempre em `triage`. Depois de `closed`, uma nova mensagem do lojista abre outra conversa; um índice único parcial garante no máximo uma conversa não `closed` por lojista. Toda transição gera `audit_event`.
 
-**Embasamento.**
+A separação entre `with_ai` e `awaiting_human` segue a referência do Chatwoot, indicada no TAPI, que distingue a conversa ainda com o bot (`pending`, "not yet ready for an agent to pick up") da conversa pronta para um agente (`open`). `awaiting_human` e `with_human` detalham o `open`.
 
-- Cada estado corresponde a uma afirmação de `documents/arquitetura.md`: a triagem define categoria e prioridade e o Routing atribui ao atendente IA; no `escalate`, a plataforma muda o estado e roteia para a fila humana; o analista assume pela distribuição por capacidade; a conversa resolvida volta à triagem dentro do prazo de reabertura.
-- O Chatwoot, referência indicada no TAPI, separa a conversa com o bot da conversa pronta para um agente: o glossário define `pending` como "not yet ready for an agent to pick up", usado "when an AI assistant or bot is still handling the customer", e `open` como "ready to be picked up by an agent". No código, `bot_handoff!` só atua a partir de `pending` e leva a `open`. `with_ai` cumpre o papel de `pending`; `awaiting_human` e `with_human` detalham o `open`.
-- O guia do Rails para PostgreSQL documenta `create_enum` e registra: "Enum values can't be dropped".
-
-## Sequência por conversa
+### Sequência por conversa
 
 ```sql
 UPDATE conversations
@@ -221,82 +181,127 @@ UPDATE conversations
 RETURNING last_sequence;
 ```
 
-- O incremento acontece na mesma transação que grava a mensagem. O `UPDATE` bloqueia a linha da conversa até o commit, o que serializa escritas concorrentes na mesma conversa.
+- O incremento acontece na mesma transação da mensagem. O `UPDATE` trava a linha da conversa até o commit e serializa as escritas concorrentes na mesma conversa.
+- Se a mensagem não é gravada, o incremento é desfeito junto: a sequência não tem buracos.
 - `messages` tem índice único em `(brand_id, conversation_id, sequence)`, como segunda barreira.
-- Sequences do PostgreSQL não são usadas: são globais, não por conversa, e deixam buracos quando uma transação é desfeita.
+- Sequences do PostgreSQL não servem aqui: são globais, não por conversa, e deixam buracos quando uma transação é desfeita.
 
-## `audit_events` append-only
-
-Duas camadas:
+### `audit_events` append-only
 
 1. **Permissão:** o papel da aplicação tem só `SELECT` e `INSERT`.
-2. **Trigger:** bloqueia a alteração para qualquer papel, inclusive o dono.
+2. **Trigger:** `audit_events_block_row_changes` bloqueia `UPDATE` e `DELETE` linha a linha, e `audit_events_block_truncate` bloqueia `TRUNCATE`, para qualquer papel, inclusive o dono. São dois triggers porque o PostgreSQL só admite trigger de `TRUNCATE` por comando (`FOR EACH STATEMENT`).
 
-```sql
-CREATE FUNCTION audit_events_append_only() RETURNS trigger
-LANGUAGE plpgsql AS $$
-BEGIN
-  RAISE EXCEPTION 'audit_events is append-only';
-END;
-$$;
+As referências de `audit_events` a outras tabelas não usam `ON DELETE CASCADE`: a exclusão em cascata esbarraria no trigger.
 
-CREATE TRIGGER audit_events_block_row_changes
-  BEFORE UPDATE OR DELETE ON audit_events
-  FOR EACH ROW EXECUTE FUNCTION audit_events_append_only();
+### Eventos processados
 
-CREATE TRIGGER audit_events_block_truncate
-  BEFORE TRUNCATE ON audit_events
-  FOR EACH STATEMENT EXECUTE FUNCTION audit_events_append_only();
-```
+`processed_events` é tabela de domínio, com `brand_id`, RLS e índice único em `(brand_id, idempotency_key)`. O registro de idempotência é gravado na mesma transação do efeito da ação do agente, e a linha guarda o resultado da primeira execução, que o Core devolve quando a mesma chave chega de novo. A inserção usa `ON CONFLICT DO NOTHING`: quando nenhuma linha é inserida, a ação já foi processada. A mesma chave pode existir em marcas diferentes.
 
-As referências de `audit_events` a outras tabelas não usam `ON DELETE CASCADE`: a exclusão em cascata de um evento esbarraria no trigger.
+### Schema versionado em SQL
 
-**Embasamento.** A documentação de `CREATE TRIGGER` admite triggers de `TRUNCATE` somente `FOR EACH STATEMENT`; por isso existem dois triggers.
+O schema fica em `db/structure.sql`, porque o formato Ruby do Rails não expressa políticas, triggers, funções nem permissões; esses itens são criados com `execute` nas migrações.
 
-## Eventos processados
+- O Rails gera o arquivo com `pg_dump` sem privilégios. A task `core/lib/tasks/structure_privileges.rake` estende o `db:schema:dump` e acrescenta os `GRANT` e `REVOKE` do banco.
+- Em banco vazio, o `db:migrate` carrega o `structure.sql` em vez de rodar as migrações. O banco de teste é montado assim, com o papel dono, e fica com as mesmas permissões de um banco migrado.
 
-- `processed_events` é tabela de domínio: tem `brand_id` e RLS. A ação do agente roda dentro da transação da marca, e o registro de idempotência é gravado na mesma transação do efeito da ação.
-- Índice único em `(brand_id, idempotency_key)`.
-- A linha guarda o resultado da primeira ação, que o Core devolve quando a mesma chave chega de novo.
-- A inserção usa `INSERT … ON CONFLICT DO NOTHING`; quando nenhuma linha é inserida, a ação já foi processada.
+### Seeds
 
-## Seeds
+- **Determinismo:** `Faker::Config.random` com semente fixa; a versão do Faker fica travada no `Gemfile.lock`, porque os valores dependem dos dicionários da gem.
+- **Idiomas:** `pt-BR` para a InfinitePay e `en-US` para a JIM.
+- **Conteúdo, por marca:** os números de WhatsApp e e-mails de suporte, duas equipes, três filas, três regras, um atendente IA, quatro analistas e 50 lojistas com telefone, e-mail e id do app.
+- **E-mail em ASCII:** o username do Faker passa por `I18n.transliterate` (`barbara.costa@example.com`, e não `bárbara.costa@example.com`). Um e-mail com acento na parte local exigiria SMTPUTF8 em todo o caminho do e-mail. A transliteração não consome a semente.
+- **Reexecução:** cada registro é buscado por uma chave natural e criado só se não existe. Com a semente fixa, a segunda execução gera os mesmos valores e encontra os registros.
+- **Papel:** as seeds rodam com o papel dono, que grava em `brands`, e definem a marca por transação, pelo mesmo `Tenancy.with_brand` da aplicação.
 
-- **Determinismo:** `Faker::Config.random = Random.new(<semente>)`. A versão do Faker fica travada no `Gemfile.lock`, porque os valores gerados dependem dos dicionários da gem.
-- **Locales:** `pt-BR` para a InfinitePay e `en-US` para a JIM. No Faker Ruby os arquivos são `lib/locales/pt-BR.yml` e `lib/locales/en-US.yml`, com hífen.
-- **Conteúdo:** marcas, equipes, filas, regras, atendentes e lojistas sintéticos. Nenhum dado real.
-- **E-mail do lojista:** o username do Faker, gerado a partir do nome, passa por `I18n.transliterate` e fica em ASCII (`barbara.costa@example.com`, e não `bárbara.costa@example.com`). O e-mail com acento na parte local exige SMTPUTF8 em todo o caminho do e-mail, e e-mails reais de lojistas são em ASCII. A transliteração não consome a semente: nomes e telefones são os mesmos.
-- **Reexecução:** cada registro é buscado por uma chave natural e criado só se não existe (marca pelo identificador, fila pelo nome dentro da marca, lojista pela identidade de canal). Com a semente fixa, a segunda execução gera os mesmos valores e encontra os registros existentes.
-- **Papel:** as seeds rodam com o papel dono, que grava em `brands`, e definem a marca por transação, pelo mesmo caminho da aplicação.
+## O que o sistema garante
 
-## Pronto quando
+- Uma marca não lê nem grava dados de outra, qualquer que seja o papel conectado.
+- Sem marca definida, nenhuma linha de domínio é visível nem gravável.
+- Nenhuma referência entre tabelas de domínio aponta para uma linha de outra marca.
+- Nenhum índice único revela a uma marca valores de outra.
+- Uma conversa só muda de estado pelas transições da tabela.
+- As mensagens de uma conversa têm sequências consecutivas, sem buracos nem repetição, mesmo com gravações simultâneas.
+- `audit_events` não aceita `UPDATE`, `DELETE` nem `TRUNCATE`.
+- A mesma `Idempotency-Key` é registrada uma única vez por marca.
+- As seeds rodadas de novo mantêm os mesmos registros.
 
-Os testes, conectados com o papel da aplicação, provam que:
+## Como compõe os entregáveis do projeto
 
-- uma marca não lê nem grava dados de outra;
-- sem marca definida, nenhuma linha de domínio é visível;
-- o papel dono também obedece ao RLS;
-- `UPDATE`, `DELETE` e `TRUNCATE` em `audit_events` falham;
-- uma transição de estado fora da tabela é rejeitada;
-- duas mensagens concorrentes na mesma conversa recebem sequências distintas e consecutivas;
-- a segunda inserção da mesma `Idempotency-Key` na mesma marca é rejeitada pelo índice único;
-- rodar as seeds duas vezes no mesmo banco mantém a mesma contagem de registros.
+| Entregável | O que esta parte entrega | O que fica com outras partes |
+| - | - | - |
+| Plataforma multi-marca e multi-equipe | Isolamento por marca no banco, marcas, equipes e atendentes | Uso de `Tenancy.with_brand` em cada caminho |
+| Múltiplas filas configuráveis | As tabelas de filas e de regras versionadas | Roteamento e gravação de regras (F6); admin (F13) |
+| Rastreabilidade e auditoria | `audit_events` append-only, com ator, motivo, regra, versão e `trace_id` | Serviço de comando (F2) e linha do tempo (F14) |
+| Handoff com resumo e contexto | A tabela de handoffs e o estado `awaiting_human` | Ação `escalate` (F8) e painel do analista (F11) |
+| Memória e contexto entre interações | Uma conversa por lojista, identidades por canal e a tabela de memória | Identidade unificada (F4) e memória do lojista (F12) |
+| Dados sintéticos (LGPD) | Seeds com Faker, sem nenhum dado real | Simulador de canais (F5) |
 
-## Prazo de reabertura
+### No experimento técnico
 
-A F1 entrega as transições `resolved → triage` e `resolved → closed`. O prazo fica na coluna `brands.reopen_window_minutes`, com padrão de 1440 minutos (24 h), e os gatilhos das duas transições são da F4 (`documents/fases/05-canais-de-entrada-e-identidade.md`).
+| Hipótese | Contribuição |
+| - | - |
+| H3 · nada perdido nem duplicado | `processed_events` com índice único por marca é a barreira de deduplicação; a sequência por conversa é a base da recusa `stale` |
+| H1 · 250 msg/s | O PostgreSQL concentra todo o estado e é o gargalo esperado; índices parciais e conexão direta com pool por processo fazem parte do dimensionamento |
+| H2 e H4 | Não dependem do banco diretamente, mas cada transação de entrada entra na latência medida |
+
+## Diferenciais
+
+| Diferencial | Contribuição desta parte |
+| - | - |
+| 4 · "Por que caiu aqui?" | `audit_events` guarda a referência à versão exata da regra (`routing_rule_id` e `rule_version`), e as versões são imutáveis: a explicação continua válida depois que a regra muda |
+| 3 · Disjuntor de IA | A transição `triage → awaiting_human` já está na máquina de estados para o disjuntor |
+
+## Limitações
+
+- **Isolamento lógico.** O isolamento entre marcas é por `brand_id` e RLS, não físico: as marcas dividem as mesmas tabelas, o mesmo banco e os mesmos recursos.
+- **O PostgreSQL concentra todo o estado.** Domínio, jobs, tempo real e cache disputam o mesmo banco, que é o gargalo esperado de escala.
+- **Sem particionamento.** `messages` e `audit_events` são tabelas únicas; o crescimento contínuo exige particionar.
+- **Sem pooler de conexões.** A aplicação conecta direto ao Postgres, e o número de processos é limitado pelas conexões do banco.
+- **Tabelas fora do RLS.** As tabelas das gems e `brands`, `brand_channels` não têm isolamento por marca no banco.
+- **Enum de estado.** Valores de um enum do PostgreSQL não podem ser removidos; um estado novo é acrescentado, mas um estado existente não sai.
+- **Seeds atreladas ao Faker.** Uma atualização do Faker muda os valores gerados; por isso a versão fica travada.
+
+## Operação
+
+### Verificação
+
+Os testes conectam com o papel da aplicação, que é o papel contra o qual o isolamento precisa ser provado.
+
+| Arquivo | O que comprova |
+| - | - |
+| `core/spec/tenancy/brand_isolation_spec.rb` | Papel sem privilégios; RLS habilitado e forçado em toda tabela de domínio, e só nelas; nada visível nem gravável sem marca; cada marca lê e grava só os próprios dados; chave estrangeira composta recusa outra marca; marca restaurada em blocos aninhados, com erro e com o query cache ligado |
+| `core/spec/tenancy/owner_role_spec.rb` | O papel dono também obedece ao RLS |
+| `core/spec/models/domain_schema_spec.rb` | `uuidv7()` nas chaves primárias, `brand_id` em todo índice único, permissões previstas, `brands` sem escrita, filas com transbordo e versões imutáveis de regras |
+| `core/spec/models/conversation_spec.rb` | Abertura em `triage`, exatamente as transições da tabela e estado fora do enum recusado pelo banco |
+| `core/spec/models/message_sequence_spec.rb` | Sequência a partir de 1, incremento desfeito sem a mensagem, índice único e duas mensagens concorrentes com sequências distintas e consecutivas |
+| `core/spec/models/audit_event_spec.rb` | `event_id` UUID v7; `UPDATE`, `DELETE` e `TRUNCATE` recusados pela permissão e pelo trigger; nenhuma referência com `ON DELETE CASCADE` |
+| `core/spec/models/processed_event_spec.rb` | Segunda inserção da mesma chave recusada na mesma marca e aceita em outra; resultado da primeira ação guardado |
+| `core/spec/seeds_spec.rb` | Conteúdo das seeds em cada marca, e-mails em ASCII e mesma contagem na segunda execução |
+
+## Relação com as outras partes
+
+| Parte | Relação |
+| - | - |
+| Repositório e infraestrutura (F0) | Cria os papéis e os bancos e mantém os privilégios no `structure.sql` |
+| Núcleo transacional e auditoria (F2) | Grava toda mudança com `audit_event` dentro de `Tenancy.with_brand` |
+| Canais (F4) | Usa as identidades, a conversa única por lojista e o prazo de reabertura |
+| Roteamento (F6) | Usa filas, regras versionadas, equipes, atendentes e as transições a partir de `triage` |
+| API de ações (F8) | Usa `processed_events`, a sequência e as transições a partir de `with_ai` |
+| Handoff e painel (F11) | Usa `handoffs` e as transições até `with_human` e `resolved` |
+| Memória (F12) | Usa `customer_memories` |
 
 ## Fontes
 
-- [PostgreSQL 18 - Row Security Policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)
-- [PostgreSQL 18 - Configuration Settings Functions](https://www.postgresql.org/docs/current/functions-admin.html)
-- [PostgreSQL 18 - SET](https://www.postgresql.org/docs/current/sql-set.html)
-- [PostgreSQL 18 - UUID Functions](https://www.postgresql.org/docs/current/functions-uuid.html)
-- [PostgreSQL - CREATE TRIGGER](https://www.postgresql.org/docs/current/sql-createtrigger.html)
-- [Rails Guides - Active Record Migrations](https://guides.rubyonrails.org/active_record_migrations.html)
-- [Rails Guides - Active Record and PostgreSQL](https://guides.rubyonrails.org/active_record_postgresql.html)
-- [Solid Queue README](https://github.com/rails/solid_queue)
-- [Faker README](https://github.com/faker-ruby/faker)
-- [Chatwoot - conversation.rb](https://raw.githubusercontent.com/chatwoot/chatwoot/develop/app/models/conversation.rb)
-- [Chatwoot Glossary](https://chatwoot.help/hc/user-guide/articles/1677141565-chatwoot-glossary)
-- [AWS Database Blog - Multi-tenant data isolation with PostgreSQL Row Level Security](https://aws.amazon.com/blogs/database/multi-tenant-data-isolation-with-postgresql-row-level-security)
+- `documents/arquitetura.md`, seções "Domínio", "Decisões de design" e "Limites conhecidos"
+- [PostgreSQL 18 · Row Security Policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)
+- [PostgreSQL 18 · Configuration Settings Functions](https://www.postgresql.org/docs/current/functions-admin.html)
+- [PostgreSQL 18 · SET](https://www.postgresql.org/docs/current/sql-set.html)
+- [PostgreSQL 18 · UUID Functions](https://www.postgresql.org/docs/current/functions-uuid.html)
+- [PostgreSQL · CREATE TRIGGER](https://www.postgresql.org/docs/current/sql-createtrigger.html)
+- [Rails Guides · Active Record Migrations](https://guides.rubyonrails.org/active_record_migrations.html)
+- [Rails Guides · Active Record and PostgreSQL](https://guides.rubyonrails.org/active_record_postgresql.html)
+- [Solid Queue · README](https://github.com/rails/solid_queue)
+- [Faker · README](https://github.com/faker-ruby/faker)
+- [Chatwoot · conversation.rb](https://raw.githubusercontent.com/chatwoot/chatwoot/develop/app/models/conversation.rb)
+- [Chatwoot · Glossary](https://chatwoot.help/hc/user-guide/articles/1677141565-chatwoot-glossary)
+- [AWS Database Blog · Multi-tenant data isolation with PostgreSQL Row Level Security](https://aws.amazon.com/blogs/database/multi-tenant-data-isolation-with-postgresql-row-level-security)

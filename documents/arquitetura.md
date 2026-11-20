@@ -177,7 +177,7 @@ Toda transição gera um evento de auditoria; uma conversa resolvida volta à tr
 - **Canais:** WhatsApp com payloads no formato da Cloud API da Meta; e-mail via Mailpit (SMTP local); chat in-app como widget web. Cada marca tem números de WhatsApp e e-mails de suporte próprios, na tabela `brand_channels`, e o chat leva a marca na URL.
 - **Entrada do e-mail:** o webhook do Mailpit avisa o Core de cada e-mail recebido; o Core baixa o original pela API do Mailpit e cria o `InboundEmail` do Action Mailbox só quando o e-mail é endereçado a um e-mail de suporte de uma marca. Um job recorrente busca no Mailpit os e-mails sem tag e recupera o que o webhook perde. A resposta sai por SMTP para o Mailpit. O detalhamento está em `documents/fases/05-canais-de-entrada-e-identidade.md`.
 - **Simulador de canais:** envia mensagens sintéticas nos três formatos e recebe as respostas de saída, registrando cada uma para a reconciliação. O detalhamento está em `documents/fases/06-simulador-de-canais.md`.
-- **Agente mock:** determinístico por intenção, com ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) , latência artificial configurável e modos de falha configuráveis (ver Diferenciais); modo LLM opcional com modelo aberto, registrando modelo, versão e parâmetros.
+- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Modos de falha configuráveis (ver Diferenciais) e modo LLM opcional com modelo aberto, registrando modelo, versão e parâmetros. O detalhamento está em `documents/fases/11-agente-mock.md`.
 - **Dados sintéticos:** lojistas, transações e conversas gerados com seeds fixas (Faker pt\_BR e en\_US), sem nenhum dado real. Rodar as seeds de novo no mesmo banco não duplica registros.
 
 ## Arquitetura
@@ -223,7 +223,7 @@ O monólito é um único código que roda em processos distintos, cada um escala
 | `jobs-default` | Solid Queue, demais filas (SLA, memória, manutenção) | backlog de tarefas internas |
 | `broker-web` | Puma com o endpoint Rack do Broker | volume de webhooks vindos do Core |
 | `broker-consumer` | `karafka server` | número de partições de `agent.outbound` |
-| `agent-mock` | consumidor Python | número de partições de `agent.inbound` |
+| `agent-mock` | `agent-mock run`, consumidor Python no grupo `cloudesk-agent` | número de partições de `agent.inbound` |
 
 Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-webhooks`, `jobs-default`, `broker-web`, `broker-consumer`, `agent-mock`, simulador de canais, Prometheus e Grafana. O k6 roda só durante o experimento.
 
