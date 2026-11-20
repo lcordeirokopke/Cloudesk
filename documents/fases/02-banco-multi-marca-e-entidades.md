@@ -86,6 +86,7 @@ SELECT set_config('app.brand_id', '<id da marca>', true);
 - Em blocos aninhados, o valor dura até o fim da transação externa. Por isso o bloco restaura o valor anterior ao sair. O RSpec envolve cada teste em uma transação, e essa restauração impede que a marca de um bloco alcance o seguinte dentro do mesmo teste.
 - Nos jobs, a marca vem nos argumentos do job e é definida da mesma forma.
 - A leitura e a gravação de `app.brand_id` rodam sem o query cache (`connection.uncached`). O Rails liga o cache em requisições e jobs; com ele, um `current_setting` devolveria um valor antigo, um `set_config` repetido deixaria de ser executado, e o bloco externo ficaria sem marca depois de um bloco aninhado.
+- A chave do query cache é o SQL e os binds, sem a marca, e o mesmo SQL devolve linhas diferentes em cada marca. Quando o bloco muda a marca, inclusive de "sem marca" para uma marca, `Tenancy.with_brand` limpa o query cache na entrada e na saída, também quando o bloco termina com erro. O bloco aninhado da mesma marca mantém o cache.
 
 **Embasamento.**
 

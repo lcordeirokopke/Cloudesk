@@ -218,7 +218,6 @@ O `conversation.routed` aponta para a linha exata da versão da regra (`routing_
 - **Atendente IA único.** O roteamento para a IA usa o atendente IA da marca, o primeiro por nome, e a capacidade dele não é aplicada. Sem atendente IA na marca, a mensagem não é gravada.
 - **Autor das edições.** As edições de regra são atribuídas a `operator`, sem identificação de usuário, enquanto o login não está definido.
 - **Distribuição sem chamador.** O `Routing::Distributor` está pronto e testado, mas o painel em que o analista pede o próximo caso é da F11.
-- **Query cache entre marcas.** O Rails liga o query cache em requisições e jobs, e a chave do cache é o SQL, sem a marca. Uma requisição de WhatsApp pode trazer mensagens das duas marcas; as escritas do Intake da primeira marca limpam o cache antes das leituras da segunda. O `intake_spec.rb` cobre esse caso.
 
 ## Operação
 

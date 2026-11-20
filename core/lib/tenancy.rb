@@ -11,6 +11,9 @@ module Tenancy
     # O bloco aninhado roda em um savepoint. Quando ele termina sem erro, o valor duraria até o fim
     # da transação externa; por isso o bloco restaura o valor anterior ao sair. Quando ele falha,
     # o rollback até o savepoint desfaz o set_config.
+    # A chave do query cache é o SQL e os binds, sem a marca, e o mesmo SQL devolve linhas
+    # diferentes em cada marca. Quando o bloco muda a marca, o cache é limpo na entrada e na saída;
+    # o bloco aninhado da mesma marca mantém o cache.
     def with_brand(brand)
       brand_id = brand.respond_to?(:id) ? brand.id : brand
       raise ArgumentError, "marca não informada" if brand_id.blank?
@@ -18,8 +21,10 @@ module Tenancy
       ApplicationRecord.transaction(requires_new: true) do
         previous_setting = read_setting
         previous_state = current_brand_id
+        switching = previous_setting.to_s != brand_id.to_s
 
         write_setting(brand_id)
+        connection.clear_query_cache if switching
         self.current_brand_id = brand_id.to_s
 
         begin
@@ -27,6 +32,7 @@ module Tenancy
           write_setting(previous_setting)
           result
         ensure
+          connection.clear_query_cache if switching
           self.current_brand_id = previous_state
         end
       end

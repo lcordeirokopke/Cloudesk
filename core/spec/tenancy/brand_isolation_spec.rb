@@ -158,6 +158,71 @@ RSpec.describe "Isolamento por marca" do
       end
     end
 
+    describe "query cache entre marcas" do
+      # As seeds têm o mesmo número de lojistas nas duas marcas; um a mais na JIM diferencia as contagens.
+      let!(:counts) do
+        Tenancy.with_brand(jim) { Contact.create!(name: "Synthetic Merchant", locale: "en-US") }
+
+        ApplicationRecord.uncached do
+          { infinitepay.id => Tenancy.with_brand(infinitepay) { Contact.count },
+            jim.id => Tenancy.with_brand(jim) { Contact.count } }
+        end
+      end
+
+      before { expect(counts[infinitepay.id]).not_to eq(counts[jim.id]) }
+
+      it "a mesma consulta em duas marcas seguidas devolve as linhas de cada marca" do
+        result = ApplicationRecord.cache do
+          [ Tenancy.with_brand(infinitepay) { Contact.count }, Tenancy.with_brand(jim) { Contact.count } ]
+        end
+
+        expect(result).to eq([ counts[infinitepay.id], counts[jim.id] ])
+      end
+
+      it "a consulta feita sem marca não é reaproveitada dentro do bloco" do
+        result = ApplicationRecord.cache { [ Contact.count, Tenancy.with_brand(infinitepay) { Contact.count } ] }
+
+        expect(result).to eq([ 0, counts[infinitepay.id] ])
+      end
+
+      it "o bloco aninhado de outra marca e o bloco externo leem cada um a própria marca" do
+        result = ApplicationRecord.cache do
+          Tenancy.with_brand(infinitepay) do
+            [ Contact.count, Tenancy.with_brand(jim) { Contact.count }, Contact.count ]
+          end
+        end
+
+        expect(result).to eq([ counts[infinitepay.id], counts[jim.id], counts[infinitepay.id] ])
+      end
+
+      it "o bloco que termina com erro não deixa a leitura da outra marca no cache" do
+        result = ApplicationRecord.cache do
+          Tenancy.with_brand(infinitepay) do
+            expect { Tenancy.with_brand(jim) { Contact.count; raise "falha" } }.to raise_error("falha")
+            Contact.count
+          end
+        end
+
+        expect(result).to eq(counts[infinitepay.id])
+      end
+
+      it "o bloco aninhado da mesma marca mantém o cache" do
+        cached = []
+        callback = ->(*, payload) { cached << payload[:sql] if payload[:cached] }
+
+        ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+          ApplicationRecord.cache do
+            Tenancy.with_brand(infinitepay) do
+              Contact.count
+              Tenancy.with_brand(infinitepay) { Contact.count }
+            end
+          end
+        end
+
+        expect(cached).to include(a_string_matching(/FROM "contacts"/))
+      end
+    end
+
     it "recusa marca vazia" do
       expect { Tenancy.with_brand(nil) { } }.to raise_error(ArgumentError)
     end
