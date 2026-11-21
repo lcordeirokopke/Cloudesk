@@ -6,7 +6,7 @@
     <p><%= link_to "← Fila de escalas", panel_queue_path %></p>
     <h1><%= @conversation.contact.name %></h1>
     <p class="panel-muted" id="conversation-state">
-      Estado <strong><%= @conversation.state %></strong>
+      Estado <span class="panel-tag"><%= @conversation.state %></span>
       · fila <%= @conversation.queue&.name || "sem fila" %>
       · prioridade <%= @conversation.priority || "-" %>
       · SLA <%= @conversation.sla_minutes ? "#{@conversation.sla_minutes} min" : "-" %>

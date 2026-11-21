@@ -191,6 +191,11 @@ flowchart TB
         CHC["Controllers de canal<br/>WhatsApp, chat, Mailpit"]
         API["API do agente<br/>ações e contexto"]
         PNL["Painel do analista<br/>/panel"]
+        ADM["Admin<br/>/admin"]
+    end
+
+    subgraph ADMN["Admin"]
+        ED["QueueEditor, TeamEditor<br/>AttendantEditor"]
     end
 
     subgraph CONV["Conversations"]
@@ -230,6 +235,8 @@ flowchart TB
     PNL ==> AA
     PNL ==> DI
     AA ==> OUT
+    ADM ==> ED
+    ADM ==> RP
     SWEEP ==> ESC
     SWEEP ==> OUT
     OUT ==>|"enfileira"| DJ
@@ -237,6 +244,8 @@ flowchart TB
     OUT ==> CMD
     ESC ==> CMD
     RT ==> CMD
+    RP ==> CMD
+    ED ==> CMD
     CMD ==>|"evento que sai ao Broker"| WDJ
     CMD ==>|"panel: true"| PBJ
 ```
@@ -444,6 +453,17 @@ Filas e regras são dados, não código: o operador cria e edita pelo painel adm
 - **Triagem:** um classificador leve (regras + palavras-chave) define categoria e urgência na entrada; a condição de prioridade das regras compara com a urgência, e a prioridade numérica da conversa vem da regra. O agente pode reclassificar durante a conversa, o que dispara novo roteamento.
 - **Distribuição:** atribuição por capacidade com `SELECT … FOR UPDATE SKIP LOCKED` no Postgres, evitando que dois atendentes peguem o mesmo caso.
 - **Toda edição de regra gera uma nova versão** e um evento de auditoria com autor, diff e horário.
+
+O admin fica em `/admin`, atrás de HTTP basic auth com `ADMIN_USER` e `ADMIN_PASSWORD` (sem os dois preenchidos, o acesso é negado). O operador escolhe a marca na tela inicial (`session[:admin_brand]`), e toda leitura e escrita roda na marca escolhida. O login é simulado: o usuário do basic auth é o `operator_name` gravado no payload dos eventos de edição, com `actor_type` `operator` e `actor_id` nulo.
+
+- **Telas:** filas, equipes, atendentes e regras, cada uma com lista, tela do registro, criação e edição. Atendentes IA aparecem só para leitura; o admin cria e edita analistas humanos.
+- **Formulário de regra estruturado:** uma caixa por valor de cada dimensão do `when` (dimensão sem valor marcado não condiciona), horário como opção única, marca preenchida pela sessão e `then` com fila, prioridade, SLA e atendente inicial opcionais. As opções vêm do classificador (categorias), de `ContactIdentity::CHANNELS` (canais) e de `core/config/routing/dimensions.yml` (segmentos e idiomas, por marca, os mesmos que as seeds sorteiam). Valores gravados fora das opções aparecem marcados e são preservados. A ordem de avaliação é o campo `position`.
+- **Gravação:** regras só pelo `Routing::RulePublisher`; filas, equipes e atendentes por `Admin::QueueEditor`, `Admin::TeamEditor` e `Admin::AttendantEditor`, pelo `Audit::Command`, com os eventos `queue.created`, `queue.updated`, `team.created`, `team.updated`, `attendant.created` e `attendant.updated` (`before`, `after` e `diff` dos atributos editáveis). Edição sem mudança é recusada.
+- **Concorrência:** o formulário leva o `updated_at` lido (fila, equipe e atendente) ou a versão lida (regra); se o registro mudou, a edição é recusada e o operador recarrega a página. Gravações de regra e edições de fila e equipe da marca rodam sob a mesma trava consultiva (`Routing::RoutingLock`).
+- **Validações cruzadas:** renomear uma fila citada em `then.queue` pela maior versão de alguma regra, ativa ou não, é recusado, com a lista das regras; o operador muda as regras antes. A fila de escalação de outra fila continua humana. A equipe da fila de destino de uma regra vigente com `when.hours` precisa ter horário comercial válido, ao trocar a equipe da fila ou o horário da equipe.
+- **Sem exclusão:** filas, equipes e atendentes são criados e editados; regras são ativadas e desativadas. Nenhum registro referenciado é apagado.
+- **Histórico:** a tela de cada regra mostra todas as versões e o diff de cada uma; a de cada fila, equipe e atendente mostra os eventos de edição, com operador, horário e diff.
+- **Efeito imediato:** a nova versão de regra muda a chave das regras compiladas no cache, e as filas são lidas do banco a cada roteamento; a próxima conversa já usa a edição.
 
 O roteamento de uma conversa em `triage`, passo a passo:
 
@@ -959,7 +979,7 @@ flowchart LR
 
 ## Diferenciais
 
-Cinco diferenciais fazem parte do escopo, escolhidos por esforço baixo e por aparecerem na demonstração.
+Quatro diferenciais fazem parte do escopo, escolhidos por esforço baixo e por aparecerem na demonstração.
 
 **1. Briefing de handoff avaliado pelo analista**
 
@@ -969,15 +989,11 @@ O handoff chega como cartão na tela da conversa: problema em uma frase, o que a
 
 Dashboard Grafana com profundidade por fila, casos em risco de SLA, taxa de contenção da IA, motivos de escalação (Pareto), lag do Kafka, backlog do Solid Queue e alertas.
 
-**3. Disjuntor de IA**
-
-Por fila ou marca, um botão no admin passa todas as novas conversas para humanos na hora. O acionamento gera `audit_event` com autor e motivo.
-
-**4. "Por que caiu aqui?"**
+**3. "Por que caiu aqui?"**
 
 Em cada conversa, a tela mostra a regra e a versão que definiram fila, prioridade e SLA, com o atendente inicial e a cadeia de transbordo; a classificação, com as palavras encontradas, a pontuação e a versão das listas; e, quando houve, a escalação, com a fila de origem e a de destino. A informação vem dos últimos `conversation.routed`, `conversation.classified` e `conversation.escalated` em `audit_events` (`Conversations::RoutingExplanation`). Reforça a rastreabilidade e as filas configuráveis.
 
-**5. Modos de falha do agente mock**
+**4. Modos de falha do agente mock**
 
 Por configuração (`AGENT_FAILURE_MODE`: `delay`, `drop`, `duplicate` ou `stale`, com a fração dos eventos afetados em `AGENT_FAILURE_RATE`), o agente mock atrasa, não responde, publica a mesma ação duas vezes ou envia ação desatualizada. Cada modo exercita um caminho da plataforma: a varredura do timeout, a idempotência no Core e a rejeição com `409 stale`. Reforça a robustez diante de falhas e reentregas e permite demonstrá-la.
 
@@ -987,12 +1003,6 @@ Por configuração (`AGENT_FAILURE_MODE`: `delay`, `drop`, `duplicate` ou `stale
 | `drop` | Não publica a ação | Escalação por timeout |
 | `duplicate` | Publica a mesma ação duas vezes | Idempotência no Core (`processed_events`) |
 | `stale` | Publica com `based_on_sequence` menos 1 | Recusa com `409 stale` |
-
-## Pontos em aberto
-
-| # | Ponto | Afeta |
-| - | - | - |
-| 1 | Login e perfis dos operadores do admin | Autor das edições de regra na auditoria |
 
 ## Evolução
 
@@ -1017,7 +1027,7 @@ Por configuração (`AGENT_FAILURE_MODE`: `delay`, `drop`, `duplicate` ou `stale
 - **Editor de filas com simulação:** dry-run da regra sobre as últimas N conversas, aprovação por duas pessoas e rollback.
 - **Priorização dinâmica:** score com aging, risco de SLA, segmento e sentimento.
 - **Simulador sazonal com personas** e incidentes injetáveis.
-- **Guardrails por política e abertura automática do disjuntor** por taxa de erro ou de escalação.
+- **Disjuntor de IA** por fila ou marca: um botão no admin passa todas as conversas novas para humanos na hora, com `audit_event` de autor e motivo; depois, abertura automática por taxa de erro ou de escalação e guardrails por política.
 
 **IA e atendimento**
 

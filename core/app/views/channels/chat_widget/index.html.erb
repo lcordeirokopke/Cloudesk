@@ -1,13 +1,17 @@
 <% content_for :title, "Chat #{@brand.name}" %>
 
 <main class="chat">
-  <h1>Chat <%= @brand.name %></h1>
-  <p>Login simulado: escolha o lojista que vai conversar.</p>
-  <% if flash[:alert] %><p class="chat__alert"><%= flash[:alert] %></p><% end %>
+  <header class="chat__header">
+    <h1>Chat <%= @brand.name %></h1>
+  </header>
+  <% if flash[:alert] %><p class="chat__alert" role="alert"><%= flash[:alert] %></p><% end %>
 
-  <%= form_with url: chat_session_path(@brand.slug), method: :post do |form| %>
-    <%= form.label :app_user_id, "Lojista" %>
-    <%= form.select :app_user_id, @identities.map { |identity| [ "#{identity.contact.name} (#{identity.value})", identity.value ] } %>
-    <%= form.submit "Entrar" %>
-  <% end %>
+  <div class="chat__body">
+    <%= form_with url: chat_session_path(@brand.slug), method: :post, class: "chat__login" do |form| %>
+      <p>Login simulado: escolha o lojista que vai conversar.</p>
+      <%= form.label :app_user_id, "Lojista" %>
+      <%= form.select :app_user_id, @identities.map { |identity| [ "#{identity.contact.name} (#{identity.value})", identity.value ] } %>
+      <%= form.submit "Entrar", class: "chat-button" %>
+    <% end %>
+  </div>
 </main>

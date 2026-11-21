@@ -114,7 +114,7 @@ A tarefa recorrente `ai_timeout_sweep` (`core/config/recurring.yml`, `every 15 s
 | Cabeçalho | Estado, fila, prioridade, SLA e atendente |
 | Histórico | Mensagens por `sequence`, com autor, atendente, canal e horário no fuso da equipe do analista |
 | Briefing do handoff | Último handoff: resumo, motivo, horário, intenção, sentimento, confiança, próximo passo sugerido, entidades, tentativas, ferramentas e retornos; tempo até a primeira resposta humana; avaliação |
-| Por que caiu aqui? | `Conversations::RoutingExplanation` (diferencial 4) |
+| Por que caiu aqui? | `Conversations::RoutingExplanation` (diferencial 3) |
 | Memória do lojista | `summary` da `CustomerMemory` do lojista, quando existe, com uma linha por conversa encerrada (`simple_format`) e o horário da atualização; o cartão não é atualizado em tempo real (`documents/fases/13-memoria-e-contexto.md`) |
 | Conversas anteriores | Até 10 outras conversas do lojista, em todos os canais, com as mensagens, só leitura |
 
@@ -209,10 +209,9 @@ As versões de regra são imutáveis: a explicação continua válida depois que
 | Diferencial | Contribuição desta parte |
 | - | - |
 | 1 · Briefing de handoff avaliado pelo analista | Cartão com problema, tentativas, ferramentas e retornos, sentimento, próximo passo e confiança; avaliação útil ou não útil, uma vez, com `handoff.rated`; tempo até a primeira resposta humana no cartão e no evento |
-| 4 · "Por que caiu aqui?" | A tela da conversa mostra regra, versão, fila, prioridade, SLA, transbordo, classificação e escalação |
-| 5 · Modos de falha do agente mock | A varredura do timeout trata a falta de resposta dos modos `delay`, `drop` e `stale`; os modos ficam no agente mock (F10) |
+| 3 · "Por que caiu aqui?" | A tela da conversa mostra regra, versão, fila, prioridade, SLA, transbordo, classificação e escalação |
+| 4 · Modos de falha do agente mock | A varredura do timeout trata a falta de resposta dos modos `delay`, `drop` e `stale`; os modos ficam no agente mock (F10) |
 | 2 · Cockpit operacional | O motivo de cada escalação (inclusive `ai_timeout`), a avaliação e o tempo até a primeira resposta ficam em `audit_events` e `handoffs`, dados do painel da F14 |
-| 3 · Disjuntor de IA | As filas humanas e o painel recebem as conversas que o disjuntor da F13 desviar |
 
 ## Limitações
 
@@ -301,7 +300,7 @@ No Compose:
 | API de ações (F8) | O `escalate` chama `Conversations::Escalate`; a ação atrasada recebe `409 rejected` |
 | Agente mock (F10) | O briefing do `escalate`; os modos de falha `delay`, `drop` e `stale` exercitam a varredura |
 | Memória (F12) | Preenche o `CustomerMemory` mostrado na tela da conversa |
-| Admin (F13) | Edição de filas, inclusive a fila de escalação, e o disjuntor de IA |
+| Admin (F13) | Edição de filas, inclusive a fila de escalação |
 | Observabilidade (F14) | Pareto de motivos de escalação, avaliação e tempo até a primeira resposta; linha do tempo por mensagem |
 | Robustez e escala (F15) | Custo da varredura e índices sob carga |
 

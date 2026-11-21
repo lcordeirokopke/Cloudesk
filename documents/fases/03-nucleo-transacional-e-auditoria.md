@@ -138,8 +138,7 @@ versão - trace_id (32 hex) - parent_id (16 hex) - flags (2 hex)
 
 | Diferencial | Contribuição desta parte |
 | - | - |
-| 4 · "Por que caiu aqui?" | O comando grava a regra e a versão no `audit_event` de roteamento, que é a fonte da explicação |
-| 3 · Disjuntor de IA | O acionamento do disjuntor deve gerar `audit_event` com autor e motivo; o comando oferece o ator e o motivo para isso |
+| 3 · "Por que caiu aqui?" | O comando grava a regra e a versão no `audit_event` de roteamento, que é a fonte da explicação |
 | 1 · Briefing de handoff | O `audit_event` da ação guarda o corpo completo do `escalate`, com o briefing |
 
 ## Limitações

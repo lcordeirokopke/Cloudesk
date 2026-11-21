@@ -159,7 +159,7 @@ flowchart LR
 | De | Para | Gatilho |
 | - | - | - |
 | `triage` | `with_ai` | Roteamento atribui à IA (F6) |
-| `triage` | `awaiting_human` | Fila com atendente inicial humano (F6); disjuntor de IA (diferencial 3) |
+| `triage` | `awaiting_human` | Fila com atendente inicial humano (F6) |
 | `with_ai` | `awaiting_human` | `escalate` (F8); varredura do timeout do agente (F11) |
 | `with_ai` | `resolved` | `resolve` (F8) |
 | `with_ai` | `triage` | `categorize` dispara novo roteamento (F8) |
@@ -249,8 +249,7 @@ O schema fica em `db/structure.sql`, porque o formato Ruby do Rails não express
 
 | Diferencial | Contribuição desta parte |
 | - | - |
-| 4 · "Por que caiu aqui?" | `audit_events` guarda a referência à versão exata da regra (`routing_rule_id` e `rule_version`), e as versões são imutáveis: a explicação continua válida depois que a regra muda |
-| 3 · Disjuntor de IA | A transição `triage → awaiting_human` já está na máquina de estados para o disjuntor |
+| 3 · "Por que caiu aqui?" | `audit_events` guarda a referência à versão exata da regra (`routing_rule_id` e `rule_version`), e as versões são imutáveis: a explicação continua válida depois que a regra muda |
 
 ## Limitações
 

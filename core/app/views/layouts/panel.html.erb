@@ -18,7 +18,9 @@
 
   <body class="panel">
     <header class="panel-header">
-      <%= link_to "Cloudesk · Painel do analista", current_analyst ? panel_queue_path : panel_root_path, class: "panel-header__brand" %>
+      <%= link_to current_analyst ? panel_queue_path : panel_root_path, class: "panel-header__brand" do %>
+        <span class="cw-wordmark">cloudesk</span><span class="cw-product">Painel do analista</span>
+      <% end %>
       <% if current_analyst %>
         <span class="panel-header__who">
           <%= current_analyst.name %> · <%= current_analyst.team.name %> · <%= current_brand.name %>

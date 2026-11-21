@@ -170,7 +170,7 @@ A resposta 2xx do Broker não gera `audit_event`: um registro por entrega dobrar
 | Diferencial | Contribuição desta parte |
 | - | - |
 | 2 · Cockpit operacional | A profundidade da fila `webhooks` e as falhas de entrega são dados de origem do painel de backlog do Solid Queue (F14) |
-| 5 · Modos de falha do agente mock | Os modos de atraso e de ação duplicada pressupõem que o aviso chegou ao agente; a saída garante essa chegada mesmo com falhas no caminho, e a resposta a cada modo fica com a API de ações e a varredura de SLA |
+| 4 · Modos de falha do agente mock | Os modos de atraso e de ação duplicada pressupõem que o aviso chegou ao agente; a saída garante essa chegada mesmo com falhas no caminho, e a resposta a cada modo fica com a API de ações e a varredura de SLA |
 
 Além dos diferenciais listados no escopo, a recuperação automática dos webhooks interrompidos pela morte do worker vai além do que o Solid Queue oferece por padrão, que é deixar esses jobs na fila de falhas à espera de ação manual.
 

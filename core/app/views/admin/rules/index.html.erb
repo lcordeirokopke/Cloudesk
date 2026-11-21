@@ -25,7 +25,7 @@
           </td>
           <td><%= rule["then"]["priority"] %></td>
           <td><%= rule.version %></td>
-          <td><%= rule.active ? "ativa" : "inativa" %></td>
+          <td><span class="panel-tag"><%= rule.active ? "ativa" : "inativa" %></span></td>
         </tr>
       <% end %>
     </tbody>

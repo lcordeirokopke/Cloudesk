@@ -29,7 +29,7 @@
           <% remaining = conversation.queued_at && conversation.sla_minutes &&
                          (conversation.queued_at + conversation.sla_minutes.minutes - @now) %>
           <tr id="<%= dom_id(conversation, :waiting) %>">
-            <td><span class="panel-pill"><%= conversation.priority %></span></td>
+            <td><span class="panel-tag"><%= conversation.priority %></span></td>
             <td><%= link_to conversation.contact.name, panel_conversation_path(conversation.id) %>
                 <span class="panel-muted">· <%= conversation.channel %></span></td>
             <td><%= conversation.queue&.name %></td>

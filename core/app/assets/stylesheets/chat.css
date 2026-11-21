@@ -1,0 +1,85 @@
+/* Widget de chat do lojista (.chat). Usa os tokens de brand.css, conforme documents/manual-de-marca.md:
+   cabeçalho escuro, mensagens alinhadas pelo autor e campo de envio fixo no rodapé. */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 640px;
+  margin: 0 auto;
+  background: var(--cw-bg);
+}
+
+.chat__header {
+  padding: 1.25rem var(--cw-gutter);
+  background: var(--cw-header-bg);
+  color: var(--cw-header-text);
+  border-bottom: 1px solid var(--cw-header-border);
+}
+.chat__header h1 { margin: 0; font-size: 1.5rem; }
+.chat__header p { margin: 0.25rem 0 0; color: var(--cw-header-muted); font-size: 0.875rem; }
+.chat__header a { color: var(--cw-header-text); }
+
+.chat__body { flex: 1; padding: 1.5rem var(--cw-gutter); }
+
+.chat__alert {
+  margin: 1rem var(--cw-gutter) 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: var(--cw-radius-soft);
+  color: var(--cw-alert);
+  background: var(--cw-alert-bg);
+}
+
+/* Escolha do lojista. */
+
+.chat__login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 1.5rem;
+  background: var(--cw-surface);
+  border: 1px solid var(--cw-border);
+  border-radius: var(--cw-radius-card);
+}
+.chat__login p { margin: 0 0 0.5rem; color: var(--cw-text-muted); }
+.chat__login label { font-size: 0.875rem; font-weight: 500; }
+.chat__login select { width: 100%; }
+.chat__login .chat-button { margin-top: 0.5rem; }
+
+/* Mensagens: as do lojista à direita, nas cores do botão principal; as respostas à esquerda. */
+
+.chat__messages { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.chat-message {
+  align-self: flex-start;
+  max-width: 85%;
+  padding: 0.75rem 1rem;
+  border-radius: var(--cw-radius-soft);
+  background: var(--cw-surface-sunken);
+}
+.chat-message-ai { background: var(--cw-msg-ai); }
+.chat-message-analyst { background: var(--cw-msg-analyst); }
+.chat-message-system { background: var(--cw-msg-system); }
+.chat-message-customer {
+  align-self: flex-end;
+  background: var(--cw-action-bg);
+  color: var(--cw-action-text);
+}
+.chat-message__meta { display: block; font: 400 0.75rem/1.4 var(--cw-font-mono); color: var(--cw-text-muted); }
+.chat-message-customer .chat-message__meta { color: inherit; opacity: 0.7; }
+.chat-message__body { margin: 0.25rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Campo de envio. */
+
+.chat__form {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem var(--cw-gutter);
+  background: var(--cw-surface);
+  border-top: 1px solid var(--cw-border);
+}
+.chat__form input[type="text"] { flex: 1; min-width: 0; }

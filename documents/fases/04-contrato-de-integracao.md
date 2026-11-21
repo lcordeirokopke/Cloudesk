@@ -256,7 +256,7 @@ Todas as chamadas HTTP entre os três componentes são assinadas da mesma forma.
 | Diferencial | Contribuição desta parte |
 | - | - |
 | 1 · Briefing de handoff avaliado pelo analista | O schema exige no `escalate` intenção, entidades, ferramentas e retornos, tentativas, sentimento, próximo passo sugerido e confiança. Nenhum handoff chega ao analista sem esses campos |
-| 5 · Modos de falha do agente mock | As respostas `stale` e `rejected` e a repetição pela `Idempotency-Key` são as respostas definidas para os modos de ação desatualizada e ação duplicada |
+| 4 · Modos de falha do agente mock | As respostas `stale` e `rejected` e a repetição pela `Idempotency-Key` são as respostas definidas para os modos de ação desatualizada e ação duplicada |
 
 ## Limitações
 

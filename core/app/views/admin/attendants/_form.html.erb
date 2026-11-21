@@ -17,6 +17,6 @@
 
   <div class="admin-actions">
     <%= form.submit "Salvar", class: "panel-button" %>
-    <%= link_to "Cancelar", @attendant.persisted? ? admin_attendant_path(@attendant) : admin_attendants_path %>
+    <%= link_to "Cancelar", @attendant.persisted? ? admin_attendant_path(@attendant) : admin_attendants_path, class: "panel-button panel-button--ghost" %>
   </div>
 <% end %>

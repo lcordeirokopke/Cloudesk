@@ -170,7 +170,7 @@ O Karafka carrega o Rails sozinho quando o encontra: no `require "karafka"`, faz
 
 | Diferencial | Contribuição desta parte |
 | - | - |
-| 5 · Modos de falha do agente mock | A ação duplicada e a desatualizada passam pelo Broker como qualquer ação; o `200` repetido e o `409 stale` são resultado final e não vão à DLQ |
+| 4 · Modos de falha do agente mock | A ação duplicada e a desatualizada passam pelo Broker como qualquer ação; o `200` repetido e o `409 stale` são resultado final e não vão à DLQ |
 | 2 · Cockpit operacional | O lag do grupo `cloudesk-broker` e o volume de `agent.dlq` são dados do painel da F14 |
 
 ## Limitações

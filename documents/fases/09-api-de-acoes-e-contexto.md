@@ -171,9 +171,9 @@ Esta parte fecha o caminho de volta do agente à plataforma. Sem ela, o Core avi
 
 | Diferencial | Contribuição desta parte |
 | - | - |
-| 5 · Modos de falha do agente mock | Dois dos quatro modos são tratados aqui. A **ação duplicada** produz um único efeito e recebe a mesma resposta; a **ação desatualizada** recebe `409 stale` e fica registrada. Os modos de atraso e sem resposta são tratados pela varredura do timeout do agente (F11). Com isso, a robustez pode ser demonstrada ligando um modo no agente e mostrando a resposta da API e o registro de auditoria |
+| 4 · Modos de falha do agente mock | Dois dos quatro modos são tratados aqui. A **ação duplicada** produz um único efeito e recebe a mesma resposta; a **ação desatualizada** recebe `409 stale` e fica registrada. Os modos de atraso e sem resposta são tratados pela varredura do timeout do agente (F11). Com isso, a robustez pode ser demonstrada ligando um modo no agente e mostrando a resposta da API e o registro de auditoria |
 | 1 · Briefing de handoff avaliado pelo analista | O `escalate` grava todo o conteúdo do briefing: problema resumido, intenção, entidades, ferramentas e retornos, tentativas, sentimento, próximo passo sugerido e confiança. O contrato recusa um `escalate` sem próximo passo ou sem confiança, o que garante que todo handoff tem esses campos. O cartão e a avaliação pelo analista são da F11 |
-| 4 · "Por que caiu aqui?" | Quando o agente reclassifica a conversa, o novo roteamento grava a regra e a versão que casaram, com a indicação de que o gatilho foi o `categorize` da IA. A tela consegue explicar a fila atual mesmo quando ela é resultado de uma decisão do agente |
+| 3 · "Por que caiu aqui?" | Quando o agente reclassifica a conversa, o novo roteamento grava a regra e a versão que casaram, com a indicação de que o gatilho foi o `categorize` da IA. A tela consegue explicar a fila atual mesmo quando ela é resultado de uma decisão do agente |
 | 2 · Cockpit operacional | O motivo de cada escalação fica gravado no handoff e no registro da ação, e é o dado de origem do Pareto de motivos de escalação; o painel é da F14 |
 
 ## Limitações

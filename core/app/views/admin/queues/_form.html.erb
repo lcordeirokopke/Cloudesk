@@ -31,6 +31,6 @@
 
   <div class="admin-actions">
     <%= form.submit "Salvar", class: "panel-button" %>
-    <%= link_to "Cancelar", @queue.persisted? ? admin_queue_path(@queue) : admin_queues_path %>
+    <%= link_to "Cancelar", @queue.persisted? ? admin_queue_path(@queue) : admin_queues_path, class: "panel-button panel-button--ghost" %>
   </div>
 <% end %>

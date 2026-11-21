@@ -1,0 +1,208 @@
+/* Fundamentos da marca, conforme documents/manual-de-marca.md: fontes, tokens dos temas claro e escuro,
+   base tipográfica, links, foco, campos, botões, tags e wordmark. As demais folhas usam só estes tokens. */
+
+@font-face {
+  font-family: "Gabarito";
+  src: url("gabarito-latin.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("ibm-plex-mono-400-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("ibm-plex-mono-500-latin.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+
+  --cw-font-sans: "Cera Pro", "Gabarito", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cw-font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+
+  --cw-radius-pill: 100px;
+  --cw-radius-tag: 2px;
+  --cw-radius-card: 24px;
+  --cw-radius-soft: 16px;
+  --cw-control-height: 2.75rem;
+  --cw-gutter: 2rem;
+  --cw-container: 1480px;
+
+  --cw-header-bg: #111111;
+  --cw-header-text: #ecebe9;
+  --cw-header-muted: #a0a0a0;
+  --cw-header-border: rgba(244, 242, 232, 0.12);
+  --cw-header-wash: rgba(255, 255, 255, 0.08);
+  --cw-focus: #467afc;
+
+  --cw-bg: #f5f5f5;
+  --cw-surface: #ffffff;
+  --cw-surface-sunken: #f5f5f5;
+  --cw-text: #111111;
+  --cw-text-muted: #6c6c70;
+  --cw-border: #dadada;
+  --cw-border-input: #8e8e93;
+  --cw-action-bg: #111111;
+  --cw-action-text: #ffffff;
+  --cw-action-hover: #363638;
+  --cw-wash: rgba(0, 0, 0, 0.06);
+  --cw-tag-bg: rgba(153, 153, 153, 0.12);
+  --cw-tag-text: #111111;
+  --cw-alert: #b84900;
+  --cw-alert-bg: rgba(184, 73, 0, 0.08);
+  --cw-success: #1c3a29;
+  --cw-success-bg: rgba(36, 211, 50, 0.12);
+  --cw-msg-customer: #f5f5f5;
+  --cw-msg-ai: rgba(70, 122, 252, 0.10);
+  --cw-msg-analyst: rgba(36, 211, 50, 0.12);
+  --cw-msg-system: rgba(243, 191, 115, 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cw-bg: #111111;
+    --cw-surface: #181818;
+    --cw-surface-sunken: #242426;
+    --cw-text: #ecebe9;
+    --cw-text-muted: #a0a0a0;
+    --cw-border: rgba(244, 242, 232, 0.12);
+    --cw-border-input: #6c6c70;
+    --cw-action-bg: #ebebeb;
+    --cw-action-text: #050505;
+    --cw-action-hover: #ffffff;
+    --cw-wash: rgba(255, 255, 255, 0.08);
+    --cw-tag-bg: rgba(124, 124, 124, 0.12);
+    --cw-tag-text: rgba(255, 255, 255, 0.8);
+    --cw-alert: #ff667d;
+    --cw-alert-bg: rgba(255, 102, 125, 0.12);
+    --cw-success: #24d332;
+    --cw-success-bg: rgba(36, 211, 50, 0.12);
+    --cw-msg-customer: #242426;
+    --cw-msg-ai: rgba(70, 122, 252, 0.16);
+    --cw-msg-analyst: rgba(36, 211, 50, 0.12);
+    --cw-msg-system: rgba(243, 191, 115, 0.14);
+  }
+}
+
+@media (max-width: 600px) {
+  :root { --cw-gutter: 1rem; }
+}
+
+/* Base */
+
+body {
+  margin: 0;
+  background: var(--cw-bg);
+  color: var(--cw-text);
+  font: 400 1rem/1.55 var(--cw-font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3 { margin: 0 0 0.5rem; line-height: 1.2; font-weight: 500; }
+h1 { font-size: 2rem; font-weight: 400; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1rem; }
+@media (max-width: 600px) {
+  h1 { font-size: 1.5rem; }
+}
+
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+a:hover { text-decoration-thickness: 2px; }
+
+code, kbd, samp, pre { font-family: var(--cw-font-mono); font-size: 0.875em; }
+
+:focus-visible { outline: 2px solid var(--cw-focus); outline-offset: 2px; }
+
+/* Campos */
+
+input, select, textarea, button { font: inherit; }
+
+input[type="text"], input[type="number"], input[type="email"], input[type="search"], select, textarea {
+  box-sizing: border-box;
+  min-height: var(--cw-control-height);
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--cw-border-input);
+  border-radius: var(--cw-radius-pill);
+  background: var(--cw-surface);
+  color: var(--cw-text);
+}
+textarea { resize: vertical; border-radius: var(--cw-radius-soft); }
+::placeholder { color: var(--cw-text-muted); opacity: 1; }
+
+input[type="checkbox"], input[type="radio"] { accent-color: var(--cw-text); }
+
+fieldset { border: 1px solid var(--cw-border); border-radius: var(--cw-radius-soft); }
+legend {
+  padding: 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--cw-text-muted);
+}
+
+/* Botões: principal e secundário (manual, seção 7.2). */
+
+.panel-button, .chat-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--cw-control-height);
+  padding: 0 1.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--cw-radius-pill);
+  background: var(--cw-action-bg);
+  color: var(--cw-action-text);
+  font: 500 0.875rem/1 var(--cw-font-sans);
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.panel-button:hover, .chat-button:hover { background: var(--cw-action-hover); }
+.panel-button--ghost { background: transparent; border-color: currentColor; color: var(--cw-text); }
+.panel-button--ghost:hover { background: var(--cw-wash); }
+.panel-button:disabled, .chat-button:disabled { opacity: 0.4; cursor: not-allowed; }
+.panel-button:disabled:hover { background: var(--cw-action-bg); }
+.panel-button--ghost:disabled:hover { background: transparent; }
+
+/* Tag (manual, seção 7.4). */
+
+.panel-tag {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--cw-radius-tag);
+  background: var(--cw-tag-bg);
+  color: var(--cw-tag-text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Wordmark do Cloudesk (manual, seção 3.2). */
+
+.cw-wordmark { font: 600 1.25rem/1 var(--cw-font-sans); text-transform: lowercase; }
+.cw-product {
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-transform: uppercase;
+}

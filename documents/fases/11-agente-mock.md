@@ -216,7 +216,7 @@ Na queda do processo, os registros sem offset confirmado são relidos; a ação 
 | Diferencial | Contribuição desta parte |
 | - | - |
 | 1 · Briefing de handoff | O `escalate` leva resumo, tentativas, sentimento, próximo passo e confiança |
-| 5 · Modos de falha do agente mock | Atraso, sem resposta, ação duplicada e ação desatualizada, por `AGENT_FAILURE_MODE`, com a fração dos eventos afetados em `AGENT_FAILURE_RATE`. A duplicada produz um único efeito no Core, a desatualizada recebe `409 stale` e a falta de resposta é tratada pela varredura do timeout (F11) |
+| 4 · Modos de falha do agente mock | Atraso, sem resposta, ação duplicada e ação desatualizada, por `AGENT_FAILURE_MODE`, com a fração dos eventos afetados em `AGENT_FAILURE_RATE`. A duplicada produz um único efeito no Core, a desatualizada recebe `409 stale` e a falta de resposta é tratada pela varredura do timeout (F11) |
 
 ## Limitações
 

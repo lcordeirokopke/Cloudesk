@@ -155,9 +155,10 @@ Só analista humano com equipe recebe caso.
 | `activate`, `deactivate` | `update` com `active` verdadeiro ou falso |
 
 - A definição passa pela validação de `when` e `then`; atributo desconhecido ou operação que não muda nada são recusados.
-- A gravação roda sob uma trava consultiva da marca (`pg_advisory_xact_lock`): duas edições simultâneas da mesma marca são serializadas, e a segunda parte da versão gravada pela primeira.
+- A gravação roda sob a trava consultiva de roteamento da marca (`Routing::RoutingLock`, `pg_advisory_xact_lock`): duas edições simultâneas da mesma marca são serializadas, e a segunda parte da versão gravada pela primeira. As edições de fila e de equipe do admin usam a mesma trava, porque conferem as regras antes de gravar.
+- `expected_version`, opcional em `update`, `activate` e `deactivate`, é a versão lida por quem edita; quando a maior versão é outra, a operação levanta `Routing::RulePublisher::Stale` e nada é gravado.
 - Antes do commit, a marca precisa ter uma regra genérica ativa; sem ela, nada é gravado.
-- Cada operação grava `routing_rule.published` com a operação, a versão nova e o diff de cada atributo (valor anterior e novo). O autor é `operator`, sem identificação de usuário, porque o login dos operadores do admin é um ponto em aberto.
+- Cada operação grava `routing_rule.published` com a operação, a versão nova e o diff de cada atributo (valor anterior e novo). O autor é `operator`, com `actor_id` nulo; `operator_name`, opcional em todas as operações, vai ao payload quando informado. O admin informa o usuário do basic auth; as tasks de demonstração não informam.
 
 ### Auditoria
 
@@ -204,8 +205,7 @@ O `conversation.routed` aponta para a linha exata da versão da regra (`routing_
 
 | Diferencial | Contribuição desta parte |
 | - | - |
-| 4 · "Por que caiu aqui?" | É a base do diferencial. O `conversation.routed` grava a regra e a versão que definiram fila, prioridade e SLA, com a cadeia de transbordo, e o `conversation.classified` grava as palavras e a pontuação que definiram a categoria. A tela da conversa é da F11 |
-| 3 · Disjuntor de IA | O disjuntor depende do atendente inicial da fila, definido no roteamento, que escolhe entre IA e humano. O botão no admin é da F13, e o encaixe é depois da F11 |
+| 3 · "Por que caiu aqui?" | É a base do diferencial. O `conversation.routed` grava a regra e a versão que definiram fila, prioridade e SLA, com a cadeia de transbordo, e o `conversation.classified` grava as palavras e a pontuação que definiram a categoria. A tela da conversa é da F11 |
 | 2 · Cockpit operacional | Fila, prioridade, SLA, `queued_at` e a categoria de cada conversa são os dados de origem da profundidade por fila e dos casos em risco de SLA (F14) |
 
 ## Limitações
@@ -218,7 +218,7 @@ O `conversation.routed` aponta para a linha exata da versão da regra (`routing_
 - **SLA de demonstração só na regra genérica.** O `panel:demo_sla` muda a regra genérica, que recebe só as conversas sem categoria, de lojista de baixo volume ou sem segmento e sem urgência.
 - **Escalação sem conferência de capacidade.** A conversa escalada vai para a fila de escalação da fila em que estava (`queues.escalation_queue_id`), com a prioridade que tinha, ou fica na mesma fila quando ela não tem fila de escalação. A escalação não confere a capacidade do destino: a contagem das conversas abertas e a capacidade ficam no `conversation.escalated` (F11).
 - **Atendente IA único.** O roteamento para a IA usa o atendente IA da marca, o primeiro por nome, e a capacidade dele não é aplicada. Sem atendente IA na marca, a mensagem não é gravada.
-- **Autor das edições.** As edições de regra são atribuídas a `operator`, sem identificação de usuário, enquanto o login não está definido.
+- **Autor das edições.** As edições do admin são atribuídas a `operator`, com o usuário do basic auth em `operator_name`. O login é simulado: todos os operadores compartilham as credenciais `ADMIN_USER` e `ADMIN_PASSWORD`, e o nome não é uma identidade verificada.
 - **Distribuição só por pedido.** O analista recebe um caso quando pede o próximo no painel ("Pegar próximo", que chama `Routing::Distributor.next_for`, F11); não existe atribuição automática a analistas livres.
 
 ## Operação
@@ -325,7 +325,7 @@ No Compose, mensagens do simulador nos três canais das duas marcas chegam rotea
 | Saída para o Broker (F7) | Envia o webhook das conversas que o roteamento deixou com a IA |
 | API de ações (F8) | A ação `categorize` chama `Routing::Route` com a categoria do agente |
 | Handoff e painel (F11) | Fila de escalação, painel que chama `Distributor.next_for` e tela "Por que caiu aqui?" |
-| Admin (F13) | Edita regras pelo `Routing::RulePublisher` e filas no banco |
+| Admin (F13) | Edita regras pelo `Routing::RulePublisher` e filas, equipes e analistas por `Admin::QueueEditor`, `Admin::TeamEditor` e `Admin::AttendantEditor`; as opções do formulário de regra vêm de `Routing::Dimensions` |
 | Observabilidade (F14) | Profundidade por fila, risco de SLA e linha do tempo a partir dos eventos de roteamento |
 | Experimento (F18) | A capacidade das filas de IA é revista antes da carga |
 

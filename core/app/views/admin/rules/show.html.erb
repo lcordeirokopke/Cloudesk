@@ -41,7 +41,7 @@
         <tr>
           <td><%= version.version %></td>
           <td><%= format_time(version.created_at) %></td>
-          <td><%= version.active ? "ativa" : "inativa" %></td>
+          <td><span class="panel-tag"><%= version.active ? "ativa" : "inativa" %></span></td>
           <td><%= version.position %></td>
           <td><%= render "conditions", conditions: version["when"] %></td>
           <td><code><%= version["then"].to_json %></code></td>
