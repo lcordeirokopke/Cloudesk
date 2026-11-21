@@ -23,7 +23,17 @@ infinitepay:
   - { text: "Oi, tudo bem? Preciso de ajuda.", category: }
   - { text: "Bom dia! Alguém pode me atender?", category: }
   - { text: "Olá, quero falar com o suporte.", category: }
+  # simulador · app
+  - { text: "Não consigo entrar no app desde 01/11/2026.", category: app }
+  - { text: "O aplicativo não abre no meu celular.", category: app }
+  - { text: "Esqueci a senha do app e o código de verificação não chega.", category: app }
+  # simulador · frases de urgência
+  - { text: "Meu repasse de 01/11/2026 no valor de R$ 150,00 ainda não caiu. É urgente!", category: repasse, urgency: high }
+  - { text: "Podem verificar a transação TX123? Ela ficou pendente desde 01/11/2026. Preciso de resposta com urgência.", category: transacao, urgency: high }
+  - { text: "Minha maquininha SN35789316 não liga desde 01/11/2026. Acho que foi golpe, não fui eu.", category: maquininha, urgency: high }
+  - { text: "Oi, tudo bem? Preciso de ajuda. Parece fraude, por favor vejam o mais rápido possível.", category: , urgency: high }
   # simulador · assunto do e-mail
+  - { subject: "Problema no app", text: "Bom dia! Alguém pode me atender?", category: app }
   - { subject: "Repasse não recebido", text: "Olá, quero falar com o suporte.", category: repasse }
   - { subject: "Dúvida sobre taxas", text: "Podem me explicar?", category: taxas }
   - { subject: "Problema na maquininha", text: "Bom dia! Alguém pode me atender?", category: maquininha }
@@ -100,7 +110,17 @@ jim:
   - { text: "Hi, how are you? I need some help.", category: }
   - { text: "Good morning! Can someone help me?", category: }
   - { text: "Hello, I want to talk to support.", category: }
+  # simulador · app
+  - { text: "I cannot log in to the app since 11/01/2026.", category: app }
+  - { text: "The app keeps crashing on my phone.", category: app }
+  - { text: "I forgot my password and the verification code never comes.", category: app }
+  # simulador · frases de urgência
+  - { text: "My payout from 11/01/2026 for $150.00 has not arrived yet. This is urgent!", category: payout, urgency: high }
+  - { text: "Can you check transaction TX123? It has been pending since 11/01/2026. Please help asap.", category: transaction, urgency: high }
+  - { text: "My card reader SN35789316 has not turned on since 11/01/2026. I think it was fraud, it was not me.", category: card_reader, urgency: high }
+  - { text: "Hi, how are you? I need some help. Please look into this right away.", category: , urgency: high }
   # simulador · assunto do e-mail
+  - { subject: "App issue", text: "Good morning! Can someone help me?", category: app }
   - { subject: "Payout not received", text: "Hello, I want to talk to support.", category: payout }
   - { subject: "Question about fees", text: "Can you explain?", category: fees }
   - { subject: "Card reader issue", text: "Good morning! Can someone help me?", category: card_reader }

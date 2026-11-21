@@ -208,7 +208,8 @@ O schema fica em `db/structure.sql`, porque o formato Ruby do Rails não express
 
 - **Determinismo:** `Faker::Config.random` com semente fixa; a versão do Faker fica travada no `Gemfile.lock`, porque os valores dependem dos dicionários da gem.
 - **Idiomas:** `pt-BR` para a InfinitePay e `en-US` para a JIM.
-- **Conteúdo, por marca:** os números de WhatsApp e e-mails de suporte, duas equipes, três filas, três regras, um atendente IA, quatro analistas e 50 lojistas com telefone, e-mail e id do app. A fila prioritária de cada marca escala para a fila humana financeira (`ip-financeiro-prioritaria` para `ip-financeiro`, `jim-finance-priority` para `jim-finance`); as filas gerais não têm fila de escalação.
+- **Conteúdo, por marca:** os números de WhatsApp e e-mails de suporte, duas equipes, seis filas, treze regras, um atendente IA, quatro analistas e 50 lojistas com telefone, e-mail e id do app. As filas e as regras estão em `documents/fases/07-triagem-roteamento-e-distribuicao.md`. A fila prioritária e a fila de transações de cada marca escalam para a fila humana financeira (`ip-financeiro` e `jim-finance`); as demais filas não têm fila de escalação.
+- **Segmento do lojista:** sorteado com peso, 50% baixo, 30% médio e 20% alto volume (`baixo_tpv`, `medio_tpv` e `alto_tpv` na InfinitePay; `low_tpv`, `mid_tpv` e `high_tpv` na JIM).
 - **E-mail em ASCII:** o username do Faker passa por `I18n.transliterate` (`barbara.costa@example.com`, e não `bárbara.costa@example.com`). Um e-mail com acento na parte local exigiria SMTPUTF8 em todo o caminho do e-mail. A transliteração não consome a semente.
 - **Reexecução:** cada registro é buscado por uma chave natural e criado só se não existe. Com a semente fixa, a segunda execução gera os mesmos valores e encontra os registros.
 - **Papel:** as seeds rodam com o papel dono, que grava em `brands`, e definem a marca por transação, pelo mesmo `Tenancy.with_brand` da aplicação.
@@ -276,7 +277,7 @@ Os testes conectam com o papel da aplicação, que é o papel contra o qual o is
 | `core/spec/models/message_sequence_spec.rb` | Sequência a partir de 1, incremento desfeito sem a mensagem, índice único e duas mensagens concorrentes com sequências distintas e consecutivas |
 | `core/spec/models/audit_event_spec.rb` | `event_id` UUID v7; `UPDATE`, `DELETE` e `TRUNCATE` recusados pela permissão e pelo trigger; nenhuma referência com `ON DELETE CASCADE` |
 | `core/spec/models/processed_event_spec.rb` | Segunda inserção da mesma chave recusada na mesma marca e aceita em outra; resultado da primeira ação guardado |
-| `core/spec/seeds_spec.rb` | Conteúdo das seeds em cada marca, e-mails em ASCII e mesma contagem na segunda execução |
+| `core/spec/seeds_spec.rb` | Conteúdo das seeds em cada marca, filas de escalação, segmentos sorteados com peso, regra esperada para cada combinação de fatos, e-mails em ASCII e mesma contagem na segunda execução |
 
 ## Relação com as outras partes
 

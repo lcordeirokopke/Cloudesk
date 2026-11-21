@@ -85,7 +85,7 @@ def test_marca_e_canal_fixos(personas_path):
 
 async def test_send_envia_nos_tres_canais_e_grava_sent_jsonl(environment):
     settings, core, smtp = environment
-    options = sender.SendOptions(count=12, rate=200, seed=3, attachments=0.5)
+    options = sender.SendOptions(count=12, rate=200, seed=3, attachments=0.5, urgency=0.5)
 
     summary = await sender.run_send(settings, personas.load(settings.personas_path), options, run_id="run-teste")
 
@@ -102,6 +102,7 @@ async def test_send_envia_nos_tres_canais_e_grava_sent_jsonl(environment):
         assert record["run_id"] == "run-teste"
         assert record["contacts"] == "seed"
         assert record["intent"]
+        assert record["urgent"] in (True, False)
         assert record["duration_ms"] >= 0
     for record in by_channel["whatsapp"]:
         assert record["external_id"].startswith("wamid.")
@@ -168,3 +169,14 @@ def test_id_da_execucao():
 
     assert run_id[8] == "T" and run_id[15] == "Z" and run_id[16] == "-"
     assert len(run_id.split("-")[1]) == 4
+
+
+def test_urgencia_informada_chega_ao_texto(personas_path):
+    loaded = personas.load(personas_path)
+    rng = random.Random(4)
+
+    urgent = [sender.plan(loaded, sender.SendOptions(urgency=1.0), rng) for _ in range(5)]
+    normal = [sender.plan(loaded, sender.SendOptions(), rng) for _ in range(5)]
+
+    assert all(item.content.urgent for item in urgent)
+    assert not any(item.content.urgent for item in normal)

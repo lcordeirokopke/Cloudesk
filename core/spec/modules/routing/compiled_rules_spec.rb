@@ -19,7 +19,13 @@ RSpec.describe Routing::CompiledRules do
     rules = compiled
 
     expect(rules.map { |rule| rule["name"] }).to eq(
-      [ "InfinitePay · Repasse · Alto volume", "InfinitePay · Repasse", "InfinitePay · Geral" ]
+      [
+        "InfinitePay · Urgente · Alto volume", "InfinitePay · Urgente", "InfinitePay · Repasse · Alto volume",
+        "InfinitePay · Transação · Alto volume", "InfinitePay · Maquininha", "InfinitePay · Transação",
+        "InfinitePay · Maquininha · Fora do horário", "InfinitePay · Repasse", "InfinitePay · Taxas",
+        "InfinitePay · App", "InfinitePay · Taxas · E-mail", "InfinitePay · Geral · Médio e alto volume",
+        "InfinitePay · Geral"
+      ]
     )
     expect(rules.first.keys).to eq(%w[id rule_id version name position when then])
     expect(store.read(cache_key)).to eq(rules)

@@ -3,6 +3,10 @@
 Os campos dos modelos (id de transação, valor, data e número de série da maquininha) vêm do
 random.Random da execução: a mesma semente gera a mesma sequência de textos. Nenhum dado é real.
 
+A intenção é sorteada com os pesos de INTENT_WEIGHTS. Com urgency_ratio, essa fração das mensagens
+termina com uma frase de URGENCY_PHRASES, que leva o classificador do Core à urgência high sem
+mudar a categoria do texto.
+
 Anexos: image (comprovante.jpg) e document (extrato.pdf). O e-mail leva os bytes gerados; o
 WhatsApp e o chat levam só os metadados.
 """
@@ -11,7 +15,8 @@ import random
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-INTENTS = ("transacao", "repasse", "taxas", "maquininha", "saudacao")
+INTENTS = ("transacao", "repasse", "taxas", "maquininha", "app", "saudacao")
+INTENT_WEIGHTS = (25, 20, 15, 15, 15, 10)
 
 TEMPLATES = {
     "pt-BR": {
@@ -34,6 +39,11 @@ TEMPLATES = {
             "Minha maquininha {serial} não liga desde {date}.",
             "A maquininha {serial} mostra erro de conexão ao passar o cartão.",
             "Preciso trocar a maquininha {serial}, a bateria não segura carga.",
+        ],
+        "app": [
+            "Não consigo entrar no app desde {date}.",
+            "O aplicativo não abre no meu celular.",
+            "Esqueci a senha do app e o código de verificação não chega.",
         ],
         "saudacao": [
             "Oi, tudo bem? Preciso de ajuda.",
@@ -62,6 +72,11 @@ TEMPLATES = {
             "Card reader {serial} shows a connection error when I swipe a card.",
             "I need to replace card reader {serial}, the battery does not hold a charge.",
         ],
+        "app": [
+            "I cannot log in to the app since {date}.",
+            "The app keeps crashing on my phone.",
+            "I forgot my password and the verification code never comes.",
+        ],
         "saudacao": [
             "Hi, how are you? I need some help.",
             "Good morning! Can someone help me?",
@@ -76,6 +91,7 @@ SUBJECTS = {
         "repasse": "Repasse não recebido",
         "taxas": "Dúvida sobre taxas",
         "maquininha": "Problema na maquininha",
+        "app": "Problema no app",
         "saudacao": "Atendimento",
     },
     "en-US": {
@@ -83,8 +99,24 @@ SUBJECTS = {
         "repasse": "Payout not received",
         "taxas": "Question about fees",
         "maquininha": "Card reader issue",
+        "app": "App issue",
         "saudacao": "Support request",
     },
+}
+
+URGENCY_PHRASES = {
+    "pt-BR": [
+        "É urgente!",
+        "Preciso de resposta com urgência.",
+        "Acho que foi golpe, não fui eu.",
+        "Parece fraude, por favor vejam o mais rápido possível.",
+    ],
+    "en-US": [
+        "This is urgent!",
+        "Please help asap.",
+        "I think it was fraud, it was not me.",
+        "Please look into this right away.",
+    ],
 }
 
 ATTACHMENT_KINDS = ("image", "document")
@@ -114,6 +146,7 @@ class Content:
     text: str
     subject: str
     attachment: Attachment | None
+    urgent: bool = False
 
 
 def _amount(rng: random.Random, locale: str) -> str:
@@ -139,9 +172,15 @@ def attachment(kind: str, rng: random.Random) -> Attachment:
     raise ValueError(f"tipo de anexo desconhecido: {kind}")
 
 
-def generate(rng: random.Random, locale: str, intent: str | None = None, attachment_ratio: float = 0.0) -> Content:
-    """Conteúdo de uma mensagem. Sem intent, a intenção é sorteada."""
-    intent = intent or rng.choice(INTENTS)
+def generate(
+    rng: random.Random,
+    locale: str,
+    intent: str | None = None,
+    attachment_ratio: float = 0.0,
+    urgency_ratio: float = 0.0,
+) -> Content:
+    """Conteúdo de uma mensagem. Sem intent, a intenção é sorteada com os pesos de INTENT_WEIGHTS."""
+    intent = intent or rng.choices(INTENTS, weights=INTENT_WEIGHTS)[0]
     template = rng.choice(TEMPLATES[locale][intent])
     text = template.format(
         transaction_id=f"TX{rng.randrange(10**9, 10**10)}",
@@ -149,6 +188,9 @@ def generate(rng: random.Random, locale: str, intent: str | None = None, attachm
         date=_date(rng, locale),
         serial=f"SN{rng.randrange(10**7, 10**8)}",
     )
+    urgent = rng.random() < urgency_ratio
+    if urgent:
+        text = f"{text} {rng.choice(URGENCY_PHRASES[locale])}"
     with_attachment = rng.random() < attachment_ratio
     kind = rng.choice(ATTACHMENT_KINDS) if with_attachment else None
 
@@ -157,4 +199,5 @@ def generate(rng: random.Random, locale: str, intent: str | None = None, attachm
         text=text,
         subject=SUBJECTS[locale][intent],
         attachment=attachment(kind, rng) if kind else None,
+        urgent=urgent,
     )

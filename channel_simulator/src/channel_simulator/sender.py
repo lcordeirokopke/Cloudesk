@@ -9,12 +9,12 @@ data/runs/<run_id>/sent.jsonl, uma linha por mensagem:
 | contacts | seed (lojista das seeds) ou new (lojista novo) |
 | identity | Telefone, e-mail ou app_user_id do lojista |
 | external_id | wamid, Message-ID sem < e > ou client_message_id |
-| intent, attachment | Intenção do texto e tipo do anexo, ou null |
+| intent, urgent, attachment | Intenção do texto, se leva frase de urgência e tipo do anexo, ou null |
 | sent_at, status, duration_ms | Início do envio, status HTTP (ou 250 no SMTP) e duração |
 | conversation_id, sequence, stream_status | Só no chat: resposta do Core e status do registro do stream |
 | error | Só quando a montagem ou o envio falha; o status é então o nome da exceção (ou o código SMTP) |
 
-A semente define marca, canal, lojista, intenção e texto de cada mensagem; os ids externos são
+A semente define marca, canal, lojista, intenção, urgência e texto de cada mensagem; os ids externos são
 únicos a cada execução.
 """
 
@@ -47,6 +47,7 @@ class SendOptions:
     rate: float = 1.0
     contacts: str = "seed"
     attachments: float = 0.0
+    urgency: float = 0.0
     seed: int = 1
 
 
@@ -78,7 +79,9 @@ def plan(personas: Personas, options: SendOptions, rng: random.Random) -> Planne
         if not brand.contacts:
             raise ValueError(f"a marca {brand.slug} não tem lojistas no personas.json")
         contact = rng.choice(brand.contacts)
-    content = templates.generate(rng, brand.locale, attachment_ratio=options.attachments)
+    content = templates.generate(
+        rng, brand.locale, attachment_ratio=options.attachments, urgency_ratio=options.urgency
+    )
 
     return Planned(
         brand=brand,
@@ -101,6 +104,7 @@ async def send_one(session: aiohttp.ClientSession, settings: Settings, run_id: s
         "identity": item.contact.identity(item.channel),
         "external_id": None,
         "intent": content.intent,
+        "urgent": content.urgent,
         "attachment": content.attachment.kind if content.attachment else None,
         "sent_at": utc_now(),
     }

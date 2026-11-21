@@ -54,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--rate", type=_positive_float, default=1.0, help="mensagens por segundo")
     send.add_argument("--contacts", choices=["seed", "new"], default="seed")
     send.add_argument("--attachments", type=_ratio, default=0.0, help="fração de mensagens com anexo, de 0 a 1")
+    send.add_argument(
+        "--urgency-ratio", type=_ratio, default=0.0, help="fração de mensagens com frase de urgência, de 0 a 1"
+    )
     send.add_argument("--seed", type=int, default=1)
 
     scenario = commands.add_parser("scenario", help="cenários prontos")
@@ -94,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
             rate=args.rate,
             contacts=args.contacts,
             attachments=args.attachments,
+            urgency=args.urgency_ratio,
             seed=args.seed,
         )
         result = asyncio.run(run_send(settings, loaded, options))

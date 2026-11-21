@@ -52,12 +52,12 @@ RSpec.describe Conversations::RoutingExplanation do
   it "usa o último roteamento quando a conversa foi roteada mais de uma vez" do
     conversation = customer_writes("Meu repasse de ontem não caiu")
     in_brand do
-      Routing::Route.call(conversation: Conversation.find(conversation.id), trigger: "categorize", category: "maquininha")
+      Routing::Route.call(conversation: Conversation.find(conversation.id), trigger: "categorize", category: "app")
     end
 
     explanation = explain(conversation)
 
-    expect(explanation.routed).to include(trigger: "categorize", queue: "ip-suporte-geral", rule_name: "InfinitePay · Geral")
-    expect(explanation.classified).to include(trigger: "categorize", category: "maquininha", actor_type: "ai")
+    expect(explanation.routed).to include(trigger: "categorize", queue: "ip-suporte-geral", rule_name: "InfinitePay · App")
+    expect(explanation.classified).to include(trigger: "categorize", category: "app", actor_type: "ai")
   end
 end

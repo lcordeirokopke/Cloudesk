@@ -45,9 +45,9 @@ A coluna `queues.escalation_queue_id` aponta uma fila humana da mesma marca (FK 
 
 | Fila (seeds) | Fila de escalação |
 | - | - |
-| `ip-financeiro-prioritaria` | `ip-financeiro` |
-| `jim-finance-priority` | `jim-finance` |
-| `ip-financeiro`, `ip-suporte-geral`, `jim-finance`, `jim-general-support` | nenhuma |
+| `ip-financeiro-prioritaria`, `ip-transacoes` | `ip-financeiro` |
+| `jim-finance-priority`, `jim-transactions` | `jim-finance` |
+| `ip-financeiro`, `ip-urgente`, `ip-maquininha`, `ip-suporte-geral`, `jim-finance`, `jim-urgent`, `jim-card-reader`, `jim-general-support` | nenhuma |
 
 ### Escalação
 
@@ -167,7 +167,7 @@ As versões de regra são imutáveis: a explicação continua válida depois que
 
 ### SLA de demonstração
 
-`core/lib/tasks/panel.rake` publica, por `Routing::RulePublisher`, uma nova versão da regra genérica ativa da marca, com outro `then.sla_minutes`. A mudança vale para as conversas roteadas depois dela, e cada publicação grava `routing_rule.published`.
+`core/lib/tasks/panel.rake` publica, por `Routing::RulePublisher`, uma nova versão da regra genérica ativa da marca, com outro `then.sla_minutes`. A mudança vale para as conversas roteadas depois dela pela regra genérica, e cada publicação grava `routing_rule.published`. Nas seeds, a regra genérica recebe as mensagens sem categoria e sem urgência de lojista de baixo volume ou sem segmento, como a saudação do simulador enviada com `--contacts new`.
 
 | Task | Efeito |
 | - | - |
@@ -277,7 +277,7 @@ Os testes rodam no ambiente de teste: `docker compose exec -e RAILS_ENV=test web
 | `core/spec/models/handoff_spec.rb`, `routing_queue_spec.rb` | `first_human_response_at`; validação e `CHECK` da avaliação; fila de escalação humana, diferente da própria e da mesma marca |
 | `core/spec/requests/panel/sessions_spec.rb` | `401` sem credencial, com senha errada e com a senha do ambiente vazia; lista de analistas; login, troca e recusa de analista de outra marca |
 | `core/spec/requests/panel/conversations_spec.rb` | Fila da equipe com motivo e stream; outra equipe não vê; "Pegar próximo" com caso e sem caso; tela com cartão, explicação, conversas anteriores e memória; `404` de outra marca; resposta, resolução e avaliação; recusa de outro analista |
-| `core/spec/tasks/panel_demo_sla_spec.rb` | Nova versão da regra genérica com o SLA, só na marca; reset ao SLA da fila; conversa roteada depois recebe o SLA; recusa de marca e minutos inválidos |
+| `core/spec/tasks/panel_demo_sla_spec.rb` | Nova versão da regra genérica com o SLA, só na marca; reset ao SLA da fila; conversa roteada depois pela regra genérica recebe o SLA; recusa de marca e minutos inválidos |
 | `core/spec/seeds_spec.rb` | Filas de escalação das seeds e reexecução sem duplicar |
 
 No Compose:

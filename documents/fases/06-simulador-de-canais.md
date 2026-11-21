@@ -38,7 +38,7 @@ O simulador roda como o serviço `channel-simulator` do Compose. O processo `ser
 
 **Respostas verificáveis.** O simulador não só envia: ele recebe as respostas do Core em cada canal e as registra com o id da mensagem do Core. Uma resposta que chegou duas vezes aparece como o mesmo id repetido. Esse registro é a base da reconciliação da hipótese H3 (nenhuma mensagem perdida nem duplicada).
 
-**Tráfego reproduzível.** Marca, canal, lojista, intenção, texto e anexo vêm de uma semente: a mesma semente gera o mesmo tráfego. Os ids externos são novos a cada execução, e uma execução repetida não vira reenvio para o Core.
+**Tráfego reproduzível.** Marca, canal, lojista, intenção, urgência, texto e anexo vêm de uma semente: a mesma semente gera o mesmo tráfego. Os ids externos são novos a cada execução, e uma execução repetida não vira reenvio para o Core.
 
 **Dados sintéticos de ponta a ponta.** Os lojistas vêm das seeds, geradas com Faker, ou são criados na hora com identidades aleatórias. Os textos são modelos fixos, e os ids de transação, valores, datas e números de série são gerados. Nenhum dado real entra no sistema (LGPD).
 
@@ -71,12 +71,13 @@ A task `bin/rails simulator:personas`, no Core, exporta para `core/tmp/simulator
 
 | Item | Como é gerado |
 | - | - |
-| Intenções | `transacao`, `repasse`, `taxas`, `maquininha` e `saudacao`, com três modelos cada em `pt-BR` e `en-US`, e um assunto de e-mail por intenção |
+| Intenções | `transacao`, `repasse`, `taxas`, `maquininha`, `app` e `saudacao`, com três modelos cada em `pt-BR` e `en-US`, e um assunto de e-mail por intenção. A intenção é sorteada com peso: 25% `transacao`, 20% `repasse`, 15% `taxas`, 15% `maquininha`, 15% `app` e 10% `saudacao` |
+| Urgência | Numa fração configurável das mensagens, o texto termina com uma frase de urgência por idioma (por exemplo "É urgente!" e "This is urgent!"), que leva o classificador à urgência `high` sem mudar a categoria |
 | Campos | Id de transação (`TX` e 10 dígitos), valor no formato do idioma, data até 30 dias antes de uma data de referência fixa e número de série da maquininha (`SN` e 8 dígitos) |
 | Anexos | `image` (`comprovante.jpg`) e `document` (`extrato.pdf`), numa fração configurável das mensagens. O e-mail leva os bytes gerados; WhatsApp e chat levam os metadados |
 | Ids externos | `wamid.<uuid>` no WhatsApp, `client_message_id` no chat e `Message-ID` `<uuid@simulator.cloudesk.test>` no e-mail, novos a cada envio |
 
-Os modelos e os assuntos de e-mail fazem parte do corpus do classificador do roteamento (`documents/fases/07-triagem-roteamento-e-distribuicao.md`): cada intenção cai na categoria esperada, e a saudação, sem categoria, cai na regra genérica.
+Os modelos, as frases de urgência e os assuntos de e-mail fazem parte do corpus do classificador do roteamento (`documents/fases/07-triagem-roteamento-e-distribuicao.md`): cada intenção cai na categoria esperada, a saudação fica sem categoria, e a frase de urgência leva a `high`.
 
 ### Envio
 
@@ -116,7 +117,7 @@ Cada linha é um objeto JSON, gravado com append e `flush`, em `channel_simulato
 
 | Arquivo | Conteúdo |
 | - | - |
-| `runs/<run_id>/sent.jsonl` | Uma linha por envio: execução, canal, marca, origem do lojista (`seed` ou `new`), identidade, `external_id`, intenção, anexo, horário, status (HTTP, ou 250 no SMTP) e duração; no chat, `conversation_id`, `sequence` e o status do registro do stream; `error` quando a montagem ou o envio falha |
+| `runs/<run_id>/sent.jsonl` | Uma linha por envio: execução, canal, marca, origem do lojista (`seed` ou `new`), identidade, `external_id`, intenção, urgência (`urgent`), anexo, horário, status (HTTP, ou 250 no SMTP) e duração; no chat, `conversation_id`, `sequence` e o status do registro do stream; `error` quando a montagem ou o envio falha |
 | `received.jsonl` | Uma linha por resposta recebida: canal, `core_message_id` (o id da `Message` do Core), destinatário, remetente e horário; no WhatsApp, texto e `traceparent`; no chat, stream, autor, texto e sequência; no e-mail, assunto e id do Mailpit |
 | `streams.jsonl` | Streams do chat registrados |
 | `mailpit_seen.jsonl` | Ids do Mailpit já tratados |
@@ -132,7 +133,7 @@ Rodados no contêiner com `docker compose exec channel-simulator channel-simulat
 | Comando | Opções | Efeito |
 | - | - | - |
 | `serve` | nenhuma | Sobe os receptores; é o comando padrão da imagem |
-| `send` | `channel` (`whatsapp`, `chat`, `email` ou `all`), `brand` (`infinitepay`, `jim` ou `all`), `count`, `rate` (msg/s), `contacts` (`seed` ou `new`), `attachments` (fração de 0 a 1), `seed` | Envia `count` mensagens na taxa pedida, grava `sent.jsonl` e imprime o resumo por canal e status |
+| `send` | `channel` (`whatsapp`, `chat`, `email` ou `all`), `brand` (`infinitepay`, `jim` ou `all`), `count`, `rate` (msg/s), `contacts` (`seed` ou `new`), `attachments` (fração de 0 a 1), `urgency-ratio` (fração de 0 a 1 com frase de urgência), `seed` | Envia `count` mensagens na taxa pedida, grava `sent.jsonl` e imprime o resumo por canal e status |
 | `scenario cross-channel` | `brand`, `seed` | Um lojista das seeds escreve por WhatsApp, chat e e-mail, nessa ordem, e o comando imprime o `conversation_id` |
 | `verify-whatsapp` | nenhuma | Handshake `GET` do webhook do WhatsApp |
 
@@ -225,7 +226,7 @@ Os testes do simulador rodam no contêiner com `docker compose exec channel-simu
 | `channel_simulator/tests/test_signature.py` | Vetores de assinatura do contrato |
 | `channel_simulator/tests/test_personas.py` | Leitura do arquivo e lojistas novos determinísticos, com o código do país da marca |
 | `channel_simulator/tests/test_records.py` | JSONL com append e `flush` |
-| `channel_simulator/tests/test_templates.py` | Determinismo, idioma, modelos por intenção e anexos |
+| `channel_simulator/tests/test_templates.py` | Determinismo, idioma, modelos por intenção, sorteio com peso, frases de urgência e anexos |
 | `channel_simulator/tests/test_whatsapp.py` | Payload de texto, imagem e documento; assinatura; verificação; receptor com Bearer certo, errado e ausente, corpo inválido e registro |
 | `channel_simulator/tests/test_chat.py` | Envio assinado; registro de streams (200, 400, 409, persistido e relido); leitura do Turbo Stream; cliente Action Cable com welcome, inscrição, mensagem, reconexão, inscrição recusada, welcome ausente e conexão parada |
 | `channel_simulator/tests/test_email.py` | Montagem com e sem anexo; envio SMTP com sucesso, destinatário recusado e servidor fora do ar; poller com paginação, header ausente, id já visto, ids relidos, headers RFC 2047 e Mailpit fora do ar |

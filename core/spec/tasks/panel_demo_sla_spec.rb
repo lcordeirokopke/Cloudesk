@@ -49,12 +49,13 @@ RSpec.describe "panel:demo_sla" do
     expect(rule["then"]["sla_minutes"]).to eq(queue_sla)
   end
 
-  it "a conversa roteada depois recebe o SLA de demonstração" do
+  it "a conversa roteada depois pela regra genérica recebe o SLA de demonstração" do
     run_task("panel:demo_sla", BRAND: "infinitepay", MINUTES: "1")
+    contact = seed_contact_in_segment(infinitepay, "baixo_tpv")
 
     conversation = Conversations::Intake.call(
-      inbound_message(brand: infinitepay, channel: "whatsapp", identity: identity_of(seed_contact(infinitepay), "whatsapp"),
-                      text: "Minha maquininha não liga")
+      inbound_message(brand: infinitepay, channel: "whatsapp", identity: identity_of(contact, "whatsapp"),
+                      text: "Oi, tudo bem?")
     ).first.conversation
 
     expect(conversation).to have_attributes(state: "with_ai", sla_minutes: 1)

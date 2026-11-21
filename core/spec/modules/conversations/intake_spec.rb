@@ -137,10 +137,12 @@ RSpec.describe Conversations::Intake do
       expect(human.conversation.state).to eq("awaiting_human")
     end
 
-    it "outra categoria cai na regra genérica" do
-      result = intake(whatsapp_message(text: "A maquininha não liga"))
+    it "mensagem sem categoria, de lojista de baixo volume, cai na regra genérica" do
+      baixo = seed_contact_in_segment(brand, "baixo_tpv")
+      result = intake(inbound_message(brand: brand, channel: "whatsapp", identity: identity_of(baixo, "whatsapp"),
+                                      text: "Oi, tudo bem?"))
 
-      expect(result.conversation).to have_attributes(state: "with_ai", category: "maquininha", priority: 10)
+      expect(result.conversation).to have_attributes(state: "with_ai", category: nil, priority: 10)
       expect(queue_name(result.conversation)).to eq("ip-suporte-geral")
       expect(routed_event(result.conversation.id).payload.dig("payload", "rule", "name")).to eq("InfinitePay · Geral")
     end
@@ -187,9 +189,9 @@ RSpec.describe Conversations::Intake do
       first = intake(whatsapp_message)
       resolve(first.conversation, 1.hour.ago)
 
-      second = intake(whatsapp_message(text: "Agora a maquininha não liga"))
+      second = intake(whatsapp_message(text: "Agora o app não abre"))
 
-      expect(second.conversation).to have_attributes(state: "with_ai", category: "maquininha")
+      expect(second.conversation).to have_attributes(state: "with_ai", category: "app")
       expect(queue_name(second.conversation)).to eq("ip-suporte-geral")
       expect(actions_of(first.conversation.id).count("conversation.routed")).to eq(2)
     end

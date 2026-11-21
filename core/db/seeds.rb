@@ -163,8 +163,7 @@ Faker::UniqueGenerator.clear
 begin
   catalog.each do |entry|
     Faker::Config.locale = entry[:locale]
-    # Segmento sorteado com peso: cada segmento entra no sorteio tantas vezes quanto o peso. O sorteio
-    # consome a semente uma vez por lojista.
+    # Segmento sorteado com peso: cada segmento entra no sorteio tantas vezes quanto o peso.
     segment_pool = entry[:segments].flat_map { |segment, weight| [ segment ] * weight }
 
     brand = Brand.find_or_create_by!(slug: entry[:slug]) do |record|

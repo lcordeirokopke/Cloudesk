@@ -214,6 +214,8 @@ O `conversation.routed` aponta para a linha exata da versão da regra (`routing_
 - **Categoria do agente sem conferência.** A categoria informada no `categorize` é gravada como chega, sem conferência com as listas do classificador.
 - **Capacidade da fila contada sem trava.** Duas entradas simultâneas podem contar a mesma vaga e passar a capacidade em poucas conversas. O número contado fica no `audit_event`.
 - **Capacidade das filas de IA nas seeds.** As filas `ip-financeiro-prioritaria` e `jim-finance-priority` têm capacidade 20; cheias, transbordam para a fila humana, e a conversa não chega ao agente. O valor é sintético, de exemplo, e é revisto antes da carga.
+- **Regras humanas nas seeds.** As regras de urgência e de repasse fora do alto volume levam a conversa direto a um analista, sem passar pelo agente nem pelo Kafka. Na carga, a fração de mensagens urgentes e de repasse define quanto do tráfego chega ao agente.
+- **SLA de demonstração só na regra genérica.** O `panel:demo_sla` muda a regra genérica, que recebe só as conversas sem categoria, de lojista de baixo volume ou sem segmento e sem urgência.
 - **Escalação sem conferência de capacidade.** A conversa escalada vai para a fila de escalação da fila em que estava (`queues.escalation_queue_id`), com a prioridade que tinha, ou fica na mesma fila quando ela não tem fila de escalação. A escalação não confere a capacidade do destino: a contagem das conversas abertas e a capacidade ficam no `conversation.escalated` (F11).
 - **Atendente IA único.** O roteamento para a IA usa o atendente IA da marca, o primeiro por nome, e a capacidade dele não é aplicada. Sem atendente IA na marca, a mensagem não é gravada.
 - **Autor das edições.** As edições de regra são atribuídas a `operator`, sem identificação de usuário, enquanto o login não está definido.
@@ -223,22 +225,51 @@ O `conversation.routed` aponta para a linha exata da versão da regra (`routing_
 
 ### Configuração nas seeds
 
-As seeds criam, por marca, duas equipes com horário comercial no fuso da marca, três filas, três regras ativas, um atendente IA, quatro analistas com capacidade 5 e 50 lojistas. Rodar as seeds de novo não duplica registros.
+As seeds criam, por marca, duas equipes com horário comercial no fuso da marca, seis filas, treze regras ativas, um atendente IA, quatro analistas com capacidade 5 e 50 lojistas. O segmento de cada lojista é sorteado com peso: 50% baixo, 30% médio e 20% alto volume. O Faker usa a semente fixa `20_261_115`, e rodar as seeds de novo não duplica registros.
 
-| Marca | Regra | Posição | Condição | Fila | Atendente inicial |
-| - | - | - | - | - | - |
-| InfinitePay | InfinitePay · Repasse · Alto volume | 1 | `repasse`, `alto_tpv` | `ip-financeiro-prioritaria` | `ai` |
-| InfinitePay | InfinitePay · Repasse | 2 | `repasse` | `ip-financeiro` | `human` |
-| InfinitePay | InfinitePay · Geral | 3 | genérica | `ip-suporte-geral` | `ai` |
-| JIM | JIM · Payout · High volume | 1 | `payout`, `high_tpv` | `jim-finance-priority` | `ai` |
-| JIM | JIM · Payout | 2 | `payout` | `jim-finance` | `human` |
-| JIM | JIM · General | 3 | genérica | `jim-general-support` | `ai` |
+As regras usam a urgência, o segmento, a categoria, o canal e o horário comercial da equipe da fila de destino. Cada regra tem uma prioridade própria, e a genérica fica por último.
 
-| Fila | Equipe | SLA | Capacidade | Atendente inicial | Transbordo |
-| - | - | - | - | - | - |
-| `ip-financeiro` / `jim-finance` | Financeiro / Finance | 60 min | 50 | `human` | |
-| `ip-financeiro-prioritaria` / `jim-finance-priority` | Financeiro / Finance | 15 min | 20 | `ai` | `ip-financeiro` / `jim-finance` |
-| `ip-suporte-geral` / `jim-general-support` | Suporte Técnico / Technical Support | 120 min | 100 | `ai` | |
+| Posição | Regra (InfinitePay / JIM) | Condição | Fila | Prioridade | SLA | Atendente inicial |
+| - | - | - | - | - | - | - |
+| 1 | Urgente · Alto volume / Urgent · High volume | urgência `high`, `alto_tpv` / `high_tpv` | `ip-urgente` / `jim-urgent` | 100 | 10 min | `human` |
+| 2 | Urgente / Urgent | urgência `high` | `ip-urgente` / `jim-urgent` | 95 | 15 min | `human` |
+| 3 | Repasse · Alto volume / Payout · High volume | `repasse` / `payout`, alto volume | `ip-financeiro-prioritaria` / `jim-finance-priority` | 90 | 15 min | `ai` |
+| 4 | Transação · Alto volume / Transaction · High volume | `transacao` / `transaction`, alto volume | `ip-transacoes` / `jim-transactions` | 80 | 20 min | `ai` |
+| 5 | Maquininha / Card reader | `maquininha` / `card_reader`, horário comercial | `ip-maquininha` / `jim-card-reader` | 65 | 45 min | `ai` |
+| 6 | Transação / Transaction | `transacao` / `transaction` | `ip-transacoes` / `jim-transactions` | 60 | 45 min | `ai` |
+| 7 | Maquininha · Fora do horário / Card reader · Off hours | `maquininha` / `card_reader`, fora do horário | `ip-maquininha` / `jim-card-reader` | 55 | 90 min | `ai` |
+| 8 | Repasse / Payout | `repasse` / `payout` | `ip-financeiro` / `jim-finance` | 50 | 60 min | `human` |
+| 9 | Taxas / Fees | `taxas` / `fees`, chat ou WhatsApp | `ip-suporte-geral` / `jim-general-support` | 35 | 90 min | `ai` |
+| 10 | App | `app` | `ip-suporte-geral` / `jim-general-support` | 25 | 60 min | `ai` |
+| 11 | Taxas · E-mail / Fees · Email | `taxas` / `fees`, e-mail | `ip-suporte-geral` / `jim-general-support` | 20 | 240 min | `ai` |
+| 12 | Geral · Médio e alto volume / General · Mid and high volume | médio ou alto volume | `ip-suporte-geral` / `jim-general-support` | 15 | 120 min | `ai` |
+| 13 | Geral / General | genérica | `ip-suporte-geral` / `jim-general-support` | 10 | 120 min | `ai` |
+
+O nome completo de cada regra leva a marca na frente, por exemplo `InfinitePay · Urgente` e `JIM · Urgent`.
+
+| Fila | Equipe | SLA | Capacidade | Atendente inicial | Transbordo | Escalação |
+| - | - | - | - | - | - | - |
+| `ip-financeiro` / `jim-finance` | Financeiro / Finance | 60 min | 50 | `human` | | |
+| `ip-financeiro-prioritaria` / `jim-finance-priority` | Financeiro / Finance | 15 min | 20 | `ai` | `ip-financeiro` / `jim-finance` | `ip-financeiro` / `jim-finance` |
+| `ip-urgente` / `jim-urgent` | Financeiro / Finance | 10 min | 15 | `human` | | |
+| `ip-transacoes` / `jim-transactions` | Financeiro / Finance | 30 min | 60 | `ai` | | `ip-financeiro` / `jim-finance` |
+| `ip-maquininha` / `jim-card-reader` | Suporte Técnico / Technical Support | 45 min | 60 | `ai` | | |
+| `ip-suporte-geral` / `jim-general-support` | Suporte Técnico / Technical Support | 120 min | 100 | `ai` | | |
+
+O teste `core/spec/seeds_spec.rb` passa uma combinação de fatos por regra pelo `Routing::Matcher`, com as regras gravadas pelas seeds, e confere a regra, a fila e a prioridade de cada uma.
+
+### Reprodução da massa de dados
+
+As seeds e o simulador usam sementes fixas: os mesmos comandos, em banco vazio, geram os mesmos lojistas, regras e textos. Os ids externos e os horários das mensagens são novos a cada execução, e as regras de maquininha dependem do horário comercial no momento do envio.
+
+1. Banco de desenvolvimento vazio, criado pelo superusuário no contêiner `postgres`:
+   `docker compose exec postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -c "DROP DATABASE \"$DB_DEVELOPMENT_NAME\" WITH (FORCE)" -c "CREATE DATABASE \"$DB_DEVELOPMENT_NAME\" OWNER \"$DB_OWNER_USERNAME\""'`
+2. Schema e seeds com o papel dono:
+   `docker compose exec web sh -c 'DB_USERNAME="$DB_OWNER_USERNAME" DB_PASSWORD="$DB_OWNER_PASSWORD" bin/rails db:migrate db:seed'`
+3. Lojistas para o simulador: `docker compose exec web bin/rails simulator:personas`
+4. Tráfego: `docker compose exec channel-simulator channel-simulator send --count 120 --rate 4 --urgency-ratio 0.15 --seed 1`
+
+O banco de teste é recriado do mesmo jeito, com `DB_TEST_NAME` no passo 1 e `RAILS_ENV=test bin/rails db:migrate` no passo 2; o RSpec roda as seeds antes da suíte.
 
 ### Banco
 

@@ -103,7 +103,8 @@ RSpec.describe Routing::Matcher do
     it "usa as regras das seeds em ordem" do
       expect(match_in_brand(facts)["name"]).to eq("InfinitePay · Repasse · Alto volume")
       expect(match_in_brand(facts.merge(segment: "medio_tpv"))["name"]).to eq("InfinitePay · Repasse")
-      expect(match_in_brand(facts.merge(category: nil))["name"]).to eq("InfinitePay · Geral")
+      expect(match_in_brand(facts.merge(category: nil))["name"]).to eq("InfinitePay · Geral · Médio e alto volume")
+      expect(match_in_brand(facts.merge(category: nil, segment: "baixo_tpv"))["name"]).to eq("InfinitePay · Geral")
     end
 
     it "só a maior versão de cada regra participa" do

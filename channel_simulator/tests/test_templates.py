@@ -66,3 +66,27 @@ def test_anexos_sinteticos():
     assert document.data.startswith(b"%PDF-")
     with pytest.raises(ValueError):
         templates.attachment("audio", rng)
+
+
+def test_intencoes_sorteadas_com_peso():
+    rng = random.Random(7)
+    intents = [templates.generate(rng, "pt-BR").intent for _ in range(2000)]
+    counts = {intent: intents.count(intent) for intent in templates.INTENTS}
+
+    assert set(counts) == set(templates.INTENTS)
+    assert all(count > 0 for count in counts.values())
+    assert counts["transacao"] > counts["saudacao"]
+
+
+@pytest.mark.parametrize("locale", ["pt-BR", "en-US"])
+def test_fracao_de_urgencia(locale):
+    rng = random.Random(2)
+    normal = [templates.generate(rng, locale, urgency_ratio=0.0) for _ in range(50)]
+    urgent = [templates.generate(rng, locale, urgency_ratio=1.0) for _ in range(50)]
+
+    assert not any(content.urgent for content in normal)
+    assert all(content.urgent for content in urgent)
+    assert all(any(content.text.endswith(phrase) for phrase in templates.URGENCY_PHRASES[locale]) for content in urgent)
+    assert not any(
+        any(content.text.endswith(phrase) for phrase in templates.URGENCY_PHRASES[locale]) for content in normal
+    )

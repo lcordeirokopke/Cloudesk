@@ -57,8 +57,8 @@ RSpec.describe "Esquema de domínio" do
       Tenancy.with_brand(infinitepay) do
         rule = described_class.order(:position).first!
 
-        expect(rule.when).to include("category" => "repasse", "segment" => "alto_tpv")
-        expect(rule.then).to include("queue" => "ip-financeiro-prioritaria", "priority" => 90)
+        expect(rule.when).to include("priority" => "high", "segment" => "alto_tpv")
+        expect(rule.then).to include("queue" => "ip-urgente", "priority" => 100)
         expect { rule.update!(position: 9) }.to raise_error(ActiveRecord::ReadOnlyRecord)
       end
     end

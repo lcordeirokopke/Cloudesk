@@ -199,7 +199,7 @@ CREATE TABLE public.attendants (
     skills character varying[] DEFAULT '{}'::character varying[] NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT attendants_kind_check CHECK (((kind)::text = ANY ((ARRAY['ai'::character varying, 'human'::character varying])::text[])))
+    CONSTRAINT attendants_kind_check CHECK (((kind)::text = ANY (ARRAY[('ai'::character varying)::text, ('human'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.attendants FORCE ROW LEVEL SECURITY;
@@ -244,7 +244,7 @@ CREATE TABLE public.brand_channels (
     display_value character varying,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT brand_channels_channel_check CHECK (((channel)::text = ANY ((ARRAY['whatsapp'::character varying, 'email'::character varying])::text[])))
+    CONSTRAINT brand_channels_channel_check CHECK (((channel)::text = ANY (ARRAY[('whatsapp'::character varying)::text, ('email'::character varying)::text])))
 );
 
 
@@ -276,7 +276,7 @@ CREATE TABLE public.contact_identities (
     value character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT contact_identities_channel_check CHECK (((channel)::text = ANY ((ARRAY['chat'::character varying, 'whatsapp'::character varying, 'email'::character varying])::text[])))
+    CONSTRAINT contact_identities_channel_check CHECK (((channel)::text = ANY (ARRAY[('chat'::character varying)::text, ('whatsapp'::character varying)::text, ('email'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.contact_identities FORCE ROW LEVEL SECURITY;
@@ -320,8 +320,8 @@ CREATE TABLE public.conversations (
     urgency character varying,
     sla_minutes integer,
     queued_at timestamp(6) without time zone,
-    CONSTRAINT conversations_channel_check CHECK (((channel)::text = ANY ((ARRAY['chat'::character varying, 'whatsapp'::character varying, 'email'::character varying])::text[]))),
-    CONSTRAINT conversations_urgency_check CHECK (((urgency)::text = ANY ((ARRAY['high'::character varying, 'normal'::character varying])::text[])))
+    CONSTRAINT conversations_channel_check CHECK (((channel)::text = ANY (ARRAY[('chat'::character varying)::text, ('whatsapp'::character varying)::text, ('email'::character varying)::text]))),
+    CONSTRAINT conversations_urgency_check CHECK (((urgency)::text = ANY (ARRAY[('high'::character varying)::text, ('normal'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.conversations FORCE ROW LEVEL SECURITY;
@@ -359,7 +359,7 @@ CREATE TABLE public.handoffs (
     rating character varying,
     rated_by_id uuid,
     rated_at timestamp(6) without time zone,
-    CONSTRAINT handoffs_rating_check CHECK (((rating)::text = ANY ((ARRAY['useful'::character varying, 'not_useful'::character varying])::text[])))
+    CONSTRAINT handoffs_rating_check CHECK (((rating)::text = ANY (ARRAY[('useful'::character varying)::text, ('not_useful'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.handoffs FORCE ROW LEVEL SECURITY;
@@ -382,8 +382,8 @@ CREATE TABLE public.messages (
     external_id character varying,
     attachments jsonb DEFAULT '[]'::jsonb NOT NULL,
     brand_channel_id uuid,
-    CONSTRAINT messages_author_check CHECK (((author)::text = ANY ((ARRAY['customer'::character varying, 'ai'::character varying, 'analyst'::character varying, 'system'::character varying])::text[]))),
-    CONSTRAINT messages_channel_check CHECK (((channel)::text = ANY ((ARRAY['chat'::character varying, 'whatsapp'::character varying, 'email'::character varying])::text[])))
+    CONSTRAINT messages_author_check CHECK (((author)::text = ANY (ARRAY[('customer'::character varying)::text, ('ai'::character varying)::text, ('analyst'::character varying)::text, ('system'::character varying)::text]))),
+    CONSTRAINT messages_channel_check CHECK (((channel)::text = ANY (ARRAY[('chat'::character varying)::text, ('whatsapp'::character varying)::text, ('email'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.messages FORCE ROW LEVEL SECURITY;
@@ -420,7 +420,7 @@ CREATE TABLE public.queues (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     escalation_queue_id uuid,
-    CONSTRAINT queues_first_attendant_check CHECK (((first_attendant)::text = ANY ((ARRAY['ai'::character varying, 'human'::character varying])::text[])))
+    CONSTRAINT queues_first_attendant_check CHECK (((first_attendant)::text = ANY (ARRAY[('ai'::character varying)::text, ('human'::character varying)::text])))
 );
 
 ALTER TABLE ONLY public.queues FORCE ROW LEVEL SECURITY;

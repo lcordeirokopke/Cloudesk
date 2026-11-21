@@ -186,7 +186,7 @@ RSpec.describe Routing::Route do
         "trigger" => "intake", "queue" => "ip-financeiro-prioritaria", "priority" => 90, "sla_minutes" => 15,
         "first_attendant" => "ai", "overflow" => false,
         "rule" => { "id" => rule.id, "rule_id" => rule.rule_id, "version" => 1,
-                    "name" => "InfinitePay · Repasse · Alto volume", "position" => 1 }
+                    "name" => "InfinitePay · Repasse · Alto volume", "position" => 3 }
       )
     end
 
@@ -243,14 +243,14 @@ RSpec.describe Routing::Route do
       conversation = open_conversation(alto)
       route(conversation)
 
-      result = categorize(conversation, "maquininha")
+      result = categorize(conversation, "app")
 
-      expect(result.conversation).to have_attributes(state: "with_ai", category: "maquininha", priority: 10,
+      expect(result.conversation).to have_attributes(state: "with_ai", category: "app", priority: 25,
                                                      queue_id: queue("ip-suporte-geral").id)
       classified = event(conversation, "conversation.classified")
       expect(classified).to have_attributes(actor_type: "ai", actor_id: ai_attendant.id)
       expect(classified.before).to eq("state" => "with_ai", "attendant_id" => ai_attendant.id, "category" => "repasse")
-      expect(classified.after).to eq("state" => "triage", "attendant_id" => nil, "category" => "maquininha")
+      expect(classified.after).to eq("state" => "triage", "attendant_id" => nil, "category" => "app")
       expect(event(conversation, "conversation.routed").payload.dig("payload", "trigger")).to eq("categorize")
     end
 
