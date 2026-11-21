@@ -19,7 +19,7 @@ catalog = [
     name: "InfinitePay",
     locale: "pt-BR",
     ai_attendant: "Agente IA InfinitePay",
-    segments: %w[alto_tpv medio_tpv baixo_tpv],
+    segments: { "alto_tpv" => 2, "medio_tpv" => 3, "baixo_tpv" => 5 },
     phone: { country: "+55", areas: %w[11 21 31 41 51 61 71 81], prefix: "9", digits: 8 },
     whatsapp_numbers: [
       { phone_number_id: "110000000000001", display: "551140000001" },
@@ -36,16 +36,50 @@ catalog = [
       { name: "ip-financeiro", team: "Financeiro", sla_minutes: 60, capacity: 50, first_attendant: "human" },
       { name: "ip-financeiro-prioritaria", team: "Financeiro", sla_minutes: 15, capacity: 20,
         first_attendant: "ai", overflow: "ip-financeiro", escalation: "ip-financeiro" },
+      { name: "ip-urgente", team: "Financeiro", sla_minutes: 10, capacity: 15, first_attendant: "human" },
+      { name: "ip-transacoes", team: "Financeiro", sla_minutes: 30, capacity: 60, first_attendant: "ai",
+        escalation: "ip-financeiro" },
+      { name: "ip-maquininha", team: "Suporte Técnico", sla_minutes: 45, capacity: 60, first_attendant: "ai" },
       { name: "ip-suporte-geral", team: "Suporte Técnico", sla_minutes: 120, capacity: 100, first_attendant: "ai" }
     ],
     rules: [
-      { name: "InfinitePay · Repasse · Alto volume", position: 1,
+      { name: "InfinitePay · Urgente · Alto volume", position: 1,
+        when: { brand: "infinitepay", priority: "high", segment: "alto_tpv" },
+        then: { queue: "ip-urgente", priority: 100, sla_minutes: 10, first_attendant: "human" } },
+      { name: "InfinitePay · Urgente", position: 2,
+        when: { brand: "infinitepay", priority: "high" },
+        then: { queue: "ip-urgente", priority: 95, sla_minutes: 15, first_attendant: "human" } },
+      { name: "InfinitePay · Repasse · Alto volume", position: 3,
         when: { brand: "infinitepay", category: "repasse", segment: "alto_tpv" },
         then: { queue: "ip-financeiro-prioritaria", priority: 90, sla_minutes: 15, first_attendant: "ai" } },
-      { name: "InfinitePay · Repasse", position: 2,
+      { name: "InfinitePay · Transação · Alto volume", position: 4,
+        when: { brand: "infinitepay", category: "transacao", segment: "alto_tpv" },
+        then: { queue: "ip-transacoes", priority: 80, sla_minutes: 20, first_attendant: "ai" } },
+      { name: "InfinitePay · Maquininha", position: 5,
+        when: { brand: "infinitepay", category: "maquininha", hours: "business" },
+        then: { queue: "ip-maquininha", priority: 65, sla_minutes: 45, first_attendant: "ai" } },
+      { name: "InfinitePay · Transação", position: 6,
+        when: { brand: "infinitepay", category: "transacao" },
+        then: { queue: "ip-transacoes", priority: 60, sla_minutes: 45, first_attendant: "ai" } },
+      { name: "InfinitePay · Maquininha · Fora do horário", position: 7,
+        when: { brand: "infinitepay", category: "maquininha", hours: "off_hours" },
+        then: { queue: "ip-maquininha", priority: 55, sla_minutes: 90, first_attendant: "ai" } },
+      { name: "InfinitePay · Repasse", position: 8,
         when: { brand: "infinitepay", category: "repasse" },
         then: { queue: "ip-financeiro", priority: 50, sla_minutes: 60, first_attendant: "human" } },
-      { name: "InfinitePay · Geral", position: 3,
+      { name: "InfinitePay · Taxas", position: 9,
+        when: { brand: "infinitepay", category: "taxas", channel: %w[chat whatsapp] },
+        then: { queue: "ip-suporte-geral", priority: 35, sla_minutes: 90, first_attendant: "ai" } },
+      { name: "InfinitePay · App", position: 10,
+        when: { brand: "infinitepay", category: "app" },
+        then: { queue: "ip-suporte-geral", priority: 25, sla_minutes: 60, first_attendant: "ai" } },
+      { name: "InfinitePay · Taxas · E-mail", position: 11,
+        when: { brand: "infinitepay", category: "taxas", channel: "email" },
+        then: { queue: "ip-suporte-geral", priority: 20, sla_minutes: 240, first_attendant: "ai" } },
+      { name: "InfinitePay · Geral · Médio e alto volume", position: 12,
+        when: { brand: "infinitepay", segment: %w[medio_tpv alto_tpv] },
+        then: { queue: "ip-suporte-geral", priority: 15, sla_minutes: 120, first_attendant: "ai" } },
+      { name: "InfinitePay · Geral", position: 13,
         when: { brand: "infinitepay" },
         then: { queue: "ip-suporte-geral", priority: 10, sla_minutes: 120, first_attendant: "ai" } }
     ]
@@ -55,7 +89,7 @@ catalog = [
     name: "JIM",
     locale: "en-US",
     ai_attendant: "JIM AI Agent",
-    segments: %w[high_tpv mid_tpv low_tpv],
+    segments: { "high_tpv" => 2, "mid_tpv" => 3, "low_tpv" => 5 },
     phone: { country: "+1", areas: %w[212 305 415 512 617], prefix: "", digits: 7 },
     whatsapp_numbers: [
       { phone_number_id: "120000000000001", display: "15555550101" },
@@ -72,17 +106,51 @@ catalog = [
       { name: "jim-finance", team: "Finance", sla_minutes: 60, capacity: 50, first_attendant: "human" },
       { name: "jim-finance-priority", team: "Finance", sla_minutes: 15, capacity: 20,
         first_attendant: "ai", overflow: "jim-finance", escalation: "jim-finance" },
+      { name: "jim-urgent", team: "Finance", sla_minutes: 10, capacity: 15, first_attendant: "human" },
+      { name: "jim-transactions", team: "Finance", sla_minutes: 30, capacity: 60, first_attendant: "ai",
+        escalation: "jim-finance" },
+      { name: "jim-card-reader", team: "Technical Support", sla_minutes: 45, capacity: 60, first_attendant: "ai" },
       { name: "jim-general-support", team: "Technical Support", sla_minutes: 120, capacity: 100,
         first_attendant: "ai" }
     ],
     rules: [
-      { name: "JIM · Payout · High volume", position: 1,
+      { name: "JIM · Urgent · High volume", position: 1,
+        when: { brand: "jim", priority: "high", segment: "high_tpv" },
+        then: { queue: "jim-urgent", priority: 100, sla_minutes: 10, first_attendant: "human" } },
+      { name: "JIM · Urgent", position: 2,
+        when: { brand: "jim", priority: "high" },
+        then: { queue: "jim-urgent", priority: 95, sla_minutes: 15, first_attendant: "human" } },
+      { name: "JIM · Payout · High volume", position: 3,
         when: { brand: "jim", category: "payout", segment: "high_tpv" },
         then: { queue: "jim-finance-priority", priority: 90, sla_minutes: 15, first_attendant: "ai" } },
-      { name: "JIM · Payout", position: 2,
+      { name: "JIM · Transaction · High volume", position: 4,
+        when: { brand: "jim", category: "transaction", segment: "high_tpv" },
+        then: { queue: "jim-transactions", priority: 80, sla_minutes: 20, first_attendant: "ai" } },
+      { name: "JIM · Card reader", position: 5,
+        when: { brand: "jim", category: "card_reader", hours: "business" },
+        then: { queue: "jim-card-reader", priority: 65, sla_minutes: 45, first_attendant: "ai" } },
+      { name: "JIM · Transaction", position: 6,
+        when: { brand: "jim", category: "transaction" },
+        then: { queue: "jim-transactions", priority: 60, sla_minutes: 45, first_attendant: "ai" } },
+      { name: "JIM · Card reader · Off hours", position: 7,
+        when: { brand: "jim", category: "card_reader", hours: "off_hours" },
+        then: { queue: "jim-card-reader", priority: 55, sla_minutes: 90, first_attendant: "ai" } },
+      { name: "JIM · Payout", position: 8,
         when: { brand: "jim", category: "payout" },
         then: { queue: "jim-finance", priority: 50, sla_minutes: 60, first_attendant: "human" } },
-      { name: "JIM · General", position: 3,
+      { name: "JIM · Fees", position: 9,
+        when: { brand: "jim", category: "fees", channel: %w[chat whatsapp] },
+        then: { queue: "jim-general-support", priority: 35, sla_minutes: 90, first_attendant: "ai" } },
+      { name: "JIM · App", position: 10,
+        when: { brand: "jim", category: "app" },
+        then: { queue: "jim-general-support", priority: 25, sla_minutes: 60, first_attendant: "ai" } },
+      { name: "JIM · Fees · Email", position: 11,
+        when: { brand: "jim", category: "fees", channel: "email" },
+        then: { queue: "jim-general-support", priority: 20, sla_minutes: 240, first_attendant: "ai" } },
+      { name: "JIM · General · Mid and high volume", position: 12,
+        when: { brand: "jim", segment: %w[mid_tpv high_tpv] },
+        then: { queue: "jim-general-support", priority: 15, sla_minutes: 120, first_attendant: "ai" } },
+      { name: "JIM · General", position: 13,
         when: { brand: "jim" },
         then: { queue: "jim-general-support", priority: 10, sla_minutes: 120, first_attendant: "ai" } }
     ]
@@ -95,6 +163,9 @@ Faker::UniqueGenerator.clear
 begin
   catalog.each do |entry|
     Faker::Config.locale = entry[:locale]
+    # Segmento sorteado com peso: cada segmento entra no sorteio tantas vezes quanto o peso. O sorteio
+    # consome a semente uma vez por lojista.
+    segment_pool = entry[:segments].flat_map { |segment, weight| [ segment ] * weight }
 
     brand = Brand.find_or_create_by!(slug: entry[:slug]) do |record|
       record.name = entry[:name]
@@ -184,7 +255,7 @@ begin
         username = Faker::Internet.unique.username(specifier: name, separators: [ "." ])
         email = "#{I18n.transliterate(username)}@example.com"
         app_id = "app-#{Faker::Alphanumeric.unique.alphanumeric(number: 12)}"
-        segment = Faker::Base.sample(entry[:segments])
+        segment = Faker::Base.sample(segment_pool)
 
         # O lojista é buscado pela identidade de canal.
         next if ContactIdentity.exists?(channel: "whatsapp", value: phone)
