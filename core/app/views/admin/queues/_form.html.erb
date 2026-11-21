@@ -1,0 +1,36 @@
+<%= render "admin/shared/errors", errors: @errors %>
+
+<%= form_with model: @queue, scope: :queue, url: url, method: method, class: "panel-form admin-form" do |form| %>
+  <% if @expected_updated_at %><%= hidden_field_tag :expected_updated_at, @expected_updated_at %><% end %>
+
+  <%= form.label :name, "Nome" %>
+  <%= form.text_field :name, required: true %>
+
+  <%= form.label :team_id, "Equipe" %>
+  <%= form.select :team_id, options_from_collection_for_select(@teams, :id, :name, @queue.team_id), include_blank: "sem equipe" %>
+
+  <%= form.label :sla_minutes, "SLA (minutos)" %>
+  <%= form.number_field :sla_minutes, min: 1, step: 1 %>
+
+  <%= form.label :capacity, "Capacidade (conversas abertas)" %>
+  <%= form.number_field :capacity, min: 1, step: 1 %>
+
+  <%= form.label :first_attendant, "Atendente inicial" %>
+  <%= form.select :first_attendant, options_for_select(Attendant::KINDS, @queue.first_attendant), include_blank: true %>
+
+  <%= form.label :overflow_queue_id, "Fila de transbordo" %>
+  <%= form.select :overflow_queue_id,
+                  options_from_collection_for_select(@queue_options, :id, :name, @queue.overflow_queue_id),
+                  include_blank: "sem transbordo" %>
+
+  <%= form.label :escalation_queue_id, "Fila de escalação (humana)" %>
+  <%= form.select :escalation_queue_id,
+                  options_from_collection_for_select(@queue_options.select { |queue| queue.first_attendant == "human" },
+                                                     :id, :name, @queue.escalation_queue_id),
+                  include_blank: "sem fila de escalação" %>
+
+  <div class="admin-actions">
+    <%= form.submit "Salvar", class: "panel-button" %>
+    <%= link_to "Cancelar", @queue.persisted? ? admin_queue_path(@queue) : admin_queues_path %>
+  </div>
+<% end %>

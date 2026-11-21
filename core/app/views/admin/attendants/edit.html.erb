@@ -1,0 +1,6 @@
+<% content_for :title, "Editar analista" %>
+
+<section class="panel-card">
+  <h1>Editar analista <%= @attendant.name_was || @attendant.name %></h1>
+  <%= render "form", url: admin_attendant_path(@attendant), method: :patch %>
+</section>

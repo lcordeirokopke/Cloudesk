@@ -1,0 +1,54 @@
+<% content_for :title, @rule.name %>
+
+<div class="panel-toolbar">
+  <div>
+    <h1><%= @rule.name %></h1>
+    <p class="panel-muted">
+      Versão <%= @rule.version %> · <%= @rule.active ? "ativa" : "inativa" %> · posição <%= @rule.position %>
+    </p>
+  </div>
+  <div class="admin-actions">
+    <%= link_to "Editar", edit_admin_rule_path(@rule.rule_id), class: "panel-button" %>
+    <% if @rule.active %>
+      <%= button_to "Desativar", deactivate_admin_rule_path(@rule.rule_id), params: { expected_version: @rule.version },
+                                                                             class: "panel-button panel-button--ghost" %>
+    <% else %>
+      <%= button_to "Ativar", activate_admin_rule_path(@rule.rule_id), params: { expected_version: @rule.version },
+                                                                         class: "panel-button panel-button--ghost" %>
+    <% end %>
+  </div>
+</div>
+
+<section class="panel-card">
+  <h2>Versão vigente</h2>
+  <dl class="panel-facts">
+    <dt>Condição</dt><dd><%= render "conditions", conditions: @rule["when"] %></dd>
+    <dt>Fila</dt><dd><%= @rule["then"]["queue"] %></dd>
+    <dt>Prioridade</dt><dd><%= @rule["then"]["priority"] %></dd>
+    <dt>SLA</dt><dd><%= @rule["then"]["sla_minutes"] ? "#{@rule["then"]["sla_minutes"]} min" : "da fila" %></dd>
+    <dt>Atendente inicial</dt><dd><%= @rule["then"]["first_attendant"] || "da fila" %></dd>
+  </dl>
+</section>
+
+<section class="panel-card">
+  <h2>Versões</h2>
+  <table class="panel-table">
+    <thead>
+      <tr><th>Versão</th><th>Gravada em</th><th>Estado</th><th>Posição</th><th>Condição</th><th>Resultado</th></tr>
+    </thead>
+    <tbody>
+      <% @versions.each do |version| %>
+        <tr>
+          <td><%= version.version %></td>
+          <td><%= format_time(version.created_at) %></td>
+          <td><%= version.active ? "ativa" : "inativa" %></td>
+          <td><%= version.position %></td>
+          <td><%= render "conditions", conditions: version["when"] %></td>
+          <td><code><%= version["then"].to_json %></code></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>
+
+<%= render "admin/shared/history", events: @history %>

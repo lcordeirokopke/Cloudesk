@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <title><%= content_for(:title) || "Admin" %> · Cloudesk</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="application-name" content="Cloudesk">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+
+    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body class="panel admin">
+    <header class="panel-header">
+      <%= link_to "Cloudesk · Admin", current_brand ? admin_rules_path : admin_root_path, class: "panel-header__brand" %>
+      <% if current_brand %>
+        <nav class="admin-nav">
+          <%= link_to "Filas", admin_queues_path %>
+          <%= link_to "Equipes", admin_teams_path %>
+          <%= link_to "Atendentes", admin_attendants_path %>
+          <%= link_to "Regras", admin_rules_path %>
+        </nav>
+      <% end %>
+      <span class="panel-header__who">
+        <%= current_brand&.name %><% if current_brand && operator_name %> · <% end %><%= operator_name && "operador #{operator_name}" %>
+      </span>
+      <% if current_brand %>
+        <%= button_to "Trocar marca", admin_session_path, method: :delete, class: "panel-button panel-button--ghost",
+                                                          form_class: "panel-header__logout" %>
+      <% end %>
+    </header>
+
+    <% if flash[:alert] %><p class="panel-flash panel-flash--alert"><%= flash[:alert] %></p><% end %>
+    <% if flash[:notice] %><p class="panel-flash panel-flash--notice"><%= flash[:notice] %></p><% end %>
+
+    <main class="panel-main">
+      <%= yield %>
+    </main>
+  </body>
+</html>

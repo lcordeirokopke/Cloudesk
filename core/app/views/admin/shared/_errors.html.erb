@@ -1,0 +1,7 @@
+<% if errors.present? %>
+  <div class="panel-flash panel-flash--alert admin-errors" role="alert">
+    <ul class="panel-list">
+      <% errors.each do |message| %><li><%= message %></li><% end %>
+    </ul>
+  </div>
+<% end %>

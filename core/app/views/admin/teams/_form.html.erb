@@ -1,0 +1,43 @@
+<% hours = @team.business_hours.to_h.stringify_keys %>
+<%= render "admin/shared/errors", errors: @errors %>
+
+<%= form_with scope: :team, url: url, method: method, class: "panel-form admin-form" do |form| %>
+  <% if @expected_updated_at %><%= hidden_field_tag :expected_updated_at, @expected_updated_at %><% end %>
+
+  <%= form.label :name, "Nome" %>
+  <%= form.text_field :name, value: @team.name, required: true %>
+
+  <%= form.label :skills, "Skills (separadas por vírgula)" %>
+  <%= form.text_field :skills, value: Array(@team.skills).join(", ") %>
+
+  <fieldset class="admin-fieldset">
+    <legend>Horário comercial</legend>
+    <label><%= form.radio_button :hours_mode, "none", checked: hours.empty? %> sem horário</label>
+    <label><%= form.radio_button :hours_mode, "set", checked: hours.present? %> com horário</label>
+
+    <div class="admin-checks">
+      <%= hidden_field_tag "team[weekdays][]", "" %>
+      <% weekdays.each do |day, label| %>
+        <label>
+          <%= check_box_tag "team[weekdays][]", day, Array(hours["weekdays"]).map(&:to_s).include?(day.to_s),
+                            id: "team_weekdays_#{day}" %>
+          <%= label %>
+        </label>
+      <% end %>
+    </div>
+
+    <%= form.label :from, "Início (HH:MM)" %>
+    <%= form.text_field :from, value: hours["from"], placeholder: "08:00" %>
+
+    <%= form.label :to, "Fim (HH:MM, fora do horário)" %>
+    <%= form.text_field :to, value: hours["to"], placeholder: "20:00" %>
+
+    <%= form.label :timezone, "Fuso" %>
+    <%= form.select :timezone, options_for_select(time_zones, hours["timezone"]), include_blank: true %>
+  </fieldset>
+
+  <div class="admin-actions">
+    <%= form.submit "Salvar", class: "panel-button" %>
+    <%= link_to "Cancelar", @team.persisted? ? admin_team_path(@team) : admin_teams_path %>
+  </div>
+<% end %>

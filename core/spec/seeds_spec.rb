@@ -66,6 +66,33 @@ RSpec.describe "Seeds" do
     expect(segments["jim"]["low_tpv"]).to be > segments["jim"]["high_tpv"]
   end
 
+  describe "segmentos" do
+    it "são os de config/routing/dimensions.yml em cada marca" do
+      Brand.order(:slug).each do |brand|
+        seeded = Tenancy.with_brand(brand) { Contact.distinct.pluck(:segment) }
+        expect(seeded).to match_array(Routing::Dimensions.config_for(brand.slug).fetch("segments")), brand.slug
+      end
+    end
+
+    # A conferência roda antes de qualquer gravação; o arquivo é carregado no próprio processo.
+    def load_seeds_with(segments)
+      allow(Routing::Dimensions).to receive(:config_for).and_call_original
+      allow(Routing::Dimensions).to receive(:config_for).with("infinitepay")
+                                                       .and_return("segments" => segments, "languages" => %w[pt-BR])
+      before_counts = counts
+      expect { load Rails.root.join("db/seeds.rb").to_s }.to raise_error(KeyError, yield)
+      expect(counts).to eq(before_counts)
+    end
+
+    it "recusam segmento das seeds ausente no YAML, sem gravar nada" do
+      load_seeds_with(%w[alto_tpv medio_tpv]) { /baixo_tpv/ }
+    end
+
+    it "recusam segmento do YAML sem peso nas seeds, sem gravar nada" do
+      load_seeds_with(%w[alto_tpv medio_tpv baixo_tpv vip]) { /vip/ }
+    end
+  end
+
   describe "regras de roteamento" do
     # Quarta-feira, dentro do horário comercial das duas marcas, e sábado, fora dele.
     let(:business) { Time.utc(2026, 11, 18, 15) }

@@ -57,6 +57,11 @@ module Routing
         )
       end
 
+      # Nomes das categorias da marca, na ordem do YAML.
+      def categories(brand)
+        lists_for(brand).categories
+      end
+
       def normalize(text)
         ActiveSupport::Inflector.transliterate(text.to_s.downcase).squish
       end

@@ -1,0 +1,22 @@
+# Valores das dimensões de lojista usadas nas regras de roteamento (Routing::Dimensions), por marca.
+#   segments:  segmentos de lojista; são as opções de when.segment no admin de regras e os
+#              segmentos sorteados pelas seeds para os lojistas sintéticos.
+#   languages: idiomas dos lojistas; são as opções de when.language no admin de regras.
+#
+# Canal, categoria, urgência e horário não ficam aqui: vêm de ContactIdentity::CHANNELS, de
+# config/routing/classifier.yml e de Routing::RuleDefinition.
+infinitepay:
+  segments:
+    - alto_tpv
+    - medio_tpv
+    - baixo_tpv
+  languages:
+    - pt-BR
+
+jim:
+  segments:
+    - high_tpv
+    - mid_tpv
+    - low_tpv
+  languages:
+    - en-US

@@ -125,4 +125,56 @@ RSpec.describe Routing::RulePublisher do
         .to raise_error(described_class::NoGenericRule)
     end
   end
+
+  describe "operator_name" do
+    it "vai ao payload quando informado, em todas as operações" do
+      rule = described_class.create(brand: brand, attributes: attributes, operator_name: "operator-a")
+      updated = described_class.update(brand: brand, rule_id: rule.rule_id, attributes: { position: 6 },
+                                       operator_name: "operator-b")
+      deactivated = described_class.deactivate(brand: brand, rule_id: rule.rule_id, operator_name: "operator-c")
+      activated = described_class.activate(brand: brand, rule_id: rule.rule_id, operator_name: "operator-d")
+
+      names = [ rule, updated, deactivated, activated ].map { |version| published_event(version).payload.dig("payload", "operator_name") }
+      expect(names).to eq(%w[operator-a operator-b operator-c operator-d])
+      expect(published_event(rule)).to have_attributes(actor_type: "operator", actor_id: nil)
+    end
+
+    it "sem operator_name, o payload não tem a chave" do
+      rule = described_class.create(brand: brand, attributes: attributes)
+
+      expect(published_event(rule).payload.fetch("payload")).not_to have_key("operator_name")
+    end
+  end
+
+  describe "expected_version" do
+    it "igual à maior versão: grava a versão nova" do
+      rule = described_class.create(brand: brand, attributes: attributes)
+
+      updated = described_class.update(brand: brand, rule_id: rule.rule_id, attributes: { position: 6 }, expected_version: 1)
+
+      expect(updated.version).to eq(2)
+    end
+
+    it "diferente da maior versão: levanta Stale sem gravar nada, também ao ativar e desativar" do
+      rule = described_class.create(brand: brand, attributes: attributes)
+      described_class.update(brand: brand, rule_id: rule.rule_id, attributes: { position: 6 })
+      before_counts = counts
+
+      expect do
+        described_class.update(brand: brand, rule_id: rule.rule_id, attributes: { position: 7 }, expected_version: 1)
+      end.to raise_error(described_class::Stale)
+      expect { described_class.deactivate(brand: brand, rule_id: rule.rule_id, expected_version: "1") }
+        .to raise_error(described_class::Stale)
+      expect(counts).to eq(before_counts)
+      in_brand { expect(RoutingRule.where(rule_id: rule.rule_id).maximum(:version)).to eq(2) }
+    end
+  end
+
+  describe "trava" do
+    it "toda gravação roda sob a Routing::RoutingLock da marca" do
+      expect(Routing::RoutingLock).to receive(:acquire).with(brand).at_least(:once).and_call_original
+
+      described_class.create(brand: brand, attributes: attributes)
+    end
+  end
 end

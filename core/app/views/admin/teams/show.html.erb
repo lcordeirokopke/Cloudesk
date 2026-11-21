@@ -1,0 +1,17 @@
+<% content_for :title, @team.name %>
+
+<div class="panel-toolbar">
+  <h1>Equipe <%= @team.name %></h1>
+  <%= link_to "Editar", edit_admin_team_path(@team), class: "panel-button" %>
+</div>
+
+<section class="panel-card">
+  <dl class="panel-facts">
+    <dt>Skills</dt><dd><%= Array(@team.skills).join(", ").presence || "-" %></dd>
+    <dt>Horário comercial</dt><dd><%= render "hours", hours: @team.business_hours %></dd>
+    <dt>Filas</dt>
+    <dd><%= safe_join(@queues.map { |queue| link_to(queue.name, admin_queue_path(queue)) }, ", ").presence || "-" %></dd>
+  </dl>
+</section>
+
+<%= render "admin/shared/history", events: @history %>

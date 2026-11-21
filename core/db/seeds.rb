@@ -19,7 +19,7 @@ catalog = [
     name: "InfinitePay",
     locale: "pt-BR",
     ai_attendant: "Agente IA InfinitePay",
-    segments: { "alto_tpv" => 2, "medio_tpv" => 3, "baixo_tpv" => 5 },
+    segment_weights: { "alto_tpv" => 2, "medio_tpv" => 3, "baixo_tpv" => 5 },
     phone: { country: "+55", areas: %w[11 21 31 41 51 61 71 81], prefix: "9", digits: 8 },
     whatsapp_numbers: [
       { phone_number_id: "110000000000001", display: "551140000001" },
@@ -89,7 +89,7 @@ catalog = [
     name: "JIM",
     locale: "en-US",
     ai_attendant: "JIM AI Agent",
-    segments: { "high_tpv" => 2, "mid_tpv" => 3, "low_tpv" => 5 },
+    segment_weights: { "high_tpv" => 2, "mid_tpv" => 3, "low_tpv" => 5 },
     phone: { country: "+1", areas: %w[212 305 415 512 617], prefix: "", digits: 7 },
     whatsapp_numbers: [
       { phone_number_id: "120000000000001", display: "15555550101" },
@@ -156,6 +156,18 @@ catalog = [
     ]
   }
 ]
+
+# Os segmentos de cada marca vêm de config/routing/dimensions.yml, as mesmas opções do admin de
+# regras; os pesos do sorteio ficam aqui, por segmento. Segmento com peso e ausente no YAML, ou
+# segmento do YAML sem peso, interrompe as seeds antes de qualquer gravação.
+catalog.each do |entry|
+  segments = Routing::Dimensions.config_for(entry[:slug]).fetch("segments")
+  weights = entry.fetch(:segment_weights)
+  unknown = weights.keys - segments
+  raise KeyError, "segmentos das seeds ausentes em #{Routing::Dimensions::CONFIG_PATH} (#{entry[:slug]}): #{unknown.join(', ')}" if unknown.any?
+
+  entry[:segments] = segments.to_h { |segment| [ segment, weights.fetch(segment) ] }
+end
 
 Faker::Config.random = Random.new(seed)
 Faker::UniqueGenerator.clear

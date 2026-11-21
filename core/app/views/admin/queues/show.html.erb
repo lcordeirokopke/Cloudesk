@@ -1,0 +1,21 @@
+<% content_for :title, @queue.name %>
+
+<div class="panel-toolbar">
+  <h1>Fila <%= @queue.name %></h1>
+  <%= link_to "Editar", edit_admin_queue_path(@queue), class: "panel-button" %>
+</div>
+
+<section class="panel-card">
+  <dl class="panel-facts">
+    <dt>Equipe</dt><dd><%= @queue.team ? link_to(@queue.team.name, admin_team_path(@queue.team)) : "sem equipe" %></dd>
+    <dt>SLA</dt><dd><%= @queue.sla_minutes %> min</dd>
+    <dt>Capacidade</dt><dd><%= @queue.capacity %> conversas abertas</dd>
+    <dt>Atendente inicial</dt><dd><%= @queue.first_attendant %></dd>
+    <dt>Transbordo</dt>
+    <dd><%= @queue.overflow_queue ? link_to(@queue.overflow_queue.name, admin_queue_path(@queue.overflow_queue)) : "-" %></dd>
+    <dt>Escalação</dt>
+    <dd><%= @queue.escalation_queue ? link_to(@queue.escalation_queue.name, admin_queue_path(@queue.escalation_queue)) : "-" %></dd>
+  </dl>
+</section>
+
+<%= render "admin/shared/history", events: @history %>

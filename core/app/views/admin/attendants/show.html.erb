@@ -1,0 +1,21 @@
+<% content_for :title, @attendant.name %>
+
+<div class="panel-toolbar">
+  <h1><%= @attendant.kind == "ai" ? "Atendente IA" : "Analista" %> <%= @attendant.name %></h1>
+  <% if @attendant.kind == "human" %>
+    <%= link_to "Editar", edit_admin_attendant_path(@attendant), class: "panel-button" %>
+  <% else %>
+    <span class="panel-muted">Só leitura: o atendente IA não é editado pelo admin.</span>
+  <% end %>
+</div>
+
+<section class="panel-card">
+  <dl class="panel-facts">
+    <dt>Tipo</dt><dd><%= @attendant.kind %></dd>
+    <dt>Equipe</dt><dd><%= @attendant.team ? link_to(@attendant.team.name, admin_team_path(@attendant.team)) : "sem equipe" %></dd>
+    <dt>Capacidade</dt><dd><%= @attendant.capacity %></dd>
+    <dt>Skills</dt><dd><%= Array(@attendant.skills).join(", ").presence || "-" %></dd>
+  </dl>
+</section>
+
+<%= render "admin/shared/history", events: @history %>

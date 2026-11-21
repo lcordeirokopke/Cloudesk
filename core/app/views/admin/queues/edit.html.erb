@@ -1,0 +1,6 @@
+<% content_for :title, "Editar fila" %>
+
+<section class="panel-card">
+  <h1>Editar fila <%= @queue.name_was || @queue.name %></h1>
+  <%= render "form", url: admin_queue_path(@queue), method: :patch %>
+</section>

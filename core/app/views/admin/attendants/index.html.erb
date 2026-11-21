@@ -1,0 +1,25 @@
+<% content_for :title, "Atendentes" %>
+
+<div class="panel-toolbar">
+  <h1>Atendentes · <%= current_brand.name %></h1>
+  <%= link_to "Novo analista", new_admin_attendant_path, class: "panel-button" %>
+</div>
+
+<section class="panel-card">
+  <table class="panel-table">
+    <thead>
+      <tr><th>Nome</th><th>Tipo</th><th>Equipe</th><th>Capacidade</th><th>Skills</th></tr>
+    </thead>
+    <tbody>
+      <% @attendants.each do |attendant| %>
+        <tr>
+          <td><%= link_to attendant.name, admin_attendant_path(attendant) %></td>
+          <td><%= attendant.kind == "ai" ? "IA (só leitura)" : "analista" %></td>
+          <td><%= attendant.team&.name || "sem equipe" %></td>
+          <td><%= attendant.capacity %></td>
+          <td><%= Array(attendant.skills).join(", ").presence || "-" %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>

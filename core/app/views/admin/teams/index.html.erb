@@ -1,0 +1,23 @@
+<% content_for :title, "Equipes" %>
+
+<div class="panel-toolbar">
+  <h1>Equipes · <%= current_brand.name %></h1>
+  <%= link_to "Nova equipe", new_admin_team_path, class: "panel-button" %>
+</div>
+
+<section class="panel-card">
+  <table class="panel-table">
+    <thead>
+      <tr><th>Nome</th><th>Skills</th><th>Horário comercial</th></tr>
+    </thead>
+    <tbody>
+      <% @teams.each do |team| %>
+        <tr>
+          <td><%= link_to team.name, admin_team_path(team) %></td>
+          <td><%= Array(team.skills).join(", ").presence || "-" %></td>
+          <td><%= render "hours", hours: team.business_hours %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>

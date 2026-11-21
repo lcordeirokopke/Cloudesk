@@ -1,0 +1,22 @@
+<%= render "admin/shared/errors", errors: @errors %>
+
+<%= form_with scope: :attendant, url: url, method: method, class: "panel-form admin-form" do |form| %>
+  <% if @expected_updated_at %><%= hidden_field_tag :expected_updated_at, @expected_updated_at %><% end %>
+
+  <%= form.label :name, "Nome" %>
+  <%= form.text_field :name, value: @attendant.name, required: true %>
+
+  <%= form.label :team_id, "Equipe" %>
+  <%= form.select :team_id, options_from_collection_for_select(@teams, :id, :name, @attendant.team_id), include_blank: "sem equipe" %>
+
+  <%= form.label :capacity, "Capacidade (conversas simultâneas)" %>
+  <%= form.number_field :capacity, value: @attendant.capacity, min: 1, step: 1 %>
+
+  <%= form.label :skills, "Skills (separadas por vírgula)" %>
+  <%= form.text_field :skills, value: Array(@attendant.skills).join(", ") %>
+
+  <div class="admin-actions">
+    <%= form.submit "Salvar", class: "panel-button" %>
+    <%= link_to "Cancelar", @attendant.persisted? ? admin_attendant_path(@attendant) : admin_attendants_path %>
+  </div>
+<% end %>

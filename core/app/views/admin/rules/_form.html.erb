@@ -1,0 +1,75 @@
+<%# Formulário estruturado de regra (Admin::RuleForm). when.brand é sempre a marca da sessão. %>
+<% labels = { "channel" => "Canal", "category" => "Categoria", "priority" => "Urgência", "segment" => "Segmento",
+              "language" => "Idioma" } %>
+<%= render "admin/shared/errors", errors: @errors %>
+
+<%= form_with scope: :rule, url: url, method: method, class: "panel-form admin-form" do |form| %>
+  <% if @expected_version %><%= hidden_field_tag :expected_version, @expected_version %><% end %>
+
+  <%= form.label :name, "Nome" %>
+  <%= form.text_field :name, value: @form.name, required: true %>
+
+  <%= form.label :position, "Posição (ordem de avaliação; menor primeiro)" %>
+  <%= form.number_field :position, value: @form.position, step: 1, required: true %>
+
+  <fieldset class="admin-fieldset">
+    <legend>Condição (when)</legend>
+    <p class="panel-muted">Marca: <code><%= current_brand.slug %></code>. Dimensão sem opção marcada não condiciona a regra.</p>
+
+    <div class="admin-rule-grid">
+      <% Admin::RuleForm::DIMENSIONS.each do |dimension| %>
+        <div class="admin-checks admin-checks--column">
+          <strong><%= labels.fetch(dimension) %></strong>
+          <% @form.options(dimension).each do |value| %>
+            <label>
+              <%= check_box_tag "rule[when][#{dimension}][]", value, @form.selected(dimension).include?(value),
+                                id: "rule_when_#{dimension}_#{value.parameterize(separator: '_')}" %>
+              <%= value %>
+              <% if @form.outside?(dimension, value) %><span class="panel-late">fora da lista</span><% end %>
+            </label>
+          <% end %>
+        </div>
+      <% end %>
+
+      <div class="admin-checks admin-checks--column">
+        <strong>Horário</strong>
+        <label><%= radio_button_tag "rule[when][hours]", "", @form.hours.blank?, id: "rule_when_hours_none" %> sem condição</label>
+        <% @form.hours_options.each do |value| %>
+          <label>
+            <%= radio_button_tag "rule[when][hours]", value, @form.hours == value, id: "rule_when_hours_#{value}" %>
+            <%= value == "business" ? "horário comercial" : "fora do horário" %>
+          </label>
+        <% end %>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="admin-fieldset">
+    <legend>Resultado (then)</legend>
+
+    <%= label_tag "rule_then_queue", "Fila" %>
+    <%= select_tag "rule[then][queue]",
+                   options_for_select(
+                     (@queues.map(&:name) + [ @form.then_values["queue"] ]).compact_blank.uniq, @form.then_values["queue"]
+                   ),
+                   include_blank: true, id: "rule_then_queue" %>
+
+    <%= label_tag "rule_then_priority", "Prioridade" %>
+    <%= number_field_tag "rule[then][priority]", @form.then_values["priority"], step: 1, required: true, id: "rule_then_priority" %>
+
+    <%= label_tag "rule_then_sla_minutes", "SLA em minutos (vazio: o da fila)" %>
+    <%= number_field_tag "rule[then][sla_minutes]", @form.then_values["sla_minutes"], min: 1, step: 1,
+                         id: "rule_then_sla_minutes" %>
+
+    <%= label_tag "rule_then_first_attendant", "Atendente inicial" %>
+    <%= select_tag "rule[then][first_attendant]",
+                   options_for_select([ [ "da fila", "" ] ] + Attendant::KINDS.map { |kind| [ kind, kind ] },
+                                      @form.then_values["first_attendant"]),
+                   id: "rule_then_first_attendant" %>
+  </fieldset>
+
+  <div class="admin-actions">
+    <%= form.submit "Salvar", class: "panel-button" %>
+    <%= link_to "Cancelar", @rule ? admin_rule_path(@rule.rule_id) : admin_rules_path %>
+  </div>
+<% end %>

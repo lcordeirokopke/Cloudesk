@@ -40,6 +40,20 @@ Rails.application.routes.draw do
     post "handoffs/:handoff_id/rating", to: "handoff_ratings#create", as: :handoff_rating
   end
 
+  # Admin de filas e regras, com HTTP basic auth e a marca escolhida na sessão; sem exclusão.
+  scope "admin", module: "admin", as: "admin" do
+    root to: "sessions#index"
+    post "session", to: "sessions#create", as: :session
+    delete "session", to: "sessions#destroy"
+    resources :queues, :teams, :attendants, only: %i[index show new create edit update]
+    resources :rules, only: %i[index show new create edit update], param: :rule_id do
+      member do
+        post :activate
+        post :deactivate
+      end
+    end
+  end
+
   # Painel dos jobs do Solid Queue (Mission Control - Jobs), com HTTP basic auth.
   mount MissionControl::Jobs::Engine, at: "/jobs"
 

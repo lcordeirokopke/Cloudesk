@@ -1,0 +1,38 @@
+<%# Histórico de edições: uma linha por audit_event, com horário, operador, operação e o diff atributo a atributo. %>
+<section class="panel-card">
+  <h2>Histórico de edições</h2>
+  <% if events.empty? %>
+    <p class="panel-muted">Nenhuma edição registrada no admin.</p>
+  <% else %>
+    <table class="panel-table admin-history">
+      <thead>
+        <tr><th>Horário</th><th>Operador</th><th>Evento</th><th>Mudanças</th></tr>
+      </thead>
+      <tbody>
+        <% events.each do |event| %>
+          <% payload = event.payload.fetch("payload", {}) %>
+          <tr>
+            <td><%= format_time(event.created_at) %></td>
+            <td><%= payload["operator_name"].presence || event.actor_type %></td>
+            <td>
+              <code><%= event.action %></code>
+              <% if payload["version"] %><br><span class="panel-muted">versão <%= payload["version"] %></span><% end %>
+            </td>
+            <td>
+              <ul class="admin-diff">
+                <% payload.fetch("diff", {}).each do |attribute, change| %>
+                  <li>
+                    <code><%= attribute %></code>:
+                    <span class="admin-diff__before"><%= change["before"].nil? ? "vazio" : change["before"].to_json %></span>
+                    →
+                    <span class="admin-diff__after"><%= change["after"].nil? ? "vazio" : change["after"].to_json %></span>
+                  </li>
+                <% end %>
+              </ul>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+</section>

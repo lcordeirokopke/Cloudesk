@@ -1,0 +1,8 @@
+<% conditions = conditions.to_h.except("brand") %>
+<% if conditions.empty? %>
+  <span class="panel-muted">genérica (toda a marca)</span>
+<% else %>
+  <% conditions.each do |key, value| %>
+    <code><%= key %></code>: <%= Array.wrap(value).join(", ") %><br>
+  <% end %>
+<% end %>

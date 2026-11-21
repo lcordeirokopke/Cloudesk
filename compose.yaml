@@ -35,6 +35,8 @@ x-rails: &rails
     MISSION_CONTROL_PASSWORD: ${MISSION_CONTROL_PASSWORD}
     PANEL_USER: ${PANEL_USER}
     PANEL_PASSWORD: ${PANEL_PASSWORD}
+    ADMIN_USER: ${ADMIN_USER}
+    ADMIN_PASSWORD: ${ADMIN_PASSWORD}
   volumes:
     - ./core:/rails
     - ./contracts:/contracts:ro

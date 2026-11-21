@@ -1,0 +1,7 @@
+<% content_for :title, "Editar regra" %>
+
+<section class="panel-card">
+  <h1>Editar regra <%= @rule.name %></h1>
+  <p class="panel-muted">Salvar publica a versão <%= @rule.version + 1 %>; a próxima conversa já usa a versão nova.</p>
+  <%= render "form", url: admin_rule_path(@rule.rule_id), method: :patch %>
+</section>

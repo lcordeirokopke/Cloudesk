@@ -1,0 +1,6 @@
+<% content_for :title, "Editar equipe" %>
+
+<section class="panel-card">
+  <h1>Editar equipe <%= @team.name_was || @team.name %></h1>
+  <%= render "form", url: admin_team_path(@team), method: :patch %>
+</section>

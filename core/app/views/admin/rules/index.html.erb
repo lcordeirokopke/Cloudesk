@@ -1,0 +1,33 @@
+<% content_for :title, "Regras" %>
+
+<div class="panel-toolbar">
+  <div>
+    <h1>Regras de roteamento · <%= current_brand.name %></h1>
+    <p class="panel-muted">Em ordem de avaliação: a primeira regra ativa que casa define fila, prioridade e SLA.</p>
+  </div>
+  <%= link_to "Nova regra", new_admin_rule_path, class: "panel-button" %>
+</div>
+
+<section class="panel-card">
+  <table class="panel-table">
+    <thead>
+      <tr><th>Posição</th><th>Regra</th><th>Condição</th><th>Fila</th><th>Prioridade</th><th>Versão</th><th>Estado</th></tr>
+    </thead>
+    <tbody>
+      <% @rules.each do |rule| %>
+        <tr class="<%= "admin-inactive" unless rule.active %>">
+          <td><%= rule.position %></td>
+          <td><%= link_to rule.name, admin_rule_path(rule.rule_id) %></td>
+          <td><%= render "conditions", conditions: rule["when"] %></td>
+          <td>
+            <%= rule["then"]["queue"] %>
+            <% unless @queue_names.include?(rule["then"]["queue"]) %><span class="panel-late">fila inexistente</span><% end %>
+          </td>
+          <td><%= rule["then"]["priority"] %></td>
+          <td><%= rule.version %></td>
+          <td><%= rule.active ? "ativa" : "inativa" %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>

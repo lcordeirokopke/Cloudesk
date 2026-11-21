@@ -1,6 +1,13 @@
 require "rails_helper"
 
 RSpec.describe Routing::Classifier do
+  describe ".categories" do
+    it "devolve as categorias da marca na ordem do YAML" do
+      expect(described_class.categories(infinitepay)).to eq(%w[repasse taxas transacao maquininha app])
+      expect(described_class.categories(jim)).to eq(%w[payout fees transaction card_reader app])
+    end
+  end
+
   def classify(text, brand: infinitepay, subject: nil)
     described_class.call(brand: brand, text: text, subject: subject)
   end

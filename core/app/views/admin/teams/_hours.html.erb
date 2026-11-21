@@ -1,0 +1,7 @@
+<% hours = hours.to_h.stringify_keys %>
+<% if hours.empty? %>
+  sem horário
+<% else %>
+  <%= Array(hours["weekdays"]).map { |day| Admin::TeamsController::WEEKDAYS.fetch(day, day) }.join(", ") %>,
+  <%= hours["from"] %> às <%= hours["to"] %> (<%= hours["timezone"] %>)
+<% end %>

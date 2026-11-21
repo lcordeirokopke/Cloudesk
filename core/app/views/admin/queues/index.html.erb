@@ -1,0 +1,30 @@
+<% content_for :title, "Filas" %>
+
+<div class="panel-toolbar">
+  <h1>Filas · <%= current_brand.name %></h1>
+  <%= link_to "Nova fila", new_admin_queue_path, class: "panel-button" %>
+</div>
+
+<section class="panel-card">
+  <table class="panel-table">
+    <thead>
+      <tr>
+        <th>Nome</th><th>Equipe</th><th>SLA (min)</th><th>Capacidade</th><th>Atendente inicial</th>
+        <th>Transbordo</th><th>Escalação</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @queues.each do |queue| %>
+        <tr>
+          <td><%= link_to queue.name, admin_queue_path(queue) %></td>
+          <td><%= queue.team&.name || "sem equipe" %></td>
+          <td><%= queue.sla_minutes %></td>
+          <td><%= queue.capacity %></td>
+          <td><%= queue.first_attendant %></td>
+          <td><%= queue.overflow_queue&.name || "-" %></td>
+          <td><%= queue.escalation_queue&.name || "-" %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>

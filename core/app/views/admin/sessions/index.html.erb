@@ -1,0 +1,12 @@
+<% content_for :title, "Escolher marca" %>
+
+<section class="panel-card panel-login">
+  <h1>Admin de filas e regras</h1>
+  <p class="panel-muted">Escolha a marca que vai editar.</p>
+
+  <%= form_with url: admin_session_path, method: :post, class: "panel-form" do |form| %>
+    <%= form.label :brand, "Marca" %>
+    <%= form.select :brand, options_for_select(@brands.map { |brand| [ brand.name, brand.slug ] }, current_brand&.slug) %>
+    <%= form.submit "Entrar", class: "panel-button" %>
+  <% end %>
+</section>
