@@ -7,7 +7,17 @@
     "last_sequence": 7
   },
   "customer_memory": {
-    "summary": "Em outubro, perguntou sobre taxas de antecipação.",
-    "updated_at": "2026-10-20T18:30:00.000Z"
+    "summary": "20/10/2026 · Chat · taxas · resolvida pela IA · \"Quais são as taxas da antecipação?\"",
+    "updated_at": "2026-10-20T18:30:05.120Z",
+    "conversations": [
+      {
+        "category": "taxas",
+        "channel": "chat",
+        "resolved_by": "ai",
+        "resolved_at": "2026-10-20T18:30:00.000Z",
+        "handoff_reason": null,
+        "first_message": "Quais são as taxas da antecipação?"
+      }
+    ]
   }
 }

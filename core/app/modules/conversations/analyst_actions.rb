@@ -4,7 +4,9 @@ module Conversations
   #   reply!:        com a conversa em with_human e atribuída ao analista, responde à última
   #                  mensagem do lojista pelo canal dela (Conversations::Outbound);
   #   resolve!:      mesmas exigências; with_human -> resolved (conversation.resolved), com
-  #                  resolved_at, mantém o atendente e não envia mensagem ao lojista;
+  #                  resolved_at, mantém o atendente e não envia mensagem ao lojista; enfileira o
+  #                  recálculo da memória do lojista (Conversations::MemoryRefreshJob) na mesma
+  #                  transação;
   #   rate_handoff!: o analista atribuído à conversa (with_human ou resolved) avalia o briefing do
   #                  handoff uma vez (handoff.rated), com o tempo até a primeira resposta humana.
   # Fora das exigências, levanta NotAllowed e nada é gravado.
@@ -39,6 +41,8 @@ module Conversations
                             panel: true) do |change|
           change.before = snapshot(conversation)
           conversation.update!(state: "resolved", resolved_at: Current.received_at || Time.current)
+          MemoryRefreshJob.perform_later(brand_id: brand.id, contact_id: conversation.contact_id,
+                                         conversation_id: conversation.id)
           change.after = snapshot(conversation)
           change.target = conversation
           change.conversation = conversation

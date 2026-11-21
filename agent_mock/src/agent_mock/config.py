@@ -13,6 +13,7 @@
 | AGENT_FAILURE_MODE | none | Modo de falha: none, delay, drop, duplicate ou stale |
 | AGENT_FAILURE_RATE | 1 | Fração dos eventos afetados pelo modo de falha, de 0 a 1 |
 | AGENT_FAILURE_DELAY_MS | 0 | Atraso somado à latência no modo delay |
+| AGENT_MEMORY_WINDOW_DAYS | 30 | Dias antes do received_at do evento em que uma conversa da memória do lojista entra no prefixo do reply |
 """
 
 import os
@@ -22,6 +23,7 @@ INBOUND_TOPIC = "agent.inbound"
 OUTBOUND_TOPIC = "agent.outbound"
 LOCALES = ("pt-BR", "en-US")
 FAILURE_MODES = ("none", "delay", "drop", "duplicate", "stale")
+DEFAULT_MEMORY_WINDOW_DAYS = 30
 
 
 def parse_locales(value: str) -> dict[str, str]:
@@ -48,6 +50,7 @@ class Settings:
     failure_mode: str = "none"
     failure_rate: float = 1.0
     failure_delay_ms: int = 0
+    memory_window_days: int = DEFAULT_MEMORY_WINDOW_DAYS
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -70,6 +73,7 @@ class Settings:
             failure_mode=value("AGENT_FAILURE_MODE", defaults.failure_mode).strip(),
             failure_rate=float(value("AGENT_FAILURE_RATE", defaults.failure_rate)),
             failure_delay_ms=int(value("AGENT_FAILURE_DELAY_MS", defaults.failure_delay_ms)),
+            memory_window_days=int(value("AGENT_MEMORY_WINDOW_DAYS", defaults.memory_window_days)),
         )
         if settings.concurrency < 1:
             raise ValueError("AGENT_CONCURRENCY deve ser maior que zero")
@@ -81,4 +85,6 @@ class Settings:
             raise ValueError("AGENT_FAILURE_RATE deve estar entre 0 e 1")
         if settings.failure_delay_ms < 0:
             raise ValueError("AGENT_FAILURE_DELAY_MS não pode ser negativo")
+        if settings.memory_window_days < 0:
+            raise ValueError("AGENT_MEMORY_WINDOW_DAYS não pode ser negativo")
         return settings

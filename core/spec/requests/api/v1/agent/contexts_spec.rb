@@ -62,6 +62,32 @@ RSpec.describe "Contexto da conversa para o agente", type: :request do
     expect(response).to have_http_status(:unauthorized)
   end
 
+  it "a segunda conversa do lojista, por outro canal, recebe no contexto o resumo da primeira" do
+    first = conversation
+    Agents::ActionProcessor.call(action: agent_action(first, example: "resolve"),
+                                 idempotency_key: Contract::IdempotencyKey.for_action(agent_action(first, example: "resolve")))
+    jobs_of(Conversations::MemoryRefreshJob).each { |job| ActiveJob::Base.execute(job.arguments) }
+
+    travel_to((brand.reopen_window_minutes + 1).minutes.from_now) do
+      second = Conversations::Intake.call(
+        inbound_message(brand: brand, channel: "email", identity: identity_of(contact, "email"), text: "Preciso de ajuda")
+      ).first.conversation
+      expect(second.id).not_to eq(first.id)
+      Tenancy.with_brand(brand) { expect(Conversation.find(first.id).state).to eq("closed") }
+
+      get_signed(path_for("infinitepay", second.id))
+
+      expect(response).to have_http_status(:ok)
+      expect(Contract::Schemas.errors("context", response.parsed_body)).to eq([])
+      memory = response.parsed_body.fetch("customer_memory")
+      expect(memory.fetch("summary")).to include("WhatsApp · maquininha · resolvida pela IA", '"Minha maquininha não liga"')
+      expect(memory.fetch("conversations")).to contain_exactly(
+        include("channel" => "whatsapp", "category" => "maquininha", "resolved_by" => "ai",
+                "first_message" => "Minha maquininha não liga")
+      )
+    end
+  end
+
   it "responde 404 para a conversa de outra marca, marca inexistente e id que não é UUID" do
     [ path_for("jim", conversation.id), path_for("outra", conversation.id), path_for("infinitepay", "abc") ].each do |path|
       get_signed(path)

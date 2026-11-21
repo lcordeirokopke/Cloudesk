@@ -1,5 +1,5 @@
 import pytest
-from conftest import context_for, event_body, record, without_times
+from conftest import context_for, event_body, memory_entry, record, with_memory, without_times
 
 from agent_mock import decision, events, tools
 from agent_mock.action import build
@@ -202,3 +202,83 @@ def test_mesma_entrada_mesma_acao():
     ]
 
     assert actions[0] == actions[1] == actions[2]
+
+
+MEMORY_CASES = [
+    ("pt-BR", "infinitepay", "A transação ficou pendente.", "transacao", "transação"),
+    ("pt-BR", "infinitepay", "Quando cai o repasse?", "repasse", "repasse"),
+    ("pt-BR", "infinitepay", "Qual a taxa do crédito parcelado em 12x?", "taxas", "taxas"),
+    ("pt-BR", "infinitepay", "Minha maquininha não liga.", "maquininha", "maquininha"),
+    ("en-US", "jim", "The transaction is pending.", "transaction", "a transaction"),
+    ("en-US", "jim", "When is my payout?", "payout", "payouts"),
+    ("en-US", "jim", "What is the fee for credit card installments?", "fees", "fees"),
+    ("en-US", "jim", "My card reader is not working.", "card_reader", "your card reader"),
+]
+
+
+def decide_with_memory(text, brand, locale, *entries, window=30):
+    body = event_body(text=text, brand=brand)
+    event = events.parse(record(body))
+    return decision.decide(event, with_memory(context_for(body), *entries), locale, memory_window_days=window)
+
+
+@pytest.mark.parametrize("locale, brand, text, category, topic", MEMORY_CASES)
+def test_reply_com_memoria_relacionada_ganha_o_prefixo(locale, brand, text, category, topic):
+    plain = decide(text, brand=brand, locale=locale)
+    entry = memory_entry(category=category, resolved_at="2026-11-10T23:30:00.000Z")
+
+    result = decide_with_memory(text, brand, locale, entry)
+
+    date = "10/11/2026" if locale == "pt-BR" else "11/10/2026"
+    prefix = decision.MEMORY_PREFIX[locale].format(assunto=topic, data=date)
+    assert plain.type == result.type == "reply"
+    assert result.fields["text"] == prefix + plain.fields["text"]
+
+
+def test_prefixo_usa_a_conversa_mais_recente():
+    older = memory_entry(category="repasse", resolved_at="2026-11-01T10:00:00.000Z")
+    newer = memory_entry(category="repasse", resolved_at="2026-11-12T10:00:00.000Z")
+
+    result = decide_with_memory("Quando cai o repasse?", "infinitepay", "pt-BR", newer, older)
+
+    assert result.fields["text"].startswith("Vi que você já falou com a gente sobre repasse em 12/11/2026. ")
+
+
+@pytest.mark.parametrize("text, expected_type", [
+    ("Oi, tudo bem? Preciso de ajuda.", "reply"),
+    ("Obrigado, deu tudo certo!", "resolve"),
+    ("Quero mudar o endereço cadastrado.", "escalate"),
+])
+def test_saudacao_resolve_e_escalate_nao_mudam(text, expected_type):
+    entry = memory_entry(category="repasse", resolved_at="2026-11-12T10:00:00.000Z")
+
+    result = decide_with_memory(text, "infinitepay", "pt-BR", entry)
+
+    assert result == decide(text)
+    assert result.type == expected_type
+
+
+def test_escalate_da_intencao_com_memoria_nao_muda():
+    serial = find("SN", 8, tools.status_maquininha, "defeito")
+    text = f"Preciso trocar a maquininha {serial}."
+    entry = memory_entry(category="maquininha", resolved_at="2026-11-12T10:00:00.000Z")
+
+    assert decide_with_memory(text, "infinitepay", "pt-BR", entry) == decide(text)
+
+
+def test_sem_prefixo_com_memoria_sem_relacao_ou_fora_da_janela():
+    text = "Quando cai o repasse?"
+    plain = decide(text)
+
+    assert decide_with_memory(text, "infinitepay", "pt-BR", memory_entry(category="taxas")) == plain
+    assert decide_with_memory(text, "infinitepay", "pt-BR", memory_entry(resolved_at="2026-10-01T10:00:00.000Z")) == plain
+    assert decide_with_memory(text, "infinitepay", "pt-BR", memory_entry(resolved_at="2026-11-01T10:00:00.000Z"),
+                              window=5) == plain
+
+
+def test_mesma_entrada_com_memoria_mesma_acao():
+    entry = memory_entry(category="repasse", resolved_at="2026-11-12T10:00:00.000Z")
+
+    results = [decide_with_memory("Quando cai o repasse?", "infinitepay", "pt-BR", entry) for _ in range(3)]
+
+    assert results[0].fields == results[1].fields == results[2].fields

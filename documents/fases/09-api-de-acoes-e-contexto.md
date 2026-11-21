@@ -56,7 +56,7 @@ O endpoint de contexto devolve a conversa como o agente precisa vê-la para deci
 | - | - |
 | `conversation` | `id`, `brand`, `channel`, `state` e `last_sequence` |
 | `messages` | Histórico completo, em ordem crescente de `sequence`: autor, canal, texto e horário de cada mensagem |
-| `customer_memory` | Resumo das conversas anteriores do lojista; nulo enquanto a memória não existe (F12) |
+| `customer_memory` | Memória do lojista: `summary`, `updated_at` e `conversations` (uma entrada por conversa encerrada, até 5), ou nulo quando o lojista não tem conversa encerrada (`documents/fases/13-memoria-e-contexto.md`) |
 
 A marca fica no caminho. O RLS exige a marca na transação antes de qualquer linha ficar visível, e a marca no caminho entra no texto assinado: o acesso a uma conversa depende de conhecer a marca certa e de ter a assinatura certa. Conversa de outra marca, marca inexistente e identificador inválido respondem `404`.
 
@@ -89,7 +89,7 @@ O corpo da chamada é a ação do agente, exatamente como ela está no Kafka. A 
 | `reply` | A resposta é gravada como mensagem da IA, com o atendente da conversa, e a entrega ao lojista é enfileirada na mesma transação, pelo mesmo canal e pelo mesmo número ou e-mail da marca que recebeu a mensagem respondida |
 | `escalate` | O Core grava o handoff com motivo, resumo e contexto estruturado (intenção, entidades, ferramentas e retornos, tentativas, sentimento, próximo passo sugerido e confiança). A conversa vai para `awaiting_human` na fila de escalação da fila em que estava, ou na mesma fila quando ela não tem fila de escalação, sem atendente e com o horário de entrada na espera (`Conversations::Escalate`) |
 | `categorize` | A categoria informada pelo agente dispara um novo roteamento pelas regras da marca. Conforme a regra que casar, a conversa volta à IA, vai para uma fila humana ou fica em triagem |
-| `resolve` | A conversa vai para `resolved`, com o horário de resolução, e o atendente continua registrado nela. Nenhuma mensagem vai ao lojista; se ele escrever dentro do prazo de reabertura, a conversa volta à triagem |
+| `resolve` | A conversa vai para `resolved`, com o horário de resolução, e o atendente continua registrado nela. Nenhuma mensagem vai ao lojista; se ele escrever dentro do prazo de reabertura, a conversa volta à triagem. Na mesma transação, enfileira o `Conversations::MemoryRefreshJob`, que recalcula a memória do lojista |
 
 A mensagem respondida pelo `reply` é a última mensagem do lojista até o `based_on_sequence`. É dela que a entrega lê o destinatário, que só existe em mensagens do lojista.
 
@@ -182,7 +182,6 @@ Esta parte fecha o caminho de volta do agente à plataforma. Sem ela, o Core avi
 - **Carga no `web`.** Cada mensagem do lojista gera duas chamadas a mais no processo `web`, a leitura do contexto e a ação; na meta de 250 msg/s, são cerca de 500 requisições por segundo. O contexto é montado do banco a cada leitura, e o cache fica para a F15, se a medida pedir.
 - **Histórico inteiro.** O contexto traz todas as mensagens da conversa, sem paginação. O tamanho é limitado pelo ciclo de vida da conversa, que fecha depois do prazo de reabertura.
 - **Escalação sem conferência de capacidade.** A conversa escalada vai para a fila de escalação da fila em que estava (`Conversations::Escalate`), com a prioridade que tinha e o SLA do destino, ou fica na mesma fila quando ela não tem fila de escalação. A capacidade do destino não é conferida; a contagem das conversas abertas e a capacidade ficam no `conversation.escalated`. O analista recebe o caso quando pede o próximo no painel (`Routing::Distributor.next_for`).
-- **Memória do lojista.** `customer_memory` é sempre nulo; o resumo das conversas anteriores entra na F12.
 - **Uma ação por tipo e evento.** A chave não distingue duas ações do mesmo tipo para o mesmo evento: a segunda é tratada como repetição da primeira.
 - **Ordem das chaves.** O corpo guardado para a repetição fica em `jsonb`, que não preserva a ordem das chaves: a repetição traz o mesmo conteúdo com as chaves em outra ordem.
 - **Horários de máquinas diferentes.** A linha do tempo compara horários carimbados por processos distintos e depende de os relógios estarem alinhados; no ambiente local, todos usam o relógio da mesma máquina.
@@ -230,7 +229,7 @@ No Compose, sem o Broker, uma mensagem de WhatsApp enviada pelo simulador recebe
 | Broker (F9) | Chama a API de ações com `AGENT_ACTIONS_SECRET` e trata os `409` como resultado final; os demais `4xx` vão para a DLQ |
 | Agente mock (F10) | Lê o contexto com `AGENT_CONTEXT_SECRET` e devolve na ação os horários que recebeu e os seus |
 | Handoff e painel (F11) | `Conversations::Escalate`, chamado pelo `escalate`, leva a conversa à fila de escalação; painel do analista |
-| Memória (F12) | Preenche `customer_memory` no contexto |
+| Memória (F12) | O `resolve` enfileira o recálculo da memória; o contexto entrega `customer_memory` |
 | Observabilidade (F14) | Monta a linha do tempo por mensagem a partir dos registros das ações |
 | Robustez e escala (F15) | Mede o efeito da trava e da leitura do contexto sem cache |
 

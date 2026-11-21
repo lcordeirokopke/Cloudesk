@@ -15,8 +15,14 @@
 | | | defeito | escalate para troca |
 | desconhecida | nenhuma | | escalate, motivo intencao_nao_identificada |
 
-A decisão depende só do texto, da marca e do locale; os horários das ferramentas ficam fora da
-comparação. Os textos ao lojista seguem o locale da marca; resumo, tentativas e próximo passo do
+Com memória do lojista no contexto, todo reply das intenções transacao, repasse, taxas e
+maquininha começa com MEMORY_PREFIX, no locale da marca, quando a memória tem conversa da mesma
+categoria resolvida dentro da janela AGENT_MEMORY_WINDOW_DAYS antes do received_at do evento
+(memory.previous): o prefixo cita o assunto e a data UTC da conversa mais recente. saudacao, resolve
+e escalate não mudam.
+
+A decisão depende só do texto, da marca e do locale e, no prefixo do reply, da memória do contexto
+e do received_at do evento; os horários das ferramentas ficam fora da comparação. Os textos ao lojista seguem o locale da marca; resumo, tentativas e próximo passo do
 escalate são para o analista e ficam em português.
 """
 
@@ -24,7 +30,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
-from agent_mock import clock, entities, intents, tools
+from agent_mock import clock, entities, intents, memory, tools
+from agent_mock.config import DEFAULT_MEMORY_WINDOW_DAYS
 from agent_mock.events import Event
 
 REPLIES = {
@@ -52,6 +59,18 @@ REPLIES = {
         "online": "Card reader {serie} is online. Turn it off and on again, holding the power button for 10 seconds; if the problem continues, let me know.",
         "offline": "Card reader {serie} is offline. Check the Wi-Fi or SIM card, toggle airplane mode and try again.",
     },
+}
+
+# Início do reply quando a memória do lojista tem conversa relacionada (memory.previous).
+MEMORY_PREFIX = {
+    "pt-BR": "Vi que você já falou com a gente sobre {assunto} em {data}. ",
+    "en-US": "I see you contacted us about {assunto} on {data}. ",
+}
+
+# Assunto de cada intenção no prefixo da memória.
+TOPICS = {
+    "pt-BR": {"transacao": "transação", "repasse": "repasse", "taxas": "taxas", "maquininha": "maquininha"},
+    "en-US": {"transacao": "a transaction", "repasse": "payouts", "taxas": "fees", "maquininha": "your card reader"},
 }
 
 # Próximo passo e confiança fixos por motivo de escalação.
@@ -122,16 +141,19 @@ def percent(value: str, locale: str) -> str:
     return value.replace(".", ",") if locale == "pt-BR" else value
 
 
-def decide(event: Event, context: dict, locale: str, stamp: Callable[[], str] = clock.stamp) -> Decision:
-    """Decisão para o evento, com o texto decidido pelo contexto."""
+def decide(event: Event, context: dict, locale: str, stamp: Callable[[], str] = clock.stamp,
+           memory_window_days: int = DEFAULT_MEMORY_WINDOW_DAYS) -> Decision:
+    """Decisão para o evento, com o texto decidido pelo contexto e a memória do lojista na janela."""
     text = decided_text(event, context)
     intent = intents.classify(text, locale)
     found = entities.extract(text, locale)
-    return _Decider(text, intent, found, event.brand, locale, stamp).decide()
+    earlier = memory.previous(context, intent, event.received_at, memory_window_days)
+    return _Decider(text, intent, found, event.brand, locale, stamp, earlier).decide()
 
 
 class _Decider:
-    def __init__(self, text, intent, found, brand, locale, stamp):
+    def __init__(self, text, intent, found, brand, locale, stamp, previous=None):
+        self.previous = previous
         self.text = text
         self.intent = intent
         self.entities = found
@@ -160,7 +182,13 @@ class _Decider:
         return Decision(action_type, fields, list(self.calls), self.intent, dict(self.entities))
 
     def reply(self, key: str, **values) -> Decision:
-        return self.build("reply", {"text": REPLIES[self.locale][key].format(**values)})
+        return self.build("reply", {"text": self.memory_prefix() + REPLIES[self.locale][key].format(**values)})
+
+    def memory_prefix(self) -> str:
+        topic = TOPICS[self.locale].get(self.intent)
+        if self.previous is None or topic is None:
+            return ""
+        return MEMORY_PREFIX[self.locale].format(assunto=topic, data=day(self.previous["resolved_at"][:10], self.locale))
 
     def thanks(self) -> Decision:
         return self.build("resolve", {"reason": RESOLVE_REASON})

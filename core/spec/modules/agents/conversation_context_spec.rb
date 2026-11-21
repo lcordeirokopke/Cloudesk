@@ -32,6 +32,27 @@ RSpec.describe Agents::ConversationContext do
     expect(body.fetch("customer_memory")).to be_nil
   end
 
+  it "traz a memória do lojista com summary, updated_at e conversations, conforme o schema context" do
+    first = customer_writes("Minha maquininha não liga")
+    resolve_conversation(brand, first.id, Time.utc(2026, 11, 13, 15, 0, 0))
+    memory = Tenancy.with_brand(brand) do
+      Conversations::MemoryRefresh.call(brand: brand, contact_id: contact.id, conversation: first)
+    end
+    second = customer_writes("Oi, tudo bem?")
+
+    body = Tenancy.with_brand(brand) { described_class.call(second.id) }
+
+    expect(Contract::Schemas.errors("context", body)).to eq([])
+    expect(body.fetch("customer_memory")).to eq(
+      "summary" => memory.summary, "updated_at" => memory.updated_at.utc.iso8601(3),
+      "conversations" => [ {
+        "category" => "maquininha", "channel" => "whatsapp", "resolved_by" => "ai",
+        "resolved_at" => "2026-11-13T15:00:00.000Z", "handoff_reason" => nil,
+        "first_message" => "Minha maquininha não liga"
+      } ]
+    )
+  end
+
   it "não lê a conversa de outra marca" do
     conversation = customer_writes("Minha maquininha não liga")
 

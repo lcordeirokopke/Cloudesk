@@ -6,7 +6,8 @@
    (context_client), sem concluir o registro.
 4. Mensagem do lojista no contexto com sequence maior que a do evento: discarded_newer.
 5. Conversa fora de with_ai: discarded_state.
-6. Decide pelo texto da mensagem com a sequence do evento (decision).
+6. Decide pelo texto da mensagem com a sequence do evento e pela memória do lojista no contexto,
+   com a janela AGENT_MEMORY_WINDOW_DAYS (decision).
 7. Espera AGENT_LATENCY_MS, carimba agent_published_at e publica em agent.outbound com a chave
    conversation_id e os headers brand e traceparent, aguardando a confirmação do Kafka. Falha na
    publicação: nova tentativa com a mesma pausa do contexto, com novo agent_published_at.
@@ -80,7 +81,8 @@ class Processor:
         if state != "with_ai":
             return self._finish(logs.DISCARDED_STATE, None, state=state, **fields)
 
-        chosen = decision.decide(event, context, locale, self.stamp)
+        chosen = decision.decide(event, context, locale, self.stamp,
+                                 memory_window_days=self.settings.memory_window_days)
 
         mode = self.settings.failure_mode
         if mode == "none" or not failure.affected(event.event_id, self.settings.failure_rate):

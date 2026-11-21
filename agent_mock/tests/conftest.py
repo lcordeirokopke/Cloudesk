@@ -85,6 +85,26 @@ def context_for(body: dict, state="with_ai", messages=None) -> dict:
     }
 
 
+def memory_entry(category="repasse", resolved_at="2026-11-01T10:00:00.000Z", channel="whatsapp",
+                 resolved_by="ai", handoff_reason=None, first_message="Meu repasse não caiu") -> dict:
+    """Item de customer_memory.conversations."""
+    return {
+        "category": category, "channel": channel, "resolved_by": resolved_by, "resolved_at": resolved_at,
+        "handoff_reason": handoff_reason, "first_message": first_message,
+    }
+
+
+def with_memory(context: dict, *entries: dict) -> dict:
+    """Contexto com customer_memory formada pelas entradas, da mais recente para a mais antiga."""
+    return {
+        **context,
+        "customer_memory": {
+            "summary": "Resumo das conversas anteriores.", "updated_at": "2026-11-01T10:00:01.000Z",
+            "conversations": list(entries),
+        },
+    }
+
+
 def without_times(action: dict) -> dict:
     """Ação sem carimbos de horário e sem traceparent, para comparar decisões."""
     copy = json.loads(json.dumps(action))

@@ -110,6 +110,17 @@ RSpec.describe Conversations::AnalystActions do
       expect { described_class.resolve!(analyst: other_analyst, conversation_id: conversation.id) }
         .to raise_error(described_class::NotAllowed)
       expect(reload(conversation).state).to eq("with_human")
+      expect(jobs_of(Conversations::MemoryRefreshJob)).to be_empty
+    end
+
+    it "enfileira o recálculo da memória do lojista" do
+      conversation = conversation_with(analyst)
+
+      described_class.resolve!(analyst: analyst, conversation_id: conversation.id)
+
+      expect(jobs_of(Conversations::MemoryRefreshJob).map { |job| job_arguments(job) }).to contain_exactly(
+        include("brand_id" => brand.id, "contact_id" => contact.id, "conversation_id" => conversation.id)
+      )
     end
   end
 

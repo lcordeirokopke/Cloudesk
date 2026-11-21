@@ -36,16 +36,33 @@
       }
     },
     "customer_memory": {
-      "description": "Resumo das conversas anteriores do lojista, ou null quando não existe.",
+      "description": "Memória do lojista: resumo em texto e uma entrada por conversa encerrada (até 5, da resolvida mais recentemente para a mais antiga), ou null quando o lojista não tem conversa encerrada.",
       "oneOf": [
         { "type": "null" },
         {
           "type": "object",
-          "required": ["summary", "updated_at"],
+          "required": ["summary", "updated_at", "conversations"],
           "additionalProperties": false,
           "properties": {
-            "summary": { "type": "string", "minLength": 1 },
-            "updated_at": { "$ref": "#/$defs/timestamp" }
+            "summary": { "type": "string", "minLength": 1, "description": "Uma linha por conversa, no locale do lojista." },
+            "updated_at": { "$ref": "#/$defs/timestamp" },
+            "conversations": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "object",
+                "required": ["category", "channel", "resolved_by", "resolved_at", "handoff_reason", "first_message"],
+                "additionalProperties": false,
+                "properties": {
+                  "category": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+                  "channel": { "enum": ["chat", "whatsapp", "email"], "description": "Canal da primeira mensagem da conversa." },
+                  "resolved_by": { "enum": ["ai", "analyst"] },
+                  "resolved_at": { "$ref": "#/$defs/timestamp" },
+                  "handoff_reason": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }], "description": "Motivo do handoff mais recente da conversa, ou null sem handoff." },
+                  "first_message": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Início da primeira mensagem do lojista." }
+                }
+              }
+            }
           }
         }
       ]

@@ -1,7 +1,9 @@
 import json
 
 import pytest
-from conftest import CONVERSATION_ID, Record, context_for, event_body, record, schema_validator, without_times
+from conftest import (
+    CONVERSATION_ID, Record, context_for, event_body, memory_entry, record, schema_validator, with_memory, without_times,
+)
 
 from agent_mock import logs, trace
 from agent_mock.config import Settings
@@ -337,3 +339,29 @@ async def test_log_do_published_afetado_leva_o_modo(capsys):
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     processed = [line for line in lines if line.get("result") == logs.PUBLISHED]
     assert processed[-1]["failure"] == "duplicate"
+
+
+@pytest.mark.parametrize("received_at", [None, "2026-11-13 14:02:11"])
+async def test_evento_sem_received_at_valido_e_descartado(received_at):
+    body = event_body(text=TEXT)
+    if received_at is None:
+        del body["received_at"]
+    else:
+        body["received_at"] = received_at
+    harness = Harness(context_for(body))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.INVALID_EVENT
+    assert harness.fetches == []
+
+
+async def test_repassa_a_janela_da_memoria_a_decisao():
+    body = event_body(text="Quando cai o repasse?")
+    context = with_memory(context_for(body), memory_entry(resolved_at="2026-11-03T10:00:00.000Z"))
+
+    inside = await Harness(context, settings=Settings(memory_window_days=30)).processor.handle(record(body))
+    outside = await Harness(context, settings=Settings(memory_window_days=5)).processor.handle(record(body))
+
+    assert inside.action["text"].startswith("Vi que você já falou com a gente sobre repasse em 03/11/2026. ")
+    assert not outside.action["text"].startswith("Vi que")

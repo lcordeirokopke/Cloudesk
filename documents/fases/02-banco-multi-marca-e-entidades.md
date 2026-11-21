@@ -118,7 +118,7 @@ Chaves primárias e `event_id` são UUID v7, gerados pelo banco com o default `u
 | Attendant | `attendants` | Tipo (`ai` ou `human`), equipe, capacidade simultânea e skills |
 | Handoff | `handoffs` | Motivo, resumo e contexto estruturado em `jsonb`; avaliação do briefing (`rating`: `useful` ou `not_useful`), analista que avaliou (`rated_by_id`) e horário (`rated_at`) |
 | AuditEvent | `audit_events` | `event_id`, ator, ação, alvo, antes e depois, envelope, motivo, regra e versão, `trace_id` |
-| CustomerMemory | `customer_memories` | Resumo das interações anteriores do lojista |
+| CustomerMemory | `customer_memories` | Memória do lojista, uma por lojista: `summary` em texto e `entries` (`jsonb`, padrão `[]`) com uma entrada por conversa encerrada (detalhes em `documents/fases/13-memoria-e-contexto.md`) |
 | Evento processado | `processed_events` | `idempotency_key` e o resultado da primeira execução da ação |
 
 O model da entidade Queue é `Routing::Queue`, com a tabela `queues`: `Queue` é uma classe do Ruby no nível raiz (`Thread::Queue`), e um model com esse nome entraria em conflito com ela.
@@ -289,7 +289,7 @@ Os testes conectam com o papel da aplicação, que é o papel contra o qual o is
 | Roteamento (F6) | Usa filas, regras versionadas, equipes, atendentes e as transições a partir de `triage` |
 | API de ações (F8) | Usa `processed_events`, a sequência e as transições a partir de `with_ai` |
 | Handoff e painel (F11) | Usa `handoffs` e as transições até `with_human` e `resolved` |
-| Memória (F12) | Usa `customer_memories` |
+| Memória (F12) | Grava `customer_memories` por `Conversations::MemoryRefresh`, com a linha do `Contact` travada |
 
 ## Fontes
 

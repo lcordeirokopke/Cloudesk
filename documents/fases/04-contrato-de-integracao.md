@@ -173,9 +173,20 @@ Schema `context`. É o corpo da resposta do Core ao `GET` da `context_url`.
 | - | - |
 | `conversation` | `id`, `brand`, `channel`, `state` e `last_sequence` |
 | `messages` | Histórico completo, em ordem crescente de `sequence`: `sequence`, `author`, `channel`, `text` e `created_at` |
-| `customer_memory` | `summary` e `updated_at`, ou nulo quando o lojista não tem memória |
+| `customer_memory` | `summary`, `updated_at` e `conversations`, ou nulo quando o lojista não tem memória |
 
-O campo `customer_memory` é obrigatório no corpo e aceita nulo: o agente conta com ele, e o conteúdo é preenchido pela memória do lojista (F12).
+O campo `customer_memory` é obrigatório no corpo e aceita nulo. No objeto, os três campos são obrigatórios, sem campos extras. `conversations` tem até 5 itens, da conversa resolvida mais recentemente para a mais antiga, cada um com todos os campos abaixo e sem campos extras:
+
+| Campo | Conteúdo |
+| - | - |
+| `category` | Categoria da conversa (texto não vazio), ou nulo |
+| `channel` | `chat`, `whatsapp` ou `email`, o canal da primeira mensagem |
+| `resolved_by` | `ai` ou `analyst` |
+| `resolved_at` | Horário da resolução, UTC com milissegundos |
+| `handoff_reason` | Motivo do handoff mais recente (texto não vazio), ou nulo |
+| `first_message` | Início da primeira mensagem do lojista, de 1 a 80 caracteres |
+
+Os exemplos `valid/com-memoria.json` e `valid/memoria-com-duas-conversas.json` mostram a memória preenchida; `invalid/memoria-sem-conversations.json` e `invalid/memoria-com-seis-conversas.json`, as recusas. A memória é montada pelo Core (`documents/fases/13-memoria-e-contexto.md`).
 
 ### Assinatura
 

@@ -74,7 +74,7 @@ O cadastro de lojistas das seeds faz o papel do cadastro da CloudWalk: cada loji
 2. **Lojista.** Busca a identidade; sem ela, cria o `Contact`, com o nome que o canal informa (ou a própria identidade) e o idioma da marca (`contact.created`).
 3. **Conversa.** Busca a conversa não `closed` do lojista, com `FOR UPDATE`:
    - nenhuma: abre uma, no canal da mensagem (`conversation.opened`);
-   - `resolved` dentro do prazo de reabertura: volta a `triage` (`conversation.reopened`);
+   - `resolved` dentro do prazo de reabertura: volta a `triage` (`conversation.reopened`) e, na mesma transação, a memória do lojista é recalculada sem ela (`Conversations::MemoryRefresh`, `documents/fases/13-memoria-e-contexto.md`);
    - `resolved` com o prazo vencido: vai a `closed` (`conversation.closed`) e abre outra;
    - qualquer outro estado: usa a conversa.
 4. **Roteamento.** Com a conversa em `triage`, classifica e roteia por `Routing::Route` (`documents/fases/07-triagem-roteamento-e-distribuicao.md`).

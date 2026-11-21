@@ -354,6 +354,24 @@ RSpec.describe Agents::ActionProcessor do
       expect(events(conversation, "conversation.resolved").sole).to have_attributes(actor_type: "ai", actor_id: ai_attendant.id)
       in_brand { expect(Message.where(conversation_id: conversation.id).count).to eq(1) }
     end
+
+    it "enfileira o recálculo da memória do lojista na mesma transação" do
+      conversation = conversation_with_ai
+
+      process(agent_action(conversation, example: "resolve"))
+
+      expect(jobs_of(Conversations::MemoryRefreshJob).map { |job| job_arguments(job) }).to contain_exactly(
+        include("brand_id" => brand.id, "contact_id" => contact.id, "conversation_id" => conversation.id)
+      )
+    end
+
+    it "a ação recusada não enfileira o recálculo" do
+      conversation = conversation_with_ai
+      in_brand { Conversation.find(conversation.id).transition_to!("awaiting_human") }
+
+      expect(process(agent_action(conversation, example: "resolve")).body).to include("status" => "rejected")
+      expect(jobs_of(Conversations::MemoryRefreshJob)).to be_empty
+    end
   end
 
   # Cada thread usa uma conexão e uma transação próprias, com commit de verdade; por isso os

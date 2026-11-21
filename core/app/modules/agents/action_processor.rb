@@ -155,10 +155,14 @@ module Agents
     end
 
     # with_ai -> resolved, com resolved_at; o atendente segue na conversa. Nenhuma mensagem vai ao
-    # lojista.
+    # lojista. O recálculo da memória do lojista (Conversations::MemoryRefreshJob) é enfileirado na
+    # mesma transação.
     def resolve
       transition("conversation.resolved", reason: @action["reason"]) do
         @conversation.update!(state: "resolved", resolved_at: received_at)
+        Conversations::MemoryRefreshJob.perform_later(
+          brand_id: @brand.id, contact_id: @conversation.contact_id, conversation_id: @conversation.id
+        )
       end
     end
 

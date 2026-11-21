@@ -10,3 +10,15 @@ pt-BR:
     ai_timeout:
       wait_message: "Estamos verificando sua solicitação, em instantes retornamos."
       summary: "A IA não respondeu em %{minutes} min."
+    memory:
+      line: "%{date} · %{channel} · %{category} · %{resolved_by}%{handoff} · \"%{first_message}\""
+      date_format: "%d/%m/%Y"
+      no_category: "sem categoria"
+      handoff: " · escalada: %{reason}"
+      resolved_by:
+        ai: "resolvida pela IA"
+        analyst: "resolvida por analista"
+      channels:
+        chat: "Chat"
+        whatsapp: "WhatsApp"
+        email: "E-mail"

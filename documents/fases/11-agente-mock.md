@@ -32,12 +32,12 @@ O agente fecha o caminho de volta: canal → Core → webhook → Broker → `ag
 
 `Processor.handle` (`processor.py`) trata cada registro de `agent.inbound`:
 
-1. **Consumo.** Carimba `agent_consumed_at` e lê o registro (`events.py`): o valor é o JSON do `message.created`; os headers `brand`, `traceparent` e `broker_received_at` vêm do Broker; o timestamp do registro (o tópico usa `LogAppendTime`) vira `kafka_appended_at`.
+1. **Consumo.** Carimba `agent_consumed_at` e lê o registro (`events.py`): o valor é o JSON do `message.created`; os headers `brand`, `traceparent` e `broker_received_at` vêm do Broker; o timestamp do registro (o tópico usa `LogAppendTime`) vira `kafka_appended_at`; o `received_at` do corpo é a referência da janela da memória do lojista.
 2. **Marca.** O locale da marca vem de `AGENT_BRAND_LOCALES`.
 3. **Contexto.** `GET {CORE_URL}{context_url}`, assinado com `AGENT_CONTEXT_SECRET`, com o `traceparent` do salto do agente (`context_client.py`).
 4. **Descarte por mensagem mais nova.** Mensagem do lojista no contexto com `sequence` maior que a do evento.
 5. **Descarte por estado.** Conversa fora de `with_ai`.
-6. **Decisão.** Sobre o texto da mensagem com a `sequence` do evento no contexto, ou o texto do evento quando ela não aparece (`decision.py`).
+6. **Decisão.** Sobre o texto da mensagem com a `sequence` do evento no contexto, ou o texto do evento quando ela não aparece, e sobre a memória do lojista no contexto, com a janela `AGENT_MEMORY_WINDOW_DAYS` (`decision.py`, `memory.py`).
 7. **Latência artificial.** Espera `AGENT_LATENCY_MS`, depois das ferramentas e antes da publicação.
 8. **Publicação.** Carimba `agent_published_at` e publica em `agent.outbound` com a chave `conversation_id` e os headers `brand` e `traceparent`, aguardando a confirmação do Kafka.
 
@@ -59,7 +59,7 @@ Cada evento gera uma linha de log JSON no stdout (`logs.py`), com `event_id`, `c
 | `discarded_newer` | O contexto tem mensagem do lojista mais nova que o evento | não |
 | `discarded_state` | A conversa não está em `with_ai` | não |
 | `context_error` | O Core recusou o `GET` do contexto com erro permanente | não |
-| `invalid_event` | Registro sem os campos ou headers do contrato | não |
+| `invalid_event` | Registro sem os campos ou headers do contrato, inclusive sem `received_at` válido | não |
 | `unknown_brand` | Marca sem locale em `AGENT_BRAND_LOCALES` | não |
 | `failure_drop` | Modo `drop`: o evento afetado termina sem publicação | não |
 | `failure_stale_skipped` | Modo `stale` com `sequence` 1: a ação é publicada sem alteração | sim |
@@ -147,6 +147,10 @@ Os textos ao lojista seguem o locale da marca, com valor e data no formato do lo
 
 O `sentiment` é `negative` quando o texto tem uma expressão da lista negativa do locale ("absurdo", "duas vezes", "ainda não", "não caiu", "twice", "missing", "not arrived" e outras); senão, `neutral`. Resumo, tentativas e próximo passo são para o analista e ficam em português.
 
+### Memória do lojista
+
+Quando `customer_memory.conversations` tem conversa com categoria equivalente à intenção atual e `resolved_at` entre o `received_at` do evento menos `AGENT_MEMORY_WINDOW_DAYS` dias e o `received_at` (`memory.py`), todo `reply` das intenções `transacao`, `repasse`, `taxas` e `maquininha` começa com um prefixo no locale da marca, com o assunto e a data UTC da conversa mais recente: `Vi que você já falou com a gente sobre {assunto} em {data}. ` ou `I see you contacted us about {assunto} on {data}. `. `saudacao`, `resolve` e `escalate` não mudam. A equivalência das categorias, os assuntos e a montagem da memória no Core estão em `documents/fases/13-memoria-e-contexto.md`.
+
 ### A ação publicada
 
 `action.py` monta o valor do schema `action`:
@@ -182,7 +186,7 @@ Na queda do processo, os registros sem offset confirmado são relidos; a ação 
 ## O que o sistema garante
 
 - Com `AGENT_FAILURE_MODE=none`, uma ação por evento, com `based_on_sequence` igual à `sequence` do evento, chave `conversation_id` e os headers do schema `kafka.outbound-headers`. Os modos de falha mudam isso só nos eventos afetados: nenhuma ação (`drop`), a mesma ação duas vezes (`duplicate`) ou `based_on_sequence` menos 1 (`stale`).
-- A mesma entrada gera a mesma ação, fora carimbos de horário e `traceparent`; a mesma mensagem em conversas diferentes gera o mesmo tipo, texto e ferramentas.
+- A mesma entrada gera a mesma ação, fora carimbos de horário e `traceparent`: a decisão depende do texto, da marca e do locale e, no prefixo do `reply`, da memória do contexto e do `received_at` do evento, nunca do relógio do processo; a mesma mensagem em conversas diferentes, com a mesma memória, gera o mesmo tipo, texto e ferramentas.
 - Um evento reentregue gera ação com o mesmo `inbound_event_id` e o mesmo `type`, portanto a mesma `Idempotency-Key`.
 - O evento mais antigo que o contexto (`discarded_newer`) e o de conversa fora de `with_ai` (`discarded_state`) não geram ação.
 - O offset de um evento só é confirmado depois da confirmação do Kafka na publicação ou de um descarte.
@@ -248,9 +252,10 @@ O serviço sobe depois do `redpanda-init` e do `web`. A imagem `cloudesk-agent-m
 | `AGENT_FAILURE_MODE` | Modo de falha: `none`, `delay`, `drop`, `duplicate` ou `stale`; outro valor é erro de configuração | `none` |
 | `AGENT_FAILURE_RATE` | Fração dos eventos afetados, de 0 a 1 | `1` |
 | `AGENT_FAILURE_DELAY_MS` | Atraso somado à latência no modo `delay` | `0` |
+| `AGENT_MEMORY_WINDOW_DAYS` | Dias antes do `received_at` do evento em que uma conversa da memória entra no prefixo do `reply`; inteiro maior ou igual a zero | `30` |
 | `CONTRACTS_PATH` | Pasta do contrato, para os testes | `/contracts` |
 
-`AGENT_LATENCY_MS`, `AGENT_CONCURRENCY` e as três variáveis `AGENT_FAILURE_*` podem ser trocados no `.env` ou na linha de comando (`AGENT_FAILURE_MODE=drop docker compose up -d agent-mock`).
+`AGENT_LATENCY_MS`, `AGENT_CONCURRENCY`, `AGENT_MEMORY_WINDOW_DAYS` e as três variáveis `AGENT_FAILURE_*` podem ser trocados no `.env` ou na linha de comando (`AGENT_FAILURE_MODE=drop docker compose up -d agent-mock`).
 
 Dependências fixadas no `agent_mock/pyproject.toml`, com Python 3.13: `aiokafka` 0.15.0 e `aiohttp` 3.14.5; nos testes, `pytest` 9.2.0, `pytest-asyncio` 1.5.0 e `jsonschema` 4.26.0.
 
@@ -273,11 +278,12 @@ docker compose run --rm agent-mock pytest
 | `tests/test_intents.py` | Cada texto do corpus cai na intenção esperada; caixa, acentos, palavra inteira, expressão mais longa e empate |
 | `tests/test_entities.py` | `TX`, `SN`, datas nos dois formatos, valores, tamanhos errados e ausência de entidade |
 | `tests/test_tools.py` | Mesma entrada, mesmo retorno; proporções dos status em amostras fixas; taxas por marca; registro da chamada |
-| `tests/test_decision.py` | Cada linha da tabela de decisão; texto decidido pelo contexto; mesma entrada, mesma ação |
+| `tests/test_decision.py` | Cada linha da tabela de decisão; texto decidido pelo contexto; prefixo da memória nas quatro intenções e nos dois locales, e sem prefixo fora da janela, sem relação ou em `saudacao`, `resolve` e `escalate`; mesma entrada, mesma ação |
+| `tests/test_memory.py` | Equivalência das categorias das duas marcas; janela pelo `received_at` nos limites; conversa mais recente; memória nula |
 | `tests/test_action.py` | Toda ação gerada pela tabela, nos dois locales, passa no schema `action`; headers no schema `kafka.outbound-headers`; `Idempotency-Key` pelos vetores do contrato |
-| `tests/test_processor.py` | Publicação com chave, headers e carimbos; descartes por mensagem mais nova, estado, erro permanente, registro inválido e marca sem locale; repetição do transitório e da publicação; latência; reentrega e conversas diferentes com a mesma ação; cada modo de falha (atraso somado, descarte sem publicação, duas publicações iguais, `based_on_sequence` menos 1 e o caso `sequence` 1), evento fora da taxa e `none` sem efeito |
+| `tests/test_processor.py` | Publicação com chave, headers e carimbos; descartes por mensagem mais nova, estado, erro permanente, registro inválido, evento sem `received_at` válido e marca sem locale; janela da memória repassada à decisão; repetição do transitório e da publicação; latência; reentrega e conversas diferentes com a mesma ação; cada modo de falha (atraso somado, descarte sem publicação, duas publicações iguais, `based_on_sequence` menos 1 e o caso `sequence` 1), evento fora da taxa e `none` sem efeito |
 | `tests/test_failure.py` | Escolha pelo SHA-256 do `event_id`, determinística, com taxas 0 e 1 e proporção numa amostra fixa |
-| `tests/test_config.py` | Leitura e validação de `AGENT_FAILURE_MODE`, `AGENT_FAILURE_RATE` e `AGENT_FAILURE_DELAY_MS` |
+| `tests/test_config.py` | Leitura e validação de `AGENT_FAILURE_MODE`, `AGENT_FAILURE_RATE`, `AGENT_FAILURE_DELAY_MS` e `AGENT_MEMORY_WINDOW_DAYS` |
 | `tests/test_context_client.py` | Servidor aiohttp de teste conferindo assinatura, caminho com a marca e `traceparent`; classificação de permanentes e transitórios; pausas de 2 a 60 s |
 | `tests/test_offsets.py` | Confirmação só do offset contíguo; lacuna segura a confirmação; série por conversa e paralelo entre conversas; semáforo; falha inesperada; configuração |
 | `tests/test_trace.py` | Continuação do `traceparent` e início de trace com header inválido |

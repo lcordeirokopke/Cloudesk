@@ -267,7 +267,7 @@ flowchart LR
     subgraph SQ["Solid Queue, no PostgreSQL"]
         QW["webhooks<br/>Agents::WebhookDeliveryJob"]
         QC["channels<br/>Channels::DeliveryJob<br/>Conversations::PanelBroadcastJob"]
-        QD["default<br/>varreduras e ingestão de e-mail"]
+        QD["default<br/>varreduras, ingestão de e-mail<br/>e memória do lojista"]
         QM["action_mailbox_routing<br/>action_mailbox_incineration"]
     end
 
@@ -486,6 +486,7 @@ O Core e o agente não se chamam diretamente para entregar eventos e ações: o 
 - **Segredos:** cada chamada tem o seu: `BROKER_WEBHOOK_SECRET` no webhook, `AGENT_ACTIONS_SECRET` na API de ações e `AGENT_CONTEXT_SECRET` na leitura do contexto. A marca fica no caminho da `context_url` e entra na assinatura, porque o RLS exige a marca antes da leitura da conversa.
 - **Formato da assinatura:** HMAC-SHA256 de `<timestamp>.<MÉTODO>.<caminho>.<corpo>`, nos headers `X-Cloudesk-Timestamp` e `X-Cloudesk-Signature`, com janela de 300 segundos.
 - **Contrato versionado:** os schemas, exemplos e vetores ficam em `contracts/v1/`; o detalhamento está em `documents/fases/04-contrato-de-integracao.md`.
+- **Contexto:** o `GET` da `context_url` devolve a conversa, o histórico completo e `customer_memory`, com `summary`, `updated_at` e `conversations` (até 5 entradas estruturadas), ou nulo sem memória (schema `context`).
 - **Ações do agente** (tópico de saída): `reply`, `escalate`, `categorize`, `resolve` e o registro das ferramentas consultadas. Toda ação leva `based_on_sequence`, a sequência da última mensagem que o agente considerou. O Broker envia o valor Kafka da ação, sem alteração, a um endpoint único da API de ações; marca e conversa vêm do corpo assinado.
 - **Entrega:** at-least-once em todo o caminho + idempotência no Core = efeito exactly-once para o cliente.
 - **Falhas:** retries com backoff exponencial, com jitter no webhook de ida (Solid Queue) e pela pausa do Karafka, sem jitter, na volta; tópico DLQ para mensagens problemáticas, preservando chave, headers e payload originais, com headers de diagnóstico (schema `kafka.dlq-headers`), e reprocessamento pelo painel.
@@ -711,7 +712,7 @@ O painel (`/panel`, Hotwire) fica atrás de HTTP basic auth (`PANEL_USER` e `PAN
 
 - **Fila de escalas:** conversas em `awaiting_human` nas filas da equipe, por prioridade e tempo na fila, com motivo e resumo do handoff, tempo na fila e SLA restante; as conversas do analista e a capacidade usada.
 - **Pegar próximo:** o analista recebe o próximo caso pela distribuição por capacidade (`Routing::Distributor.next_for`); a fila é visível, e cada conversa abre só para leitura até ser atribuída.
-- **Tela da conversa:** histórico, cartão do handoff, "Por que caiu aqui?", conversas anteriores do lojista em todos os canais e a memória do lojista, quando existe.
+- **Tela da conversa:** histórico, cartão do handoff, "Por que caiu aqui?", conversas anteriores do lojista em todos os canais e a memória do lojista, quando existe, com uma linha por conversa encerrada.
 - **Ações:** responder pelo canal da última mensagem do lojista, resolver (`with_human` → `resolved`) e avaliar o briefing (`Conversations::AnalystActions`).
 - **Tempo real:** as mudanças que aparecem no painel são gravadas com `panel: true` no `Audit::Command`, que enfileira o `Conversations::PanelBroadcastJob` na mesma transação. O job envia um Turbo Stream `refresh` ao stream da equipe e ao da conversa, e a página recarrega com morph.
 
@@ -762,15 +763,35 @@ flowchart LR
 ### Memória e contexto
 
 - **Da conversa:** histórico completo disponível ao agente via `context_url`.
-- **Do lojista:** resumo das conversas anteriores, atualizado no encerramento e entregue no contexto da próxima.
-- **Entre canais:** identidades do mesmo lojista unificadas, para que WhatsApp e e-mail compartilhem histórico.
+- **Do lojista:** a `CustomerMemory`, uma por lojista, com o resumo das até 5 conversas `resolved` ou `closed` mais recentes, entregue no contexto e no painel.
+- **Entre canais:** identidades do mesmo lojista unificadas, para que WhatsApp e e-mail compartilhem histórico e memória.
+
+A memória é recalculada do zero por `Conversations::MemoryRefresh`, com a linha do lojista travada:
+
+- **Na resolução:** o `resolve` do agente e o `resolve!` do analista enfileiram o `Conversations::MemoryRefreshJob` (fila `default`, `jobs-default`) na mesma transação do `conversation.resolved`;
+- **Na reabertura:** o `Conversations::Intake` recalcula na mesma transação do `conversation.reopened`, e a conversa reaberta sai da memória sem janela;
+- **Resumo:** template determinístico no locale do lojista, uma linha por conversa com data, canal, categoria, quem resolveu, motivo do handoff e o início da primeira mensagem, sem LLM; os mesmos dados ficam estruturados em `customer_memories.entries` e chegam ao agente em `customer_memory.conversations`;
+- **Gravação:** `customer_memory.updated` na criação ou mudança e `customer_memory.deleted` quando não resta conversa encerrada, com ator `system`; sem mudança, nada é gravado, o que torna a repetição do job inofensiva.
+
+```mermaid
+flowchart LR
+    RA["resolve do agente"] ==>|"mesma transação"| J["MemoryRefreshJob<br/>fila default"]
+    RH["resolve! do analista"] ==>|"mesma transação"| J
+    J ==> MR["Conversations::MemoryRefresh<br/>até 5 conversas encerradas"]
+    RE["Intake: reabertura"] ==>|"mesma transação"| MR
+    MR ==> CM[("customer_memories<br/>summary e entries")]
+    CM ==> CTX["context_url<br/>customer_memory"]
+    CM ==> PNL["painel<br/>Memória do lojista"]
+```
+
+O detalhamento está em `documents/fases/13-memoria-e-contexto.md`.
 
 ### Componentes simulados
 
 - **Canais:** WhatsApp com payloads no formato da Cloud API da Meta; e-mail via Mailpit (SMTP local); chat in-app como widget web. Cada marca tem números de WhatsApp e e-mails de suporte próprios, na tabela `brand_channels`, e o chat leva a marca na URL.
 - **Entrada do e-mail:** o webhook do Mailpit avisa o Core de cada e-mail recebido; o Core baixa o original pela API do Mailpit e cria o `InboundEmail` do Action Mailbox só quando o e-mail é endereçado a um e-mail de suporte de uma marca. Um job recorrente busca no Mailpit os e-mails sem tag e recupera o que o webhook perde. A resposta sai por SMTP para o Mailpit. O detalhamento está em `documents/fases/05-canais-de-entrada-e-identidade.md`.
 - **Simulador de canais:** envia mensagens sintéticas nos três formatos e recebe as respostas de saída, registrando cada uma para a reconciliação. O detalhamento está em `documents/fases/06-simulador-de-canais.md`.
-- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Modos de falha configuráveis (ver Diferenciais). O detalhamento está em `documents/fases/11-agente-mock.md`.
+- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Quando a memória do lojista no contexto tem conversa do mesmo assunto resolvida até `AGENT_MEMORY_WINDOW_DAYS` dias (padrão 30) antes do `received_at` do evento, o `reply` das intenções de transação, repasse, taxas e maquininha começa com um prefixo que cita o assunto e a data dela; a referência é o horário do evento, e a mesma entrada continua gerando a mesma ação. Modos de falha configuráveis (ver Diferenciais). O detalhamento está em `documents/fases/11-agente-mock.md`.
 - **Dados sintéticos:** lojistas, transações e conversas gerados com seeds fixas (Faker pt\_BR e en\_US), sem nenhum dado real. Rodar as seeds de novo no mesmo banco não duplica registros.
 
 Caminho do e-mail até o `Conversations::Intake`:
@@ -801,7 +822,7 @@ flowchart TB
     NW -.->|"sim"| D4["descarta: discarded_newer"]
     NW ==> SW{"conversa<br/>em with_ai?"}
     SW -.->|"não"| D5["descarta: discarded_state"]
-    SW ==> DEC["intenção pelas palavras-chave do locale<br/>ferramentas falsas<br/>reply, escalate ou resolve"]
+    SW ==> DEC["intenção pelas palavras-chave do locale<br/>ferramentas falsas e memória do lojista<br/>reply, escalate ou resolve"]
     DEC ==> LAT["latência artificial e<br/>modo de falha, quando afeta o evento"]
     LAT ==> PUB["publica em agent.outbound<br/>based_on_sequence = sequence do evento"]
     PUB ==> OFF["confirma o offset"]

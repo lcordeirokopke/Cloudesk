@@ -35,3 +35,18 @@ def test_recusa_configuracao_invalida(env, message):
 
 def test_taxa_zero_e_aceita():
     assert Settings.from_env({"AGENT_FAILURE_RATE": "0"}).failure_rate == 0.0
+
+
+def test_janela_da_memoria_padrao():
+    assert Settings.from_env({}).memory_window_days == 30
+
+
+def test_le_a_janela_da_memoria():
+    assert Settings.from_env({"AGENT_MEMORY_WINDOW_DAYS": "7"}).memory_window_days == 7
+    assert Settings.from_env({"AGENT_MEMORY_WINDOW_DAYS": "0"}).memory_window_days == 0
+
+
+@pytest.mark.parametrize("value", ["-1", "trinta", "1.5"])
+def test_recusa_janela_da_memoria_invalida(value):
+    with pytest.raises(ValueError):
+        Settings.from_env({"AGENT_MEMORY_WINDOW_DAYS": value})

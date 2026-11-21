@@ -7,7 +7,9 @@ module Conversations
   #      (contact.created);
   #   3. busca a conversa não closed do lojista com FOR UPDATE:
   #        nenhuma: abre (conversation.opened);
-  #        resolved dentro do prazo de reabertura: resolved -> triage (conversation.reopened);
+  #        resolved dentro do prazo de reabertura: resolved -> triage (conversation.reopened) e,
+  #          na mesma transação, recálculo da memória do lojista (Conversations::MemoryRefresh),
+  #          que tira dela a conversa reaberta;
   #        resolved com prazo vencido: resolved -> closed (conversation.closed) e abre outra;
   #        qualquer outro estado: usa a conversa;
   #   4. conversa em triage (aberta ou reaberta): classifica e roteia (Routing::Route) pelo texto da
@@ -121,6 +123,8 @@ module Conversations
 
     def reopen_conversation(conversation)
       transition(conversation, "conversation.reopened", "triage", "lojista escreveu dentro do prazo de reabertura")
+      MemoryRefresh.call(brand: @brand, contact_id: conversation.contact_id, conversation: conversation)
+      conversation
     end
 
     def close_conversation(conversation)

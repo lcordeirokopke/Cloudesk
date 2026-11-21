@@ -115,7 +115,7 @@ A tarefa recorrente `ai_timeout_sweep` (`core/config/recurring.yml`, `every 15 s
 | Histórico | Mensagens por `sequence`, com autor, atendente, canal e horário no fuso da equipe do analista |
 | Briefing do handoff | Último handoff: resumo, motivo, horário, intenção, sentimento, confiança, próximo passo sugerido, entidades, tentativas, ferramentas e retornos; tempo até a primeira resposta humana; avaliação |
 | Por que caiu aqui? | `Conversations::RoutingExplanation` (diferencial 4) |
-| Memória do lojista | `CustomerMemory` mais recente do lojista, quando existe |
+| Memória do lojista | `summary` da `CustomerMemory` do lojista, quando existe, com uma linha por conversa encerrada (`simple_format`) e o horário da atualização; o cartão não é atualizado em tempo real (`documents/fases/13-memoria-e-contexto.md`) |
 | Conversas anteriores | Até 10 outras conversas do lojista, em todos os canais, com as mensagens, só leitura |
 
 O formulário de resposta e o botão "Resolver" aparecem só com a conversa em `with_human` atribuída ao analista; a avaliação, com a conversa do analista em `with_human` ou `resolved` e o briefing ainda sem avaliação.
@@ -129,7 +129,7 @@ O formulário de resposta e o botão "Resolver" aparecem só com a conversa em `
 | Ação | Exige | Efeito |
 | - | - | - |
 | `reply!(analyst:, conversation_id:, text:)` | Conversa `with_human` do analista; texto não vazio | Responde à última mensagem do lojista por `Conversations::Outbound.append!` (autor `analyst`, atendente o analista): a resposta sai pelo canal e pela `BrandChannel` dessa mensagem |
-| `resolve!(analyst:, conversation_id:)` | Conversa `with_human` do analista | `conversation.resolved`, ator `analyst`, `panel: true`: `with_human` → `resolved`, com `resolved_at`; o atendente fica na conversa; nenhuma mensagem ao lojista |
+| `resolve!(analyst:, conversation_id:)` | Conversa `with_human` do analista | `conversation.resolved`, ator `analyst`, `panel: true`: `with_human` → `resolved`, com `resolved_at`; o atendente fica na conversa; nenhuma mensagem ao lojista; enfileira na mesma transação o `Conversations::MemoryRefreshJob`, que recalcula a memória do lojista |
 | `rate_handoff!(analyst:, handoff_id:, rating:)` | Conversa do handoff atribuída ao analista, em `with_human` ou `resolved`; handoff sem avaliação; `rating` em `useful` ou `not_useful` | `handoff.rated`, ator `analyst`, `panel: true`: grava `rating`, `rated_by_id` e `rated_at` |
 
 O `payload` do `handoff.rated` leva `handoff_id`, `rating` e `first_human_response_seconds`: segundos da criação do handoff até a primeira mensagem de analista da conversa (`Handoff#first_human_response_at`), ou `null` sem resposta.
@@ -190,7 +190,7 @@ As versões de regra são imutáveis: a explicação continua válida depois que
 
 | Entregável | O que esta parte entrega | O que fica com outras partes |
 | - | - | - |
-| Painel do analista com fila de escalas, contexto e histórico | Fila de escalas da equipe, tela da conversa com briefing, histórico, conversas anteriores e memória, em tempo real | Preenchimento da memória do lojista (F12) |
+| Painel do analista com fila de escalas, contexto e histórico | Fila de escalas da equipe, tela da conversa com briefing, histórico, conversas anteriores e memória, em tempo real | Montagem da memória do lojista (F12) |
 | Interface de conversa entre cliente e atendente | Resposta do analista pelo canal de origem e mensagens novas do lojista na tela | Widget de chat (F4) e resposta da IA (F8) |
 | Handoff com resumo e contexto, preservando o histórico | Fila de escalação, cartão do briefing, histórico na mesma conversa | Gravação do briefing pelo `escalate` (F8) |
 | Triagem, priorização e distribuição entre IA e analistas | "Pegar próximo" pela distribuição por capacidade; escalação da IA para a fila humana | Classificador, regras e `Distributor` (F6) |
@@ -276,7 +276,7 @@ Os testes rodam no ambiente de teste: `docker compose exec -e RAILS_ENV=test web
 | `core/spec/modules/routing/route_spec.rb`, `distributor_spec.rb`, `core/spec/modules/conversations/intake_spec.rb` | Job do painel só na atribuição à fila humana, na atribuição ao analista e nas mensagens com a conversa em estado humano |
 | `core/spec/models/handoff_spec.rb`, `routing_queue_spec.rb` | `first_human_response_at`; validação e `CHECK` da avaliação; fila de escalação humana, diferente da própria e da mesma marca |
 | `core/spec/requests/panel/sessions_spec.rb` | `401` sem credencial, com senha errada e com a senha do ambiente vazia; lista de analistas; login, troca e recusa de analista de outra marca |
-| `core/spec/requests/panel/conversations_spec.rb` | Fila da equipe com motivo e stream; outra equipe não vê; "Pegar próximo" com caso e sem caso; tela com cartão, explicação, conversas anteriores e memória; `404` de outra marca; resposta, resolução e avaliação; recusa de outro analista |
+| `core/spec/requests/panel/conversations_spec.rb` | Fila da equipe com motivo e stream; outra equipe não vê; "Pegar próximo" com caso e sem caso; tela com cartão, explicação, conversas anteriores e memória, com uma linha por conversa; `404` de outra marca; resposta, resolução e avaliação; recusa de outro analista |
 | `core/spec/tasks/panel_demo_sla_spec.rb` | Nova versão da regra genérica com o SLA, só na marca; reset ao SLA da fila; conversa roteada depois pela regra genérica recebe o SLA; recusa de marca e minutos inválidos |
 | `core/spec/seeds_spec.rb` | Filas de escalação das seeds e reexecução sem duplicar |
 

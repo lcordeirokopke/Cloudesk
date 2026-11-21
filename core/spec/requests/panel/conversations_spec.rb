@@ -127,6 +127,16 @@ RSpec.describe "Painel do analista: fila, conversa e ações", type: :request do
                                        "Memória do lojista", CGI.escapeHTML("Lojista já perguntou sobre repasse"))
     end
 
+    it "mostra a memória com uma linha por conversa" do
+      in_brand { CustomerMemory.create!(contact_id: contact.id, summary: "Primeira linha da memória\nSegunda linha da memória") }
+      conversation = escalated_conversation
+      sign_in
+
+      get "/panel/conversations/#{conversation.id}", headers: authorized
+
+      expect(response.body).to include("Primeira linha da memória\n<br />Segunda linha da memória")
+    end
+
     it "conversa de outra marca não existe para o analista" do
       conversation = escalated_conversation
       jim_analyst = Tenancy.with_brand(jim) { Attendant.where(kind: "human", team: Team.find_by!(name: "Finance")).first }

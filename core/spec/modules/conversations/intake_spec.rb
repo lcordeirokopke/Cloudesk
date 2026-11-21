@@ -197,6 +197,65 @@ RSpec.describe Conversations::Intake do
     end
   end
 
+  describe "memória do lojista" do
+    def refresh_memory(conversation)
+      Tenancy.with_brand(brand) do
+        Conversations::MemoryRefresh.call(brand: brand, contact_id: contact.id, conversation: conversation)
+      end
+    end
+
+    def memory
+      Tenancy.with_brand(brand) { CustomerMemory.find_by(contact_id: contact.id) }
+    end
+
+    def first_messages
+      memory.entries.map { |entry| entry["first_message"] }
+    end
+
+    it "a reabertura tira a conversa da memória na mesma transação" do
+      older = intake(whatsapp_message(text: "Repasse antigo"))
+      resolve(older.conversation, (brand.reopen_window_minutes + 10).minutes.ago)
+      recent = intake(whatsapp_message(text: "Repasse recente"))
+      resolve(recent.conversation, 1.hour.ago)
+      refresh_memory(recent.conversation)
+      expect(first_messages).to eq([ "Repasse recente", "Repasse antigo" ])
+
+      reopened = intake(whatsapp_message(text: "Voltei"))
+
+      expect(reopened.conversation.id).to eq(recent.conversation.id)
+      expect(first_messages).to eq([ "Repasse antigo" ])
+      events = audit_events_of(brand, recent.conversation.id)
+      reopen = events.find { |event| event.action == "conversation.reopened" }
+      updated = events.find { |event| event.action == "customer_memory.updated" && event.created_at >= reopen.created_at }
+      expect(updated.trace_id).to eq(reopen.trace_id)
+      expect(updated.actor_type).to eq("system")
+    end
+
+    it "sem outra conversa encerrada, a reabertura apaga a memória" do
+      first = intake(whatsapp_message)
+      resolve(first.conversation, 1.hour.ago)
+      refresh_memory(first.conversation)
+      expect(memory).to be_present
+
+      intake(whatsapp_message(text: "Voltei"))
+
+      expect(memory).to be_nil
+      expect(actions_of(first.conversation.id)).to include("customer_memory.deleted")
+    end
+
+    it "a conversa nova depois do prazo vencido não mexe na memória" do
+      first = intake(whatsapp_message)
+      resolve(first.conversation, (brand.reopen_window_minutes + 1).minutes.ago)
+      refresh_memory(first.conversation)
+      before = memory
+
+      second = intake(whatsapp_message(text: "Outro assunto"))
+
+      expect(memory).to have_attributes(summary: before.summary, entries: before.entries, updated_at: before.updated_at)
+      expect(actions_of(second.conversation.id).grep(/customer_memory/)).to be_empty
+    end
+  end
+
   describe "mensagem repetida" do
     it "o mesmo external_id no mesmo canal não cria mensagem, audit_event nem job" do
       inbound = whatsapp_message(external_id: "wamid.repetido")

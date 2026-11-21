@@ -3,7 +3,8 @@
 O valor é o JSON do evento message.created (schema webhook.message-created). Os headers são os do
 schema kafka.inbound-headers, gravados pelo Broker: brand, traceparent e broker_received_at. O
 timestamp do registro é o horário de gravação no Kafka (o tópico usa LogAppendTime) e vira o
-kafka_appended_at da ação.
+kafka_appended_at da ação. O received_at do corpo é o horário em que o Core recebeu a mensagem do
+canal; é a referência da janela da memória do lojista na decisão.
 
 Registro sem os campos ou headers exigidos lança InvalidEvent.
 """
@@ -36,6 +37,7 @@ class Event:
     text: str
     channel: str
     context_url: str
+    received_at: str
     traceparent: str | None
     broker_received_at: str
     kafka_appended_at: str
@@ -72,6 +74,7 @@ def parse(record) -> Event:
     sequence = body.get("sequence")
     message = body.get("message")
     context_url = body.get("context_url")
+    received_at = body.get("received_at")
 
     _require(isinstance(event_id, str) and bool(UUID.match(event_id)), "event_id inválido")
     _require(isinstance(conversation_id, str) and bool(UUID.match(conversation_id)), "conversation_id inválido")
@@ -80,6 +83,7 @@ def parse(record) -> Event:
     _require(isinstance(message, dict) and isinstance(message.get("text"), str) and bool(message["text"]),
              "message sem text")
     _require(isinstance(context_url, str) and bool(CONTEXT_URL.match(context_url)), "context_url inválida")
+    _require(isinstance(received_at, str) and bool(TIMESTAMP.match(received_at)), "received_at ausente ou inválido")
     _require(f"/brands/{brand}/conversations/{conversation_id}/" in context_url,
              "context_url de outra marca ou conversa")
 
@@ -98,6 +102,7 @@ def parse(record) -> Event:
         text=message["text"],
         channel=str(message.get("channel", "")),
         context_url=context_url,
+        received_at=received_at,
         traceparent=header(record, "traceparent"),
         broker_received_at=broker_received_at,
         kafka_appended_at=clock.from_millis(record.timestamp),

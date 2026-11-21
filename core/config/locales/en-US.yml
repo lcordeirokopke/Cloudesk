@@ -10,3 +10,15 @@ en-US:
     ai_timeout:
       wait_message: "We are checking your request and will get back to you shortly."
       summary: "The AI did not respond within %{minutes} min."
+    memory:
+      line: "%{date} · %{channel} · %{category} · %{resolved_by}%{handoff} · \"%{first_message}\""
+      date_format: "%m/%d/%Y"
+      no_category: "no category"
+      handoff: " · escalated: %{reason}"
+      resolved_by:
+        ai: "resolved by the AI"
+        analyst: "resolved by an analyst"
+      channels:
+        chat: "Chat"
+        whatsapp: "WhatsApp"
+        email: "Email"
