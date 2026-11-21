@@ -6,3 +6,7 @@ en-US:
       audio: "[audio sent]"
       video: "[video sent]"
       other: "[content sent]"
+  conversations:
+    ai_timeout:
+      wait_message: "We are checking your request and will get back to you shortly."
+      summary: "The AI did not respond within %{minutes} min."

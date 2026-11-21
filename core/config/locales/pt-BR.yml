@@ -6,3 +6,7 @@ pt-BR:
       audio: "[áudio enviado]"
       video: "[vídeo enviado]"
       other: "[conteúdo enviado]"
+  conversations:
+    ai_timeout:
+      wait_message: "Estamos verificando sua solicitação, em instantes retornamos."
+      summary: "A IA não respondeu em %{minutes} min."

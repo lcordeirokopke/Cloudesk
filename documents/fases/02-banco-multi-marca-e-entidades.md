@@ -110,13 +110,13 @@ Chaves primárias e `event_id` são UUID v7, gerados pelo banco com o default `u
 | - | - | - |
 | Brand | `brands` | Marca (InfinitePay, JIM), idioma e prazo de reabertura; fora do RLS |
 | Team | `teams` | Equipe de analistas, com skills e horário comercial |
-| Queue | `queues` | SLA, capacidade, atendente inicial (`ai` ou `human`) e fila de transbordo |
+| Queue | `queues` | SLA, capacidade, atendente inicial (`ai` ou `human`), fila de transbordo e fila de escalação (fila humana da mesma marca) |
 | RoutingRule | `routing_rules` | Condição (`when`) e resultado (`then`) em `jsonb`, posição, versão e `active`; cada versão é uma linha imutável |
 | Contact | `contacts` e `contact_identities` | Lojista sintético e as identidades dele por canal (telefone, e-mail, id do app), únicas por marca |
 | Conversation | `conversations` | Estado, fila, categoria, urgência, prioridade, SLA, entrada na fila humana, atendente e `last_sequence` |
 | Message | `messages` | Canal, autor (lojista, IA, analista, sistema), texto, anexos e `sequence` |
 | Attendant | `attendants` | Tipo (`ai` ou `human`), equipe, capacidade simultânea e skills |
-| Handoff | `handoffs` | Motivo, resumo e contexto estruturado em `jsonb` |
+| Handoff | `handoffs` | Motivo, resumo e contexto estruturado em `jsonb`; avaliação do briefing (`rating`: `useful` ou `not_useful`), analista que avaliou (`rated_by_id`) e horário (`rated_at`) |
 | AuditEvent | `audit_events` | `event_id`, ator, ação, alvo, antes e depois, envelope, motivo, regra e versão, `trace_id` |
 | CustomerMemory | `customer_memories` | Resumo das interações anteriores do lojista |
 | Evento processado | `processed_events` | `idempotency_key` e o resultado da primeira execução da ação |
@@ -160,7 +160,7 @@ flowchart LR
 | - | - | - |
 | `triage` | `with_ai` | Roteamento atribui à IA (F6) |
 | `triage` | `awaiting_human` | Fila com atendente inicial humano (F6); disjuntor de IA (diferencial 3) |
-| `with_ai` | `awaiting_human` | `escalate` (F8); varredura de SLA (F11) |
+| `with_ai` | `awaiting_human` | `escalate` (F8); varredura do timeout do agente (F11) |
 | `with_ai` | `resolved` | `resolve` (F8) |
 | `with_ai` | `triage` | `categorize` dispara novo roteamento (F8) |
 | `awaiting_human` | `with_human` | Analista assume pela distribuição (F6) |
@@ -208,7 +208,7 @@ O schema fica em `db/structure.sql`, porque o formato Ruby do Rails não express
 
 - **Determinismo:** `Faker::Config.random` com semente fixa; a versão do Faker fica travada no `Gemfile.lock`, porque os valores dependem dos dicionários da gem.
 - **Idiomas:** `pt-BR` para a InfinitePay e `en-US` para a JIM.
-- **Conteúdo, por marca:** os números de WhatsApp e e-mails de suporte, duas equipes, três filas, três regras, um atendente IA, quatro analistas e 50 lojistas com telefone, e-mail e id do app.
+- **Conteúdo, por marca:** os números de WhatsApp e e-mails de suporte, duas equipes, três filas, três regras, um atendente IA, quatro analistas e 50 lojistas com telefone, e-mail e id do app. A fila prioritária de cada marca escala para a fila humana financeira (`ip-financeiro-prioritaria` para `ip-financeiro`, `jim-finance-priority` para `jim-finance`); as filas gerais não têm fila de escalação.
 - **E-mail em ASCII:** o username do Faker passa por `I18n.transliterate` (`barbara.costa@example.com`, e não `bárbara.costa@example.com`). Um e-mail com acento na parte local exigiria SMTPUTF8 em todo o caminho do e-mail. A transliteração não consome a semente.
 - **Reexecução:** cada registro é buscado por uma chave natural e criado só se não existe. Com a semente fixa, a segunda execução gera os mesmos valores e encontra os registros.
 - **Papel:** as seeds rodam com o papel dono, que grava em `brands`, e definem a marca por transação, pelo mesmo `Tenancy.with_brand` da aplicação.

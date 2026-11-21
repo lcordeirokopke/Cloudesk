@@ -34,7 +34,7 @@ Cada seta tem um schema; cada chamada HTTP tem uma assinatura com segredo própr
 
 **Rastreabilidade embutida.** O `traceparent` W3C viaja em todas as peças, e cada salto carimba o seu horário: o Broker no header Kafka, o Kafka no timestamp do registro, o agente no corpo da ação. O Core recebe todos os carimbos na ação e monta a linha do tempo de cada mensagem só a partir da auditoria.
 
-**Decisões de IA auditáveis.** A ação carrega as ferramentas consultadas com entradas, saídas e horários e, quando a decisão vem de um LLM, o modelo, a versão e os parâmetros. O `escalate` só é aceito com o briefing completo.
+**Decisões de IA auditáveis.** A ação carrega as ferramentas consultadas com entradas, saídas e horários e, quando o agente informa, o modelo que produziu a decisão, com versão e parâmetros. O `escalate` só é aceito com o briefing completo.
 
 ## Como funciona
 
@@ -130,7 +130,7 @@ Schema `action`. É o valor da mensagem Kafka em `agent.outbound`, com chave `co
 | `based_on_sequence` | Sequência da última mensagem que o agente considerou |
 | `tools` | Ferramentas consultadas: `name`, `input`, `output`, `started_at` e `finished_at`; lista vazia quando nenhuma foi consultada |
 | `timestamps` | `broker_received_at` e `kafka_appended_at`, devolvidos pelo agente; `agent_consumed_at` e `agent_published_at`, do próprio agente; os quatro obrigatórios |
-| `model` | Opcional: `name`, `version` e `parameters`, quando a decisão vem de um LLM |
+| `model` | Opcional: `name`, `version` e `parameters` do modelo que produziu a decisão, quando o agente o informa |
 | `traceparent` | Contexto de trace W3C do agente |
 
 | Ação | Campos próprios |
@@ -229,7 +229,7 @@ Todas as chamadas HTTP entre os três componentes são assinadas da mesma forma.
 | Rastreabilidade e auditoria, com linha do tempo por mensagem e `trace_id` | `traceparent` em todas as peças e os carimbos de cada salto, reunidos na ação | Gravação no `audit_event` da ação (F8) e linha do tempo na tela (F14) |
 | Handoff com resumo e contexto | O briefing obrigatório do `escalate` | Gravação do handoff (F8) e painel do analista (F11) |
 | Memória e contexto entre interações | O formato do contexto, com histórico e memória do lojista | Montagem do contexto (F8) e memória (F12) |
-| Agente mock com ferramentas falsas e modo LLM registrando modelo, versão e parâmetros | Os campos `tools` e `model` da ação | Agente (F10) e modo LLM (F16) |
+| Agente mock determinístico com ferramentas falsas | O campo `tools` da ação e o campo opcional `model` | Agente (F10) |
 
 ### No experimento técnico
 
@@ -287,7 +287,6 @@ Os testes em Python rodam em `agent_mock/`, com `pip install -e ".[test]"` e `py
 | API de ações e contexto (F8) | Valida a assinatura, o schema `action` e a `Idempotency-Key`, responde conforme `action-response` e monta o `context` |
 | Broker (F9) | Valida o webhook e os headers, publica o corpo sem alterar, calcula a `Idempotency-Key`, chama a API de ações e grava a DLQ com os headers de diagnóstico (`documents/fases/10-broker.md`) |
 | Agente mock (F10) | Lê o timestamp do registro, devolve os carimbos, assina o `GET` do contexto e publica ações no schema `action` |
-| Modo LLM (F16) | Preenche o campo `model` da ação |
 
 ## Fontes
 

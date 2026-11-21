@@ -9,6 +9,8 @@ class Conversation < ApplicationRecord
   STATES = %w[triage with_ai awaiting_human with_human resolved closed].freeze
   # Estados em que a conversa ocupa a capacidade da fila.
   OPEN_STATES = %w[with_ai awaiting_human with_human].freeze
+  # Estados em que a conversa está com a operação humana: na fila de escalas ou com um analista.
+  HUMAN_STATES = %w[awaiting_human with_human].freeze
   URGENCIES = %w[high normal].freeze
 
   TRANSITIONS = {

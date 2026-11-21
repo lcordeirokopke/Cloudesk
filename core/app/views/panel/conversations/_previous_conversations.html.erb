@@ -1,0 +1,16 @@
+<section class="panel-card" id="previous-conversations">
+  <h2>Conversas anteriores</h2>
+  <% if conversations.empty? %>
+    <p class="panel-muted">Nenhuma outra conversa do lojista.</p>
+  <% else %>
+    <% conversations.each do |conversation| %>
+      <details class="panel-previous" id="<%= dom_id(conversation, :previous) %>">
+        <summary>
+          <%= format_time(conversation.created_at) %> · <%= conversation.channel %> · <%= conversation.state %>
+          <%= "· #{conversation.queue.name}" if conversation.queue %>
+        </summary>
+        <%= render partial: "panel/conversations/message", collection: messages.fetch(conversation.id, []), as: :message %>
+      </details>
+    <% end %>
+  <% end %>
+</section>

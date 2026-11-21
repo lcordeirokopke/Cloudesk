@@ -27,6 +27,19 @@ Rails.application.routes.draw do
     get "brands/:brand/conversations/:conversation_id/context", to: "contexts#show", as: :agent_conversation_context
   end
 
+  # Painel do analista (Hotwire), com HTTP basic auth e login simulado do analista na sessão.
+  scope "panel", module: "panel", as: "panel" do
+    root to: "sessions#index"
+    post "session", to: "sessions#create", as: :session
+    delete "session", to: "sessions#destroy"
+    get "queue", to: "queues#show", as: :queue
+    post "assignments", to: "assignments#create", as: :assignments
+    get "conversations/:id", to: "conversations#show", as: :conversation
+    post "conversations/:conversation_id/replies", to: "replies#create", as: :conversation_replies
+    post "conversations/:conversation_id/resolution", to: "resolutions#create", as: :conversation_resolution
+    post "handoffs/:handoff_id/rating", to: "handoff_ratings#create", as: :handoff_rating
+  end
+
   # Painel dos jobs do Solid Queue (Mission Control - Jobs), com HTTP basic auth.
   mount MissionControl::Jobs::Engine, at: "/jobs"
 

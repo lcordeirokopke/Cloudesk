@@ -1,0 +1,17 @@
+<% content_for :title, "Entrar" %>
+
+<section class="panel-card panel-login">
+  <h1>Entrar no painel</h1>
+  <p class="panel-muted">Login simulado: escolha a marca e o analista que vai atender.</p>
+
+  <%= form_with url: panel_session_path, method: :post, class: "panel-form" do |form| %>
+    <%= form.label :analyst, "Analista" %>
+    <%= form.select :analyst,
+                    grouped_options_for_select(
+                      @analysts_by_brand.map do |brand, analysts|
+                        [ brand.name, analysts.map { |analyst| [ "#{analyst.name} · #{analyst.team.name}", "#{brand.slug}:#{analyst.id}" ] } ]
+                      end
+                    ) %>
+    <%= form.submit "Entrar", class: "panel-button" %>
+  <% end %>
+</section>

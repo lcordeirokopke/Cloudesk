@@ -1,0 +1,58 @@
+<section class="panel-card" id="routing-explanation">
+  <h2>Por que caiu aqui?</h2>
+  <% routed = explanation.routed %>
+  <% if routed.nil? %>
+    <p class="panel-muted">A conversa ainda não foi roteada.</p>
+  <% else %>
+    <dl class="panel-facts">
+      <dt>Regra</dt><dd><%= routed[:rule_name] %> · versão <%= routed[:rule_version] %></dd>
+      <dt>Fila</dt><dd><%= routed[:queue] %></dd>
+      <dt>Prioridade</dt><dd><%= routed[:priority] %></dd>
+      <dt>SLA</dt><dd><%= routed[:sla_minutes] %> min</dd>
+      <dt>Atendente inicial</dt><dd><%= routed[:first_attendant] %></dd>
+      <dt>Transbordo</dt>
+      <dd>
+        <% if routed[:overflow] %>
+          sim: <%= routed[:queue_chain].map { |step| "#{step['queue']} (#{step['open_conversations']}/#{step['capacity']})" }.join(" → ") %>
+        <% else %>
+          não
+        <% end %>
+      </dd>
+      <dt>Gatilho</dt><dd><%= routed[:trigger] %> · <%= format_time(routed[:at]) %></dd>
+    </dl>
+  <% end %>
+
+  <% classified = explanation.classified %>
+  <% if classified %>
+    <h3>Classificação</h3>
+    <dl class="panel-facts">
+      <dt>Categoria</dt><dd><%= classified[:category] || "nenhuma" %></dd>
+      <dt>Urgência</dt><dd><%= classified[:urgency] || "-" %></dd>
+      <% if classified[:actor_type] == "ai" %>
+        <dt>Origem</dt><dd>categoria informada pela IA</dd>
+      <% else %>
+        <dt>Palavras</dt>
+        <dd>
+          <% category_words = (classified[:matches]["category"] || {}).map { |name, terms| "#{name}: #{Array(terms).join(', ')}" } %>
+          <% urgency_words = Array(classified[:matches]["urgency"]) %>
+          <% words = category_words + (urgency_words.any? ? [ "urgência: #{urgency_words.join(', ')}" ] : []) %>
+          <%= words.any? ? words.join(" · ") : "nenhuma" %>
+        </dd>
+        <dt>Pontuação</dt>
+        <dd><%= classified[:scores].any? ? classified[:scores].map { |name, score| "#{name}: #{score}" }.join(", ") : "-" %></dd>
+        <dt>Versão das listas</dt><dd><%= classified[:classifier_version] %></dd>
+      <% end %>
+    </dl>
+  <% end %>
+
+  <% escalated = explanation.escalated %>
+  <% if escalated %>
+    <h3>Escalação</h3>
+    <dl class="panel-facts">
+      <dt>De</dt><dd><%= escalated[:from_queue] %></dd>
+      <dt>Para</dt><dd><%= escalated[:to_queue] %><%= " (mesma fila)" unless escalated[:moved] %></dd>
+      <dt>Motivo</dt><dd><%= escalated[:reason] %> · por <%= escalated[:actor_type] %></dd>
+      <dt>Quando</dt><dd><%= format_time(escalated[:at]) %></dd>
+    </dl>
+  <% end %>
+</section>

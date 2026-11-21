@@ -246,7 +246,7 @@ No Compose, com `web`, `jobs-default`, `mailpit` e `channel-simulator`: o `verif
 | Roteamento (F6) | Os modelos de texto e os assuntos de e-mail fazem parte do corpus do classificador |
 | API de ações (F8) | A resposta do agente sai por `Conversations::Outbound.append!` e chega ao simulador pelo canal de origem |
 | Handoff e painel (F11) | A resposta do analista sai pelo mesmo caminho, e o registro do chat guarda o autor |
-| Experimento (F17) | O k6 registra os streams do chat no simulador pelo `POST /chat/streams`; a reconciliação lê `sent.jsonl`, `received.jsonl` e `audit_events` |
+| Experimento (F18) | O k6 registra os streams do chat no simulador pelo `POST /chat/streams`; a reconciliação lê `sent.jsonl`, `received.jsonl` e `audit_events` |
 
 ## Fontes
 

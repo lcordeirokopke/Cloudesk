@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <title><%= content_for(:title) || "Painel do analista" %> · Cloudesk</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="application-name" content="Cloudesk">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <%# O refresh enviado pelo Conversations::PanelBroadcastJob recarrega a página com morph, sem perder a rolagem. %>
+    <%= turbo_refreshes_with method: :morph, scroll: :preserve %>
+
+    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body class="panel">
+    <header class="panel-header">
+      <%= link_to "Cloudesk · Painel do analista", current_analyst ? panel_queue_path : panel_root_path, class: "panel-header__brand" %>
+      <% if current_analyst %>
+        <span class="panel-header__who">
+          <%= current_analyst.name %> · <%= current_analyst.team.name %> · <%= current_brand.name %>
+        </span>
+        <%= button_to "Trocar analista", panel_session_path, method: :delete, class: "panel-button panel-button--ghost",
+                                                             form_class: "panel-header__logout" %>
+      <% end %>
+    </header>
+
+    <% if flash[:alert] %><p class="panel-flash panel-flash--alert"><%= flash[:alert] %></p><% end %>
+    <% if flash[:notice] %><p class="panel-flash panel-flash--notice"><%= flash[:notice] %></p><% end %>
+
+    <main class="panel-main">
+      <%= yield %>
+    </main>
+  </body>
+</html>

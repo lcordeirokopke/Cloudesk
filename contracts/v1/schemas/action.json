@@ -30,7 +30,7 @@
     },
     "model": {
       "type": "object",
-      "description": "Presente quando a decisão vem de um LLM.",
+      "description": "Modelo que produziu a decisão, presente quando o agente o informa.",
       "required": ["name", "version", "parameters"],
       "additionalProperties": false,
       "properties": {

@@ -10,6 +10,10 @@ Cada evento processado gera uma linha com result igual a um destes valores:
 | context_error | O Core recusou o GET do contexto com erro permanente | confirmado |
 | invalid_event | Registro sem os campos ou headers do contrato | confirmado |
 | unknown_brand | Marca sem locale em AGENT_BRAND_LOCALES | confirmado |
+| failure_drop | Modo de falha drop: o evento afetado termina sem publicação | confirmado |
+| failure_stale_skipped | Modo de falha stale com sequence 1: a ação é publicada sem alteração | confirmado |
+
+No modo de falha, o log published do evento afetado leva o campo failure com o modo.
 """
 
 import json
@@ -23,6 +27,8 @@ DISCARDED_STATE = "discarded_state"
 CONTEXT_ERROR = "context_error"
 INVALID_EVENT = "invalid_event"
 UNKNOWN_BRAND = "unknown_brand"
+FAILURE_DROP = "failure_drop"
+FAILURE_STALE_SKIPPED = "failure_stale_skipped"
 
 
 def log(level: str, message: str, stream=None, **fields) -> None:

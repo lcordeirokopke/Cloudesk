@@ -1,0 +1,68 @@
+<section class="panel-card" id="handoff-card">
+  <h2>Briefing do handoff</h2>
+  <% if handoff.nil? %>
+    <p class="panel-muted">A conversa não tem handoff.</p>
+  <% else %>
+    <% context = handoff.context || {} %>
+    <p class="panel-problem"><%= handoff.summary %></p>
+    <dl class="panel-facts">
+      <dt>Motivo</dt><dd><%= handoff.reason %></dd>
+      <dt>Escalada em</dt><dd><%= format_time(handoff.created_at) %></dd>
+      <% if context["intent"] %><dt>Intenção</dt><dd><%= context["intent"] %></dd><% end %>
+      <% if context["sentiment"] %><dt>Sentimento</dt><dd><%= context["sentiment"] %></dd><% end %>
+      <% unless context["confidence"].nil? %>
+        <dt>Confiança</dt><dd><%= number_to_percentage(context["confidence"].to_f * 100, precision: 0) %></dd>
+      <% end %>
+      <% if context["suggested_next_step"] %><dt>Próximo passo sugerido</dt><dd><%= context["suggested_next_step"] %></dd><% end %>
+    </dl>
+
+    <% if context["entities"].present? %>
+      <h3>Entidades</h3>
+      <ul class="panel-list">
+        <% context["entities"].each do |name, value| %><li><code><%= name %></code>: <%= value %></li><% end %>
+      </ul>
+    <% end %>
+
+    <% if context["attempts"].present? %>
+      <h3>O que a IA tentou</h3>
+      <ul class="panel-list">
+        <% Array(context["attempts"]).each do |attempt| %><li><%= attempt %></li><% end %>
+      </ul>
+    <% end %>
+
+    <% if context["tools"].present? %>
+      <h3>Ferramentas e retornos</h3>
+      <ul class="panel-list">
+        <% Array(context["tools"]).each do |tool| %>
+          <li><code><%= tool["name"] %></code> → <code><%= tool["output"].to_json %></code></li>
+        <% end %>
+      </ul>
+    <% end %>
+
+    <dl class="panel-facts">
+      <dt>Primeira resposta humana</dt>
+      <dd id="first-human-response">
+        <% if first_response_at %>
+          <%= format_duration(first_response_at - handoff.created_at) %> depois da escalação
+        <% else %>
+          ainda sem resposta
+        <% end %>
+      </dd>
+    </dl>
+
+    <div class="panel-rating" id="handoff-rating">
+      <% if handoff.rating %>
+        Briefing avaliado como <strong><%= handoff.rating == "useful" ? "útil" : "não útil" %></strong>
+        por <%= handoff.rated_by&.name %> em <%= format_time(handoff.rated_at) %>.
+      <% elsif can_rate %>
+        <span>O briefing foi útil?</span>
+        <%= button_to "Útil", panel_handoff_rating_path(handoff.id), params: { rating: "useful" }, method: :post,
+                              class: "panel-button" %>
+        <%= button_to "Não útil", panel_handoff_rating_path(handoff.id), params: { rating: "not_useful" }, method: :post,
+                                  class: "panel-button panel-button--ghost" %>
+      <% else %>
+        <span class="panel-muted">Briefing ainda não avaliado.</span>
+      <% end %>
+    </div>
+  <% end %>
+</section>

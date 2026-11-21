@@ -139,11 +139,16 @@ A chave da partição Kafka é o `conversation_id`, o que preserva a ordem em qu
 
 #### Timeout do agente
 
-Um job recorrente varre as conversas atribuídas à IA cuja última mensagem do lojista está sem ação aceita além do SLA da fila. Para cada uma, a plataforma envia mensagem de espera ou escala para humano. Não existe timer por mensagem.
+Um job recorrente (`Conversations::AiTimeoutSweepJob`), a cada 15 segundos no `jobs-default`, varre as conversas em `with_ai` pela última mensagem do lojista. Não existe timer por mensagem.
+
+- **Metade do SLA:** sem mensagem da IA nem do sistema depois da última mensagem do lojista, a plataforma envia uma mensagem de espera (autor `system`, no locale da marca, pelo canal da mensagem do lojista), uma vez por mensagem do lojista.
+- **SLA inteiro:** sem mensagem da IA depois da última mensagem do lojista, a conversa é escalada com handoff de motivo `ai_timeout`, resumo do sistema e contexto vazio, com ator `system`. A mensagem de espera não reinicia o prazo.
+- O SLA é o `sla_minutes` da conversa, definido no roteamento. Um `categorize` aceito não grava mensagem e não conta como resposta.
+- As conversas são travadas com `FOR UPDATE SKIP LOCKED`: a conversa travada por uma ação do agente fica para a execução seguinte, e as condições são conferidas de novo depois da trava. Uma ação da IA que chega depois da escalação recebe `409 rejected`.
 
 ### Handoff com resumo e contexto
 
-Na ação `escalate`, o agente envia motivo, resumo curto e contexto estruturado: intenção, entidades (ex.: id da transação sintética), ferramentas consultadas e seus retornos, tentativas feitas, sentimento, próximo passo sugerido e confiança. A plataforma grava o Handoff com esses dados, leva a conversa de `with_ai` a `awaiting_human`, sem atendente, roteia para a fila humana pela regra de escalação e notifica analistas em tempo real; o histórico completo segue anexado.
+Na ação `escalate`, o agente envia motivo, resumo curto e contexto estruturado: intenção, entidades (ex.: id da transação sintética), ferramentas consultadas e seus retornos, tentativas feitas, sentimento, próximo passo sugerido e confiança. A plataforma grava o Handoff com esses dados e leva a conversa de `with_ai` a `awaiting_human`, sem atendente, na fila de escalação da fila em que ela estava (`queues.escalation_queue_id`, uma fila humana da mesma marca), com a prioridade mantida e o SLA da fila de destino; sem fila de escalação, a conversa fica na mesma fila. O painel dos analistas da equipe é atualizado em tempo real, e o histórico completo segue na mesma conversa. A escalação passa sempre por `Conversations::Escalate`, chamado pelo `escalate` do agente e pela varredura do timeout.
 
 &#91;embedded content: Ciclo de vida do atendimento · 6 estados\]
 
@@ -157,6 +162,16 @@ Na ação `escalate`, o agente envia motivo, resumo curto e contexto estruturado
 | `closed` | Prazo de reabertura vencido; estado final |
 
 Toda transição gera um evento de auditoria; uma conversa resolvida volta à triagem se o lojista escrever de novo dentro do prazo de reabertura. Vencido o prazo, a conversa passa a `closed` e uma nova mensagem do lojista abre outra conversa.
+
+### Painel do analista
+
+O painel (`/panel`, Hotwire) fica atrás de HTTP basic auth (`PANEL_USER` e `PANEL_PASSWORD`; sem os dois preenchidos, o acesso é negado). O login é simulado: a pessoa escolhe a marca e um analista humano com equipe, e a escolha fica na sessão. O analista é o ator dos eventos que grava.
+
+- **Fila de escalas:** conversas em `awaiting_human` nas filas da equipe, por prioridade e tempo na fila, com motivo e resumo do handoff, tempo na fila e SLA restante; as conversas do analista e a capacidade usada.
+- **Pegar próximo:** o analista recebe o próximo caso pela distribuição por capacidade (`Routing::Distributor.next_for`); a fila é visível, e cada conversa abre só para leitura até ser atribuída.
+- **Tela da conversa:** histórico, cartão do handoff, "Por que caiu aqui?", conversas anteriores do lojista em todos os canais e a memória do lojista, quando existe.
+- **Ações:** responder pelo canal da última mensagem do lojista, resolver (`with_human` → `resolved`) e avaliar o briefing (`Conversations::AnalystActions`).
+- **Tempo real:** as mudanças que aparecem no painel são gravadas com `panel: true` no `Audit::Command`, que enfileira o `Conversations::PanelBroadcastJob` na mesma transação. O job envia um Turbo Stream `refresh` ao stream da equipe e ao da conversa, e a página recarrega com morph.
 
 ### Auditoria e rastreabilidade
 
@@ -177,7 +192,7 @@ Toda transição gera um evento de auditoria; uma conversa resolvida volta à tr
 - **Canais:** WhatsApp com payloads no formato da Cloud API da Meta; e-mail via Mailpit (SMTP local); chat in-app como widget web. Cada marca tem números de WhatsApp e e-mails de suporte próprios, na tabela `brand_channels`, e o chat leva a marca na URL.
 - **Entrada do e-mail:** o webhook do Mailpit avisa o Core de cada e-mail recebido; o Core baixa o original pela API do Mailpit e cria o `InboundEmail` do Action Mailbox só quando o e-mail é endereçado a um e-mail de suporte de uma marca. Um job recorrente busca no Mailpit os e-mails sem tag e recupera o que o webhook perde. A resposta sai por SMTP para o Mailpit. O detalhamento está em `documents/fases/05-canais-de-entrada-e-identidade.md`.
 - **Simulador de canais:** envia mensagens sintéticas nos três formatos e recebe as respostas de saída, registrando cada uma para a reconciliação. O detalhamento está em `documents/fases/06-simulador-de-canais.md`.
-- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Modos de falha configuráveis (ver Diferenciais) e modo LLM opcional com modelo aberto, registrando modelo, versão e parâmetros. O detalhamento está em `documents/fases/11-agente-mock.md`.
+- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Modos de falha configuráveis (ver Diferenciais). O detalhamento está em `documents/fases/11-agente-mock.md`.
 - **Dados sintéticos:** lojistas, transações e conversas gerados com seeds fixas (Faker pt\_BR e en\_US), sem nenhum dado real. Rodar as seeds de novo no mesmo banco não duplica registros.
 
 ## Arquitetura
@@ -200,7 +215,7 @@ Canal (chat, WhatsApp, e-mail)
 | - | - | - |
 | Core Help Desk | Rails 8 (API + Hotwire), módulos Channels, Conversations, Routing, Agents, Audit, Admin | Regras de negócio, API, chat, painel e admin |
 | Banco | PostgreSQL 18 | Atendimentos, mensagens, filas, regras, auditoria, jobs, tempo real e cache |
-| Jobs | Solid Queue, no mesmo banco do app | Entrega de webhooks, varredura de SLA, resumos de memória |
+| Jobs | Solid Queue, no mesmo banco do app | Entrega de webhooks, varredura do timeout do agente, atualização do painel, resumos de memória |
 | Tempo real | Action Cable / Turbo Streams sobre Solid Cable | Chat e painel do analista ao vivo |
 | Cache | Solid Cache | Cache de contexto e de regras compiladas |
 | E-mail de entrada | Action Mailbox + Mailpit | Canal de e-mail simulado |
@@ -220,7 +235,7 @@ O monólito é um único código que roda em processos distintos, cada um escala
 | - | - | - |
 | `web` | Puma | requisições HTTP e conexões WebSocket |
 | `jobs-webhooks` | Solid Queue, só a fila `webhooks` | volume de saída para o broker |
-| `jobs-default` | Solid Queue, demais filas (SLA, memória, manutenção) | backlog de tarefas internas |
+| `jobs-default` | Solid Queue, demais filas: varredura do timeout do agente a cada 15 s, entregas aos canais, atualização do painel, memória e manutenção | backlog de tarefas internas |
 | `broker-web` | Puma com o endpoint Rack do Broker | volume de webhooks vindos do Core |
 | `broker-consumer` | `karafka server` | número de partições de `agent.outbound` |
 | `agent-mock` | `agent-mock run`, consumidor Python no grupo `cloudesk-agent` | número de partições de `agent.inbound` |
@@ -269,7 +284,7 @@ Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-w
 - **Ordem:** agente decide pelo contexto mais recente; o Core rejeita ação baseada em contexto desatualizado.
 - **Broker ou Kafka fora do ar:** o Solid Queue reenvia com backoff; ao esgotar, o job vai para a fila de falhas com botão de reprocessar no painel.
 - **Processo cai no meio da operação:** nada se perde, porque mensagem e job foram gravados na mesma transação e o Broker só confirma após o ack do Kafka.
-- **Agente sem resposta:** a varredura de SLA envia mensagem de espera ou escala para humano.
+- **Agente sem resposta:** a varredura do timeout envia a mensagem de espera na metade do SLA e escala para humano no SLA inteiro.
 - **Picos:** `web` e `jobs-webhooks` escalam horizontalmente; webhooks em fila dedicada; limite de taxa por marca.
 
 ### Limites conhecidos
@@ -325,7 +340,7 @@ A H4 mede a latência que o lojista percebe; a H2 mede só o trecho interno até
 | Handoff com resumo e contexto | Ação `escalate` com resumo e contexto estruturado; histórico preservado |
 | Rastreabilidade e auditoria | `audit_events` imutável, linha do tempo por mensagem e `traceparent` em HTTP e Kafka |
 | Memória e contexto | Histórico da conversa, resumo do lojista e identidade unificada entre canais |
-| Agente simulado | Mock determinístico com ferramentas falsas; modo LLM opcional registrado |
+| Agente simulado | Mock determinístico com ferramentas falsas |
 | Experimento técnico | Quatro hipóteses, método e limitações descritos acima |
 | Empacotamento self-hosted | Docker Compose com todos os serviços |
 
@@ -335,7 +350,7 @@ Cinco diferenciais fazem parte do escopo, escolhidos por esforço baixo e por ap
 
 **1. Briefing de handoff avaliado pelo analista**
 
-O handoff chega como cartão: problema em uma frase, o que a IA tentou, ferramentas e retornos, sentimento, próximo passo sugerido e confiança. O analista marca o briefing como útil ou não, o que mede a qualidade do handoff e o tempo até a primeira resposta humana.
+O handoff chega como cartão na tela da conversa: problema em uma frase, o que a IA tentou, ferramentas e retornos, sentimento, próximo passo sugerido e confiança. O analista da conversa marca o briefing como útil ou não, uma vez (`handoffs.rating`, evento `handoff.rated`). O tempo até a primeira resposta humana é calculado na leitura, da criação do handoff até a primeira mensagem de analista, e aparece no cartão e no payload do `handoff.rated`.
 
 **2. Cockpit operacional em tempo real**
 
@@ -347,18 +362,17 @@ Por fila ou marca, um botão no admin passa todas as novas conversas para humano
 
 **4. "Por que caiu aqui?"**
 
-Em cada conversa, a tela mostra a regra e a versão que definiram fila, prioridade e SLA. A informação vem do `audit_event` de roteamento, que grava a regra e a versão que casaram. Reforça a rastreabilidade e as filas configuráveis.
+Em cada conversa, a tela mostra a regra e a versão que definiram fila, prioridade e SLA, com o atendente inicial e a cadeia de transbordo; a classificação, com as palavras encontradas, a pontuação e a versão das listas; e, quando houve, a escalação, com a fila de origem e a de destino. A informação vem dos últimos `conversation.routed`, `conversation.classified` e `conversation.escalated` em `audit_events` (`Conversations::RoutingExplanation`). Reforça a rastreabilidade e as filas configuráveis.
 
 **5. Modos de falha do agente mock**
 
-Por configuração, o agente mock atrasa, não responde, publica a mesma ação duas vezes ou envia ação desatualizada. Cada modo exercita um caminho da plataforma: a varredura de SLA (timeout), a idempotência no Core e a rejeição com `409`. Reforça a robustez diante de falhas e reentregas e permite demonstrá-la.
+Por configuração (`AGENT_FAILURE_MODE`: `delay`, `drop`, `duplicate` ou `stale`, com a fração dos eventos afetados em `AGENT_FAILURE_RATE`), o agente mock atrasa, não responde, publica a mesma ação duas vezes ou envia ação desatualizada. Cada modo exercita um caminho da plataforma: a varredura do timeout, a idempotência no Core e a rejeição com `409 stale`. Reforça a robustez diante de falhas e reentregas e permite demonstrá-la.
 
 ## Pontos em aberto
 
 | # | Ponto | Afeta |
 | - | - | - |
-| 1 | Login e perfis dos usuários do painel e do admin (analista, operador) | Autor das edições de regra na auditoria; painel do analista |
-| 2 | Regra do timeout: quando enviar mensagem de espera e quando escalar | Varredura de SLA |
+| 1 | Login e perfis dos operadores do admin | Autor das edições de regra na auditoria |
 
 ## Evolução
 

@@ -40,6 +40,19 @@ RSpec.describe "Seeds" do
     )
   end
 
+  it "gravam as filas de escalação das filas prioritárias" do
+    escalations = Brand.order(:slug).flat_map do |brand|
+      Tenancy.with_brand(brand) do
+        Routing::Queue.includes(:escalation_queue).order(:name).map { |queue| [ queue.name, queue.escalation_queue&.name ] }
+      end
+    end
+
+    expect(escalations).to contain_exactly(
+      [ "ip-financeiro", nil ], [ "ip-financeiro-prioritaria", "ip-financeiro" ], [ "ip-suporte-geral", nil ],
+      [ "jim-finance", nil ], [ "jim-finance-priority", "jim-finance" ], [ "jim-general-support", nil ]
+    )
+  end
+
   it "gravam os e-mails dos lojistas em ASCII" do
     emails = Brand.order(:slug).flat_map do |brand|
       Tenancy.with_brand(brand) { ContactIdentity.where(channel: "email").pluck(:value) }
@@ -57,5 +70,7 @@ RSpec.describe "Seeds" do
 
     expect(counts).to eq(before_counts)
     expect(identity_values).to eq(before_identities)
+    expect(Tenancy.with_brand(infinitepay) { Routing::Queue.find_by!(name: "ip-financeiro-prioritaria").escalation_queue.name })
+      .to eq("ip-financeiro")
   end
 end

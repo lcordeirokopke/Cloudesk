@@ -2,8 +2,9 @@ module Audit
   # Serviço de comando: o caminho único pelo qual toda decisão do sistema é gravada.
   # Em uma única transação, na marca informada, ele executa a mudança de estado (o bloco), grava o
   # audit_event com o envelope completo e, quando o comando tem evento de saída, enfileira o job de
-  # webhook. O Solid Queue grava o job pela mesma conexão do app: se a transação falha, não existe
-  # mudança, audit_event nem job; se ela confirma, os três existem.
+  # webhook. Com panel: true, enfileira também o Conversations::PanelBroadcastJob, que atualiza as
+  # telas do painel do analista. O Solid Queue grava os jobs pela mesma conexão do app: se a
+  # transação falha, não existe mudança, audit_event nem job; se ela confirma, todos existem.
   #
   #   Audit::Command.call(brand: brand, type: "message.created", actor_type: "customer", webhook: true) do |change|
   #     message = conversation.append_message!(channel: "whatsapp", author: "customer", body: "oi")
@@ -32,7 +33,9 @@ module Audit
     # reason:       motivo da decisão.
     # routing_rule: versão da RoutingRule que casou; grava regra e versão no audit_event.
     # webhook:      true quando o evento sai para o Broker.
-    def initialize(brand:, type:, actor_type:, actor_id: nil, reason: nil, routing_rule: nil, webhook: false)
+    # panel:        true quando a mudança aparece no painel do analista; exige change.conversation.
+    def initialize(brand:, type:, actor_type:, actor_id: nil, reason: nil, routing_rule: nil, webhook: false,
+                   panel: false)
       raise ArgumentError, "brand deve ser um Brand" unless brand.is_a?(Brand)
 
       @brand = brand
@@ -42,6 +45,7 @@ module Audit
       @reason = reason
       @routing_rule = routing_rule
       @webhook = webhook
+      @panel = panel
     end
 
     def call
@@ -56,6 +60,7 @@ module Audit
         envelope = build_envelope(change, traceparent, received_at)
         audit_event = record(change, envelope)
         enqueue_webhook(envelope) if @webhook
+        enqueue_panel_broadcast(change) if @panel
 
         Result.new(value: value, audit_event: audit_event, envelope: envelope)
       end
@@ -102,6 +107,16 @@ module Audit
         brand_id: @brand.id,
         event_id: envelope.event_id,
         traceparent: envelope.traceparent.to_s
+      )
+    end
+
+    # O job recebe a equipe da fila em que a conversa está depois da mudança.
+    def enqueue_panel_broadcast(change)
+      conversation = change.conversation
+      raise ArgumentError, "o comando com panel: true não informou a conversa" if conversation.nil?
+
+      Conversations::PanelBroadcastJob.perform_later(
+        brand_id: @brand.id, conversation_id: conversation.id, team_id: conversation.queue&.team_id
       )
     end
   end

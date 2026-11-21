@@ -2,21 +2,24 @@ module Conversations
   # Grava a mensagem de um atendente (IA, analista ou sistema) e enfileira a entrega ao lojista na
   # mesma transação (outbox): a resposta só sai se a mensagem foi gravada.
   # A resposta sai no canal da mensagem respondida (in_reply_to_sequence), pela mesma BrandChannel
-  # que a recebeu: o mesmo número ou o mesmo e-mail.
+  # que a recebeu: o mesmo número ou o mesmo e-mail. Com a conversa em awaiting_human ou with_human,
+  # o painel do analista é atualizado.
   module Outbound
     AUTHORS = %w[ai analyst system].freeze
 
     module_function
 
     # Devolve a Message gravada.
-    def append!(conversation:, author:, text:, in_reply_to_sequence:, attendant: nil)
+    # reason: motivo gravado no audit_event (por exemplo, a mensagem de espera do timeout).
+    def append!(conversation:, author:, text:, in_reply_to_sequence:, attendant: nil, reason: nil)
       author = author.to_s
       raise ArgumentError, "autor inválido para mensagem de saída: #{author.inspect}" unless AUTHORS.include?(author)
 
       brand = Brand.find(conversation.brand_id)
       Current.traceparent ||= TraceContext.generate
 
-      Audit::Command.call(brand: brand, type: "message.created", actor_type: author, actor_id: attendant&.id) do |change|
+      Audit::Command.call(brand: brand, type: "message.created", actor_type: author, actor_id: attendant&.id,
+                          reason: reason, panel: Conversation::HUMAN_STATES.include?(conversation.state)) do |change|
         replied = Message.find_by!(conversation_id: conversation.id, sequence: in_reply_to_sequence)
         message = conversation.append_message!(
           channel: replied.channel, author: author, attendant_id: attendant&.id, body: text,

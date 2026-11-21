@@ -233,7 +233,7 @@ No Compose, sem o `broker-web`, as mensagens enviadas pelo simulador são aceita
 | Broker (F9) | Recebe o `POST` em `/webhooks/message-created`, confere a assinatura com o mesmo segredo e responde 2xx só depois da confirmação do Kafka; 408, 429 e 5xx geram nova tentativa |
 | Observabilidade (F14) | Usa a profundidade da fila `webhooks` e as falhas como métricas |
 | Robustez e escala (F15) | Dimensiona threads, polling, pool, réplicas e heartbeat por medida |
-| Experimento (F17) | Mata o `jobs-webhooks` com `docker kill`; a reconciliação da H3 considera a demora de 4 a 11 minutos da recuperação |
+| Experimento (F18) | Mata o `jobs-webhooks` com `docker kill`; a reconciliação da H3 considera a demora de 4 a 11 minutos da recuperação |
 
 ## Fontes
 

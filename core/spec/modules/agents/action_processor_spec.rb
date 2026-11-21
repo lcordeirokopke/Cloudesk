@@ -277,6 +277,35 @@ RSpec.describe Agents::ActionProcessor do
       expect(escalated.after).to include("state" => "awaiting_human", "attendant_id" => nil)
       expect(events(conversation, "agent.escalate").sole.target_type).to eq("Conversation")
     end
+
+    it "com fila de escalação, leva a conversa à fila humana com o SLA dela" do
+      conversation = customer_writes("Meu repasse de ontem não caiu", from: seed_contact_in_segment(brand, "alto_tpv")).conversation
+      expect(in_brand { conversation.queue.name }).to eq("ip-financeiro-prioritaria")
+
+      process(agent_action(conversation, example: "escalate"))
+
+      updated = reload(conversation)
+      expect(updated).to have_attributes(state: "awaiting_human", sla_minutes: 60, priority: 90)
+      expect(in_brand { updated.queue.name }).to eq("ip-financeiro")
+      expect(events(conversation, "conversation.escalated").sole.payload.fetch("payload"))
+        .to include("from_queue" => "ip-financeiro-prioritaria", "to_queue" => "ip-financeiro", "moved" => true)
+    end
+  end
+
+  describe "depois da escalação pelo timeout" do
+    it "a ação atrasada da IA recebe rejected" do
+      conversation = conversation_with_ai
+      action = agent_action(conversation, text: "Resposta atrasada")
+      in_brand { Conversation.find(conversation.id).update!(sla_minutes: 1) }
+
+      travel(2.minutes) { Conversations::AiTimeoutSweepJob.perform_now }
+      result = process(action)
+
+      expect(result.status).to eq(:conflict)
+      expect(result.body).to include("status" => "rejected", "state" => "awaiting_human")
+      expect(events(conversation, "agent.action.rejected").size).to eq(1)
+      in_brand { expect(Message.where(conversation_id: conversation.id, author: "ai")).to be_empty }
+    end
   end
 
   describe "categorize" do

@@ -58,6 +58,17 @@ RSpec.describe Routing::Route do
                                                      queued_at: nil)
     end
 
+    it "só a atribuição à fila humana atualiza o painel do analista" do
+      panel_jobs = -> { jobs_of(Conversations::PanelBroadcastJob).count }
+      before_jobs = panel_jobs.call
+
+      route(open_conversation(alto))
+      expect(panel_jobs.call).to eq(before_jobs)
+
+      route(open_conversation(medio))
+      expect(panel_jobs.call).to eq(before_jobs + 1)
+    end
+
     it "fila com atendente inicial human: awaiting_human, sem atendente, com queued_at" do
       received_at = Time.utc(2026, 11, 19, 12, 0)
       result = route(open_conversation(medio), received_at: received_at)

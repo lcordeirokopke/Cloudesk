@@ -120,6 +120,23 @@ RSpec.describe Conversations::Intake do
       expect(webhook_jobs.count).to eq(before_jobs)
     end
 
+    it "a mensagem atualiza o painel do analista só com a conversa em estado humano" do
+      panel_jobs = -> { jobs_of(Conversations::PanelBroadcastJob).count }
+      other = seed_contact_in_segment(brand, "medio_tpv")
+      before_jobs = panel_jobs.call
+
+      intake(whatsapp_message)
+      expect(panel_jobs.call).to eq(before_jobs)
+
+      human = intake(inbound_message(brand: brand, channel: "whatsapp", identity: identity_of(other, "whatsapp")))
+      after_routing = panel_jobs.call
+      expect(after_routing).to eq(before_jobs + 2)
+
+      intake(inbound_message(brand: brand, channel: "whatsapp", identity: identity_of(other, "whatsapp"), text: "Alguma novidade?"))
+      expect(panel_jobs.call).to eq(after_routing + 1)
+      expect(human.conversation.state).to eq("awaiting_human")
+    end
+
     it "outra categoria cai na regra genérica" do
       result = intake(whatsapp_message(text: "A maquininha não liga"))
 

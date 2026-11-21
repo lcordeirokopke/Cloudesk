@@ -1,0 +1,45 @@
+<% content_for :title, "Conversa · #{@conversation.contact.name}" %>
+<%= turbo_stream_from Conversations::PanelBroadcast.conversation_stream(@conversation.id) %>
+
+<section class="panel-toolbar">
+  <div>
+    <p><%= link_to "← Fila de escalas", panel_queue_path %></p>
+    <h1><%= @conversation.contact.name %></h1>
+    <p class="panel-muted" id="conversation-state">
+      Estado <strong><%= @conversation.state %></strong>
+      · fila <%= @conversation.queue&.name || "sem fila" %>
+      · prioridade <%= @conversation.priority || "-" %>
+      · SLA <%= @conversation.sla_minutes ? "#{@conversation.sla_minutes} min" : "-" %>
+      · atendente <%= @conversation.attendant&.name || "nenhum" %>
+    </p>
+  </div>
+  <% if @attending %>
+    <%= button_to "Resolver", panel_conversation_resolution_path(@conversation.id), method: :post,
+                              class: "panel-button panel-button--ghost" %>
+  <% end %>
+</section>
+
+<div class="panel-grid">
+  <section class="panel-card panel-history">
+    <h2>Histórico</h2>
+    <div class="panel-messages" id="messages">
+      <%= render partial: "panel/conversations/message", collection: @messages, as: :message %>
+    </div>
+
+    <% if @attending %>
+      <%= form_with url: panel_conversation_replies_path(@conversation.id), method: :post, class: "panel-reply" do |form| %>
+        <%= form.text_area :text, rows: 3, placeholder: "Responder ao lojista pelo canal da última mensagem dele", required: true %>
+        <%= form.submit "Enviar", class: "panel-button" %>
+      <% end %>
+    <% elsif @conversation.state == "awaiting_human" %>
+      <p class="panel-muted">Conversa na fila. Use "Pegar próximo" na fila de escalas para assumir o próximo caso.</p>
+    <% end %>
+  </section>
+
+  <aside class="panel-side">
+    <%= render "panel/conversations/handoff_card", handoff: @handoff, first_response_at: @first_response_at, can_rate: @can_rate %>
+    <%= render "panel/conversations/routing_explanation", explanation: @explanation %>
+    <%= render "panel/conversations/customer_memory", memory: @memory %>
+    <%= render "panel/conversations/previous_conversations", conversations: @previous, messages: @previous_messages %>
+  </aside>
+</div>

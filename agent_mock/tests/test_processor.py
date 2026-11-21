@@ -226,3 +226,114 @@ async def test_mesma_mensagem_em_conversas_distintas_gera_a_mesma_decisao():
         return kept
 
     assert decision_of(first) == decision_of(second)
+
+
+async def test_modo_none_nao_altera_a_publicacao():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(failure_mode="none", failure_delay_ms=900))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.PUBLISHED
+    assert len(harness.published) == 1
+    assert harness.sleeps == []
+    assert outcome.action["based_on_sequence"] == 7
+
+
+async def test_modo_delay_soma_o_atraso_a_latencia():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(latency_ms=250, failure_mode="delay", failure_delay_ms=1000))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.PUBLISHED
+    assert harness.sleeps == [1.25]
+    assert len(harness.published) == 1
+
+
+async def test_modo_drop_termina_sem_publicar():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(failure_mode="drop"))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.FAILURE_DROP
+    assert outcome.action is None
+    assert harness.published == []
+
+
+async def test_modo_duplicate_publica_a_mesma_acao_duas_vezes():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(failure_mode="duplicate"))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.PUBLISHED
+    assert len(harness.published) == 2
+    assert harness.published[0] == harness.published[1]
+    assert harness.published[0][1] == outcome.action
+
+
+async def test_modo_duplicate_repete_a_segunda_publicacao_sem_confirmacao():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(failure_mode="duplicate"))
+    original_publish = harness.publish
+    calls = []
+
+    async def publish(key, value, headers):
+        calls.append(value)
+        if len(calls) == 2:
+            raise ConnectionError("Kafka fora")
+        await original_publish(key, value, headers)
+
+    harness.processor.publish = publish
+
+    await harness.processor.handle(record(body))
+
+    assert len(harness.published) == 2
+    assert calls[1] == calls[2]
+    assert harness.sleeps == [2.0]
+
+
+async def test_modo_stale_publica_com_based_on_sequence_menos_1(action_validator):
+    body = event_body(text=TEXT, sequence=7)
+    harness = Harness(context_for(body), settings=Settings(failure_mode="stale"))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.PUBLISHED
+    assert len(harness.published) == 1
+    assert outcome.action["based_on_sequence"] == 6
+    assert action_validator.is_valid(outcome.action)
+
+
+async def test_modo_stale_com_sequence_1_publica_sem_alteracao():
+    body = event_body(text=TEXT, sequence=1)
+    harness = Harness(context_for(body), settings=Settings(failure_mode="stale"))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.FAILURE_STALE_SKIPPED
+    assert outcome.action["based_on_sequence"] == 1
+    assert len(harness.published) == 1
+
+
+async def test_evento_nao_afetado_pela_taxa_publica_normal():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(failure_mode="drop", failure_rate=0))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.PUBLISHED
+    assert len(harness.published) == 1
+
+
+async def test_log_do_published_afetado_leva_o_modo(capsys):
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(failure_mode="duplicate"))
+
+    await harness.processor.handle(record(body))
+
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    processed = [line for line in lines if line.get("result") == logs.PUBLISHED]
+    assert processed[-1]["failure"] == "duplicate"

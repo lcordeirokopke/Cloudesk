@@ -12,7 +12,8 @@ module Routing
   #   4. valores: prioridade da regra; SLA e atendente inicial da regra quando ela informa, senão da
   #      fila. No transbordo, SLA e atendente inicial da fila de transbordo;
   #   5. atribuição (conversation.routed, com a regra e a versão): ai leva ao atendente IA da marca
-  #      e a with_ai; human leva a awaiting_human, sem atendente, com queued_at.
+  #      e a with_ai; human leva a awaiting_human, sem atendente, com queued_at, e atualiza o painel
+  #      do analista.
   #
   # A contagem das conversas abertas da fila é feita sem trava, e o número contado vai para o
   # audit_event.
@@ -141,7 +142,8 @@ module Routing
       first_attendant = overflow ? queue.first_attendant : (result["first_attendant"] || queue.first_attendant)
       priority = result.fetch("priority")
 
-      command("conversation.routed", actor_type: "system", routing_rule: RoutingRule.find(rule.fetch("id"))) do |change|
+      command("conversation.routed", actor_type: "system", routing_rule: RoutingRule.find(rule.fetch("id")),
+                                     panel: first_attendant == "human") do |change|
         change.before = routing_snapshot
         @conversation.update!(
           queue_id: queue.id, priority: priority, sla_minutes: sla_minutes, **attendance(first_attendant)

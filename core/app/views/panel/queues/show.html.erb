@@ -1,0 +1,66 @@
+<% content_for :title, "Fila de escalas" %>
+<%= turbo_stream_from Conversations::PanelBroadcast.team_stream(@team.id) %>
+
+<section class="panel-toolbar">
+  <div>
+    <h1>Fila de escalas · <%= @team.name %></h1>
+    <p class="panel-muted">
+      <%= @waiting.size %> aguardando · capacidade usada <%= @mine.size %> de <%= current_analyst.capacity %>
+    </p>
+  </div>
+  <%= button_to "Pegar próximo", panel_assignments_path, method: :post, class: "panel-button",
+                                                         disabled: @mine.size >= current_analyst.capacity %>
+</section>
+
+<section class="panel-card">
+  <h2>Aguardando analista</h2>
+  <% if @waiting.empty? %>
+    <p class="panel-muted">Nenhuma conversa na fila.</p>
+  <% else %>
+    <table class="panel-table" id="waiting">
+      <thead>
+        <tr>
+          <th>Prioridade</th><th>Lojista</th><th>Fila</th><th>Motivo e resumo</th><th>Na fila</th><th>SLA restante</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @waiting.each do |conversation| %>
+          <% handoff = @handoffs[conversation.id] %>
+          <% remaining = conversation.queued_at && conversation.sla_minutes &&
+                         (conversation.queued_at + conversation.sla_minutes.minutes - @now) %>
+          <tr id="<%= dom_id(conversation, :waiting) %>">
+            <td><span class="panel-pill"><%= conversation.priority %></span></td>
+            <td><%= link_to conversation.contact.name, panel_conversation_path(conversation.id) %>
+                <span class="panel-muted">· <%= conversation.channel %></span></td>
+            <td><%= conversation.queue&.name %></td>
+            <td>
+              <% if handoff %>
+                <strong><%= handoff.reason %></strong><br><%= handoff.summary %>
+              <% else %>
+                <span class="panel-muted">sem handoff (roteada para a fila humana)</span>
+              <% end %>
+            </td>
+            <td><%= format_duration(conversation.queued_at && (@now - conversation.queued_at)) %></td>
+            <td class="<%= 'panel-late' if remaining&.negative? %>"><%= format_duration(remaining) %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+</section>
+
+<section class="panel-card">
+  <h2>Minhas conversas</h2>
+  <% if @mine.empty? %>
+    <p class="panel-muted">Nenhuma conversa atribuída.</p>
+  <% else %>
+    <ul class="panel-list" id="mine">
+      <% @mine.each do |conversation| %>
+        <li id="<%= dom_id(conversation, :mine) %>">
+          <%= link_to conversation.contact.name, panel_conversation_path(conversation.id) %>
+          <span class="panel-muted">· <%= conversation.queue&.name %> · <%= conversation.channel %></span>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+</section>

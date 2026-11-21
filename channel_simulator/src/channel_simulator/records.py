@@ -7,7 +7,7 @@
 | data/streams.jsonl | Streams do chat registrados, com o app_user_id |
 | data/mailpit_seen.jsonl | IDs do Mailpit já tratados pelo poller |
 
-A reconciliação da F17 compara sent.jsonl com received.jsonl; uma resposta duplicada é o mesmo
+A reconciliação da F18 compara sent.jsonl com received.jsonl; uma resposta duplicada é o mesmo
 core_message_id recebido duas vezes.
 """
 

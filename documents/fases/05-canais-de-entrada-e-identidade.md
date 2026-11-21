@@ -287,7 +287,7 @@ No Compose, com `web`, `jobs-default`, `mailpit` e o simulador de canais, uma me
 | Saída para o Broker (F7) | Envia o webhook gravado pelo Intake |
 | API de ações (F8) | A ação `reply` responde por `Conversations::Outbound.append!` |
 | Handoff e painel (F11) | O analista responde pelo mesmo serviço, com autor `analyst` |
-| Experimento (F17) | O k6 chama as entradas de WhatsApp e chat; o `message.delivered` fecha a medida da H4 |
+| Experimento (F18) | O k6 chama as entradas de WhatsApp e chat; o `message.delivered` fecha a medida da H4 |
 
 ## Fontes
 

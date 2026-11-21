@@ -157,7 +157,7 @@ Só analista humano com equipe recebe caso.
 - A definição passa pela validação de `when` e `then`; atributo desconhecido ou operação que não muda nada são recusados.
 - A gravação roda sob uma trava consultiva da marca (`pg_advisory_xact_lock`): duas edições simultâneas da mesma marca são serializadas, e a segunda parte da versão gravada pela primeira.
 - Antes do commit, a marca precisa ter uma regra genérica ativa; sem ela, nada é gravado.
-- Cada operação grava `routing_rule.published` com a operação, a versão nova e o diff de cada atributo (valor anterior e novo). O autor é `operator`, sem identificação de usuário, porque o login dos usuários do painel e do admin é um ponto em aberto.
+- Cada operação grava `routing_rule.published` com a operação, a versão nova e o diff de cada atributo (valor anterior e novo). O autor é `operator`, sem identificação de usuário, porque o login dos operadores do admin é um ponto em aberto.
 
 ### Auditoria
 
@@ -185,10 +185,10 @@ O `conversation.routed` aponta para a linha exata da versão da regra (`routing_
 
 | Entregável | O que esta parte entrega | O que fica com outras partes |
 | - | - | - |
-| Triagem, priorização e distribuição entre IA e analistas | Classificador, regras, prioridade, SLA, transbordo, escolha entre IA e humano e distribuição por capacidade com `SKIP LOCKED` | Painel em que o analista pede o próximo caso (F11) |
+| Triagem, priorização e distribuição entre IA e analistas | Classificador, regras, prioridade, SLA, transbordo, escolha entre IA e humano e distribuição por capacidade com `SKIP LOCKED` | Painel em que o analista pede o próximo caso, com "Pegar próximo" (F11) |
 | Múltiplas filas configuráveis e editáveis pela operação | Filas e regras como dados, por marca, equipe, categoria, segmento, canal, idioma, urgência e horário; gravação versionada e auditada | Telas do admin (F13) |
 | Integração com o atendente por webhooks e broker | Define quando a conversa vai para a IA e, com isso, quando o webhook é enfileirado; atende a ação `categorize` com novo roteamento | Envio do webhook (F7), API de ações (F8) e Broker (F9) |
-| Handoff com resumo e contexto | A fila humana e a distribuição pelas quais o analista recebe o caso | Ação `escalate` (F8); roteamento pela regra de escalação e painel do analista (F11) |
+| Handoff com resumo e contexto | A fila humana e a distribuição pelas quais o analista recebe o caso | Ação `escalate` (F8); fila de escalação e painel do analista (F11) |
 | Rastreabilidade e auditoria das decisões | Eventos de classificação, roteamento, atribuição e publicação de regra, com regra, versão, palavras e pontuações | Linha do tempo na tela (F14) |
 | Multi-marca | Listas, regras, filas e fusos por marca, dentro do RLS | Banco e papéis (F1) |
 
@@ -214,10 +214,10 @@ O `conversation.routed` aponta para a linha exata da versão da regra (`routing_
 - **Categoria do agente sem conferência.** A categoria informada no `categorize` é gravada como chega, sem conferência com as listas do classificador.
 - **Capacidade da fila contada sem trava.** Duas entradas simultâneas podem contar a mesma vaga e passar a capacidade em poucas conversas. O número contado fica no `audit_event`.
 - **Capacidade das filas de IA nas seeds.** As filas `ip-financeiro-prioritaria` e `jim-finance-priority` têm capacidade 20; cheias, transbordam para a fila humana, e a conversa não chega ao agente. O valor é sintético, de exemplo, e é revisto antes da carga.
-- **Conversa escalada na fila de origem.** A ação `escalate` deixa a conversa em `awaiting_human` na fila em que estava, com a prioridade dela. Como as filas de IA das seeds pertencem a uma equipe, os analistas dessa equipe recebem o caso pela distribuição. O roteamento pela regra de escalação é da F11.
+- **Escalação sem conferência de capacidade.** A conversa escalada vai para a fila de escalação da fila em que estava (`queues.escalation_queue_id`), com a prioridade que tinha, ou fica na mesma fila quando ela não tem fila de escalação. A escalação não confere a capacidade do destino: a contagem das conversas abertas e a capacidade ficam no `conversation.escalated` (F11).
 - **Atendente IA único.** O roteamento para a IA usa o atendente IA da marca, o primeiro por nome, e a capacidade dele não é aplicada. Sem atendente IA na marca, a mensagem não é gravada.
 - **Autor das edições.** As edições de regra são atribuídas a `operator`, sem identificação de usuário, enquanto o login não está definido.
-- **Distribuição sem chamador.** O `Routing::Distributor` está pronto e testado, mas o painel em que o analista pede o próximo caso é da F11.
+- **Distribuição só por pedido.** O analista recebe um caso quando pede o próximo no painel ("Pegar próximo", que chama `Routing::Distributor.next_for`, F11); não existe atribuição automática a analistas livres.
 
 ## Operação
 
@@ -293,10 +293,10 @@ No Compose, mensagens do simulador nos três canais das duas marcas chegam rotea
 | Simulador de canais (F5) | Os modelos de mensagem e os assuntos de e-mail fazem parte do corpus do classificador |
 | Saída para o Broker (F7) | Envia o webhook das conversas que o roteamento deixou com a IA |
 | API de ações (F8) | A ação `categorize` chama `Routing::Route` com a categoria do agente |
-| Handoff e painel (F11) | Roteamento pela regra de escalação, painel que chama `Distributor.next_for` e tela "Por que caiu aqui?" |
+| Handoff e painel (F11) | Fila de escalação, painel que chama `Distributor.next_for` e tela "Por que caiu aqui?" |
 | Admin (F13) | Edita regras pelo `Routing::RulePublisher` e filas no banco |
 | Observabilidade (F14) | Profundidade por fila, risco de SLA e linha do tempo a partir dos eventos de roteamento |
-| Experimento (F17) | A capacidade das filas de IA é revista antes da carga |
+| Experimento (F18) | A capacidade das filas de IA é revista antes da carga |
 
 ## Fontes
 

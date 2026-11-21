@@ -134,16 +134,14 @@ module Agents
       )
     end
 
-    # with_ai -> awaiting_human na fila atual, sem atendente e com queued_at.
+    # with_ai -> awaiting_human na fila de escalação da fila atual, ou na própria fila atual
+    # (Conversations::Escalate).
     def escalate
-      transition("conversation.escalated", reason: @action.fetch("reason")) do |change|
-        handoff = Handoff.create!(
-          conversation: @conversation, reason: @action.fetch("reason"), summary: @action.fetch("summary"),
-          context: @action.fetch("context")
-        )
-        @conversation.update!(state: "awaiting_human", attendant_id: nil, queued_at: received_at)
-        change.payload = { handoff_id: handoff.id, queue_id: @conversation.queue_id }
-      end
+      Conversations::Escalate.call(
+        conversation: @conversation, reason: @action.fetch("reason"), summary: @action.fetch("summary"),
+        context: @action.fetch("context"), actor_type: "ai", actor_id: @conversation.attendant_id
+      )
+      @conversation
     end
 
     # Novo roteamento pela categoria do agente (Routing::Route); a conversa volta a with_ai, vai para

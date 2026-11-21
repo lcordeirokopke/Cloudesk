@@ -1,0 +1,7 @@
+<% if memory %>
+  <section class="panel-card" id="customer-memory">
+    <h2>Memória do lojista</h2>
+    <p><%= memory.summary %></p>
+    <p class="panel-muted">Atualizada em <%= format_time(memory.updated_at) %></p>
+  </section>
+<% end %>

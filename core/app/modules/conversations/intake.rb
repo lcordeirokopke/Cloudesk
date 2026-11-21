@@ -13,7 +13,8 @@ module Conversations
   #   4. conversa em triage (aberta ou reaberta): classifica e roteia (Routing::Route) pelo texto da
   #      mensagem e, no e-mail, pelo assunto;
   #   5. grava a mensagem com a próxima sequência (message.created). O job de webhook ao Broker é
-  #      enfileirado só quando a conversa está em with_ai.
+  #      enfileirado só quando a conversa está em with_ai, e o painel do analista é atualizado só
+  #      com a conversa em awaiting_human ou with_human.
   #
   # Duas primeiras mensagens simultâneas do mesmo lojista batem nos índices únicos (identidade,
   # conversa aberta por lojista, external_id). A transação que perde é desfeita inteira e tentada de
@@ -151,7 +152,8 @@ module Conversations
       body = inbound.text.presence || Channels::AttachmentText.for(@brand, inbound.attachments.first&.fetch("kind", nil))
 
       Audit::Command.call(brand: @brand, type: "message.created", actor_type: "customer", actor_id: contact.id,
-                          webhook: conversation.state == "with_ai") do |change|
+                          webhook: conversation.state == "with_ai",
+                          panel: Conversation::HUMAN_STATES.include?(conversation.state)) do |change|
         message = conversation.append_message!(
           channel: inbound.channel, author: "customer", body: body, external_id: inbound.external_id,
           attachments: inbound.attachments, brand_channel_id: inbound.brand_channel&.id

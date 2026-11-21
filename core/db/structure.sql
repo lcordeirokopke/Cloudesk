@@ -355,7 +355,11 @@ CREATE TABLE public.handoffs (
     summary text NOT NULL,
     context jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    rating character varying,
+    rated_by_id uuid,
+    rated_at timestamp(6) without time zone,
+    CONSTRAINT handoffs_rating_check CHECK (((rating)::text = ANY ((ARRAY['useful'::character varying, 'not_useful'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.handoffs FORCE ROW LEVEL SECURITY;
@@ -415,6 +419,7 @@ CREATE TABLE public.queues (
     overflow_queue_id uuid,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    escalation_queue_id uuid,
     CONSTRAINT queues_first_attendant_check CHECK (((first_attendant)::text = ANY ((ARRAY['ai'::character varying, 'human'::character varying])::text[])))
 );
 
@@ -1606,6 +1611,13 @@ CREATE UNIQUE INDEX index_handoffs_on_brand_id_and_id ON public.handoffs USING b
 
 
 --
+-- Name: index_handoffs_on_brand_id_and_rated_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_handoffs_on_brand_id_and_rated_by_id ON public.handoffs USING btree (brand_id, rated_by_id);
+
+
+--
 -- Name: index_messages_on_brand_id_and_attendant_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1652,6 +1664,13 @@ CREATE UNIQUE INDEX index_processed_events_on_brand_id_and_id ON public.processe
 --
 
 CREATE UNIQUE INDEX index_processed_events_on_brand_id_and_idempotency_key ON public.processed_events USING btree (brand_id, idempotency_key);
+
+
+--
+-- Name: index_queues_on_brand_id_and_escalation_queue_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_queues_on_brand_id_and_escalation_queue_id ON public.queues USING btree (brand_id, escalation_queue_id);
 
 
 --
@@ -2040,6 +2059,14 @@ ALTER TABLE ONLY public.audit_events
 
 
 --
+-- Name: queues fk_rails_37a44a1bff; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.queues
+    ADD CONSTRAINT fk_rails_37a44a1bff FOREIGN KEY (brand_id, escalation_queue_id) REFERENCES public.queues(brand_id, id);
+
+
+--
 -- Name: solid_queue_failed_executions fk_rails_39bbc7a631; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2149,6 +2176,14 @@ ALTER TABLE ONLY public.solid_queue_batch_executions
 
 ALTER TABLE ONLY public.solid_queue_ready_executions
     ADD CONSTRAINT fk_rails_81fcbd66af FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: handoffs fk_rails_8b475b28c4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.handoffs
+    ADD CONSTRAINT fk_rails_8b475b28c4 FOREIGN KEY (brand_id, rated_by_id) REFERENCES public.attendants(brand_id, id);
 
 
 --
@@ -2442,6 +2477,7 @@ ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261121120000'),
 ('20261120120000'),
 ('20261119120200'),
 ('20261119120100'),

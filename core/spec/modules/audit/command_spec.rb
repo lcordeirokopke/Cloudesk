@@ -169,6 +169,58 @@ RSpec.describe Audit::Command do
     end
   end
 
+  describe "painel do analista" do
+    def panel_jobs
+      SolidQueue::Job.where(class_name: "Conversations::PanelBroadcastJob")
+    end
+
+    def assign_to_human_queue
+      Tenancy.with_brand(brand) do
+        conversation.update!(queue: Routing::Queue.find_by!(name: "ip-financeiro"), state: "awaiting_human")
+      end
+    end
+
+    it "panel: true enfileira o PanelBroadcastJob na transação, com a conversa e a equipe da fila" do
+      assign_to_human_queue
+      before_jobs = panel_jobs.count
+
+      create_message(panel: true)
+      job = panel_jobs.order(:id).last
+
+      expect(panel_jobs.count).to eq(before_jobs + 1)
+      expect(job.queue_name).to eq("channels")
+      team_id = Tenancy.with_brand(brand) { Routing::Queue.find_by!(name: "ip-financeiro").team_id }
+      expect(job_arguments(job)).to include("brand_id" => brand.id, "conversation_id" => conversation.id,
+                                            "team_id" => team_id)
+    end
+
+    it "sem panel, não enfileira o PanelBroadcastJob" do
+      assign_to_human_queue
+      before_jobs = panel_jobs.count
+
+      create_message
+
+      expect(panel_jobs.count).to eq(before_jobs)
+    end
+
+    it "a falha da transação não deixa o PanelBroadcastJob" do
+      assign_to_human_queue
+      before_jobs = panel_jobs.count
+
+      expect { create_message(panel: true) { raise "falha" } }.to raise_error("falha")
+
+      expect(panel_jobs.count).to eq(before_jobs)
+    end
+
+    it "recusa panel: true sem a conversa" do
+      expect do
+        described_class.call(brand: brand, type: "contact.created", actor_type: "system", panel: true) do |change|
+          change.target = Tenancy.with_brand(brand) { Contact.first! }
+        end
+      end.to raise_error(ArgumentError, /conversa/)
+    end
+  end
+
   describe "outbox implícito" do
     it "o job é gravado na transação do comando, sem enqueue_after_transaction_commit" do
       expect(ApplicationJob.enqueue_after_transaction_commit).to be(false)

@@ -35,7 +35,7 @@ catalog = [
     queues: [
       { name: "ip-financeiro", team: "Financeiro", sla_minutes: 60, capacity: 50, first_attendant: "human" },
       { name: "ip-financeiro-prioritaria", team: "Financeiro", sla_minutes: 15, capacity: 20,
-        first_attendant: "ai", overflow: "ip-financeiro" },
+        first_attendant: "ai", overflow: "ip-financeiro", escalation: "ip-financeiro" },
       { name: "ip-suporte-geral", team: "Suporte Técnico", sla_minutes: 120, capacity: 100, first_attendant: "ai" }
     ],
     rules: [
@@ -71,7 +71,7 @@ catalog = [
     queues: [
       { name: "jim-finance", team: "Finance", sla_minutes: 60, capacity: 50, first_attendant: "human" },
       { name: "jim-finance-priority", team: "Finance", sla_minutes: 15, capacity: 20,
-        first_attendant: "ai", overflow: "jim-finance" },
+        first_attendant: "ai", overflow: "jim-finance", escalation: "jim-finance" },
       { name: "jim-general-support", team: "Technical Support", sla_minutes: 120, capacity: 100,
         first_attendant: "ai" }
     ],
@@ -136,6 +136,14 @@ begin
           record.first_attendant = attributes[:first_attendant]
           record.overflow_queue = queues.fetch(attributes[:overflow]) if attributes[:overflow]
         end
+      end
+
+      # Fila de escalação: gravada só quando a fila ainda não tem uma.
+      entry[:queues].each do |attributes|
+        next unless attributes[:escalation]
+
+        queue = queues.fetch(attributes[:name])
+        queue.update!(escalation_queue: queues.fetch(attributes[:escalation])) if queue.escalation_queue_id.nil?
       end
 
       entry[:rules].each do |attributes|

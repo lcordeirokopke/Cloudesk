@@ -18,7 +18,7 @@ O agente fecha o caminho de volta: canal → Core → webhook → Broker → `ag
 
 ## Por que existe e que valor gera
 
-**Caminho ponta a ponta exercitado.** O agente atende como um usuário da plataforma, pelo mesmo contrato que um agente real usaria: consome o evento, lê o contexto, decide e publica uma ação. Com ele, a integração inteira roda sem LLM e sem sistemas de produção.
+**Caminho ponta a ponta exercitado.** O agente atende como um usuário da plataforma, pelo mesmo contrato que um agente real usaria: consome o evento, lê o contexto, decide e publica uma ação. Com ele, a integração inteira roda sem o agente real e sem sistemas de produção.
 
 **Determinismo.** A mesma mensagem gera sempre a mesma ação, com o mesmo texto e as mesmas ferramentas, em qualquer conversa. Isso torna reproduzíveis os testes, o experimento e a conferência de duplicidade: um evento reentregue gera a mesma `Idempotency-Key`, e o Core deduplica.
 
@@ -41,6 +41,16 @@ O agente fecha o caminho de volta: canal → Core → webhook → Broker → `ag
 7. **Latência artificial.** Espera `AGENT_LATENCY_MS`, depois das ferramentas e antes da publicação.
 8. **Publicação.** Carimba `agent_published_at` e publica em `agent.outbound` com a chave `conversation_id` e os headers `brand` e `traceparent`, aguardando a confirmação do Kafka.
 
+O modo de falha (`AGENT_FAILURE_MODE`) age entre a decisão e a publicação, só nos eventos afetados. O evento afetado é escolhido pelo `event_id` (`failure.py`): os primeiros 8 dígitos hexadecimais do SHA-256 do `event_id`, divididos por `2^32`, menores que `AGENT_FAILURE_RATE`. Com a taxa padrão 1, todo evento é afetado; o mesmo evento reentregue tem sempre a mesma escolha. Modo fora da lista, taxa fora de 0 a 1 ou atraso negativo é erro de configuração (`config.py`).
+
+| Modo | Efeito no evento afetado | O que a plataforma faz |
+| - | - | - |
+| `none` | Nenhum (padrão) | |
+| `delay` | Soma `AGENT_FAILURE_DELAY_MS` à latência antes da publicação | A resposta chega atrasada; passando da metade do SLA, a varredura do timeout envia a mensagem de espera |
+| `drop` | Termina sem publicar; o offset é confirmado | A varredura do timeout envia a mensagem de espera e depois escala |
+| `duplicate` | Publica a mesma ação duas vezes, cada uma aguardando a confirmação do Kafka | O Core aplica a primeira e devolve `200` com o mesmo corpo na segunda, sem novo efeito |
+| `stale` | Publica a ação com `based_on_sequence` igual à `sequence` do evento menos 1; com `sequence` 1, publica sem alteração | O Core responde `409 stale` e grava `agent.action.stale`; o lojista fica coberto pela varredura do timeout |
+
 Cada evento gera uma linha de log JSON no stdout (`logs.py`), com `event_id`, `conversation_id`, `brand`, `sequence`, partição, offset e o resultado:
 
 | `result` | Situação | Publica |
@@ -51,6 +61,10 @@ Cada evento gera uma linha de log JSON no stdout (`logs.py`), com `event_id`, `c
 | `context_error` | O Core recusou o `GET` do contexto com erro permanente | não |
 | `invalid_event` | Registro sem os campos ou headers do contrato | não |
 | `unknown_brand` | Marca sem locale em `AGENT_BRAND_LOCALES` | não |
+| `failure_drop` | Modo `drop`: o evento afetado termina sem publicação | não |
+| `failure_stale_skipped` | Modo `stale` com `sequence` 1: a ação é publicada sem alteração | sim |
+
+No modo de falha, a linha `published` do evento afetado leva o campo `failure` com o modo.
 
 Todo resultado é final para o registro: o offset é confirmado depois dele.
 
@@ -167,7 +181,7 @@ Na queda do processo, os registros sem offset confirmado são relidos; a ação 
 
 ## O que o sistema garante
 
-- Uma ação por evento, com `based_on_sequence` igual à `sequence` do evento, chave `conversation_id` e os headers do schema `kafka.outbound-headers`.
+- Com `AGENT_FAILURE_MODE=none`, uma ação por evento, com `based_on_sequence` igual à `sequence` do evento, chave `conversation_id` e os headers do schema `kafka.outbound-headers`. Os modos de falha mudam isso só nos eventos afetados: nenhuma ação (`drop`), a mesma ação duas vezes (`duplicate`) ou `based_on_sequence` menos 1 (`stale`).
 - A mesma entrada gera a mesma ação, fora carimbos de horário e `traceparent`; a mesma mensagem em conversas diferentes gera o mesmo tipo, texto e ferramentas.
 - Um evento reentregue gera ação com o mesmo `inbound_event_id` e o mesmo `type`, portanto a mesma `Idempotency-Key`.
 - O evento mais antigo que o contexto (`discarded_newer`) e o de conversa fora de `with_ai` (`discarded_state`) não geram ação.
@@ -179,7 +193,7 @@ Na queda do processo, os registros sem offset confirmado são relidos; a ação 
 
 | Entregável | O que esta parte entrega | O que fica com outras partes |
 | - | - | - |
-| Agente mock determinístico com ferramentas falsas | Intenção por palavras-chave, quatro ferramentas por hash, tabela de decisão, latência artificial | Modos de falha (diferencial 5) e modo LLM opcional |
+| Agente mock determinístico com ferramentas falsas | Intenção por palavras-chave, quatro ferramentas por hash, tabela de decisão, latência artificial e modos de falha configuráveis | Melhorias avaliadas na F16 |
 | Integração com o atendente por webhooks e broker | Consumo de `agent.inbound`, leitura do contexto e publicação em `agent.outbound` | Webhook (F7), API de ações e contexto (F8), Broker (F9) |
 | Handoff com resumo e contexto | `escalate` com motivo, resumo e contexto estruturado | Fila humana, painel e briefing (F11) |
 | Rastreabilidade | `traceparent` continuado e os quatro carimbos da ação | Gravação no `audit_event` (F8) e linha do tempo (F14) |
@@ -198,7 +212,7 @@ Na queda do processo, os registros sem offset confirmado são relidos; a ação 
 | Diferencial | Contribuição desta parte |
 | - | - |
 | 1 · Briefing de handoff | O `escalate` leva resumo, tentativas, sentimento, próximo passo e confiança |
-| 5 · Modos de falha do agente mock | A configuração do agente é lida em um único ponto (`config.py`), onde os modos de falha entram |
+| 5 · Modos de falha do agente mock | Atraso, sem resposta, ação duplicada e ação desatualizada, por `AGENT_FAILURE_MODE`, com a fração dos eventos afetados em `AGENT_FAILURE_RATE`. A duplicada produz um único efeito no Core, a desatualizada recebe `409 stale` e a falta de resposta é tratada pela varredura do timeout (F11) |
 
 ## Limitações
 
@@ -231,9 +245,12 @@ O serviço sobe depois do `redpanda-init` e do `web`. A imagem `cloudesk-agent-m
 | `AGENT_LATENCY_MS` | Latência artificial antes da publicação | `0` |
 | `AGENT_CONTEXT_TIMEOUT_SECONDS` | Timeout de cada `GET` do contexto | `5` |
 | `AGENT_BRAND_LOCALES` | Locale de cada marca | `infinitepay:pt-BR,jim:en-US` |
+| `AGENT_FAILURE_MODE` | Modo de falha: `none`, `delay`, `drop`, `duplicate` ou `stale`; outro valor é erro de configuração | `none` |
+| `AGENT_FAILURE_RATE` | Fração dos eventos afetados, de 0 a 1 | `1` |
+| `AGENT_FAILURE_DELAY_MS` | Atraso somado à latência no modo `delay` | `0` |
 | `CONTRACTS_PATH` | Pasta do contrato, para os testes | `/contracts` |
 
-`AGENT_LATENCY_MS` e `AGENT_CONCURRENCY` podem ser trocados no `.env`.
+`AGENT_LATENCY_MS`, `AGENT_CONCURRENCY` e as três variáveis `AGENT_FAILURE_*` podem ser trocados no `.env` ou na linha de comando (`AGENT_FAILURE_MODE=drop docker compose up -d agent-mock`).
 
 Dependências fixadas no `agent_mock/pyproject.toml`, com Python 3.13: `aiokafka` 0.15.0 e `aiohttp` 3.14.5; nos testes, `pytest` 9.2.0, `pytest-asyncio` 1.5.0 e `jsonschema` 4.26.0.
 
@@ -258,7 +275,9 @@ docker compose run --rm agent-mock pytest
 | `tests/test_tools.py` | Mesma entrada, mesmo retorno; proporções dos status em amostras fixas; taxas por marca; registro da chamada |
 | `tests/test_decision.py` | Cada linha da tabela de decisão; texto decidido pelo contexto; mesma entrada, mesma ação |
 | `tests/test_action.py` | Toda ação gerada pela tabela, nos dois locales, passa no schema `action`; headers no schema `kafka.outbound-headers`; `Idempotency-Key` pelos vetores do contrato |
-| `tests/test_processor.py` | Publicação com chave, headers e carimbos; descartes por mensagem mais nova, estado, erro permanente, registro inválido e marca sem locale; repetição do transitório e da publicação; latência; reentrega e conversas diferentes com a mesma ação |
+| `tests/test_processor.py` | Publicação com chave, headers e carimbos; descartes por mensagem mais nova, estado, erro permanente, registro inválido e marca sem locale; repetição do transitório e da publicação; latência; reentrega e conversas diferentes com a mesma ação; cada modo de falha (atraso somado, descarte sem publicação, duas publicações iguais, `based_on_sequence` menos 1 e o caso `sequence` 1), evento fora da taxa e `none` sem efeito |
+| `tests/test_failure.py` | Escolha pelo SHA-256 do `event_id`, determinística, com taxas 0 e 1 e proporção numa amostra fixa |
+| `tests/test_config.py` | Leitura e validação de `AGENT_FAILURE_MODE`, `AGENT_FAILURE_RATE` e `AGENT_FAILURE_DELAY_MS` |
 | `tests/test_context_client.py` | Servidor aiohttp de teste conferindo assinatura, caminho com a marca e `traceparent`; classificação de permanentes e transitórios; pausas de 2 a 60 s |
 | `tests/test_offsets.py` | Confirmação só do offset contíguo; lacuna segura a confirmação; série por conversa e paralelo entre conversas; semáforo; falha inesperada; configuração |
 | `tests/test_trace.py` | Continuação do `traceparent` e início de trace com header inválido |
@@ -270,6 +289,7 @@ No Compose:
 - uma mensagem do simulador em cada canal (`channel-simulator send --channel whatsapp|chat|email --brand infinitepay --contacts new`) gera ação em `agent.outbound`, `audit_event` `agent.reply` com os quatro carimbos e a resposta em `channel_simulator/data/received.jsonl`, com o mesmo `trace_id` da entrada;
 - com o agente parado e `rpk group seek cloudesk-agent --to start --topics agent.inbound`, o agente relê o tópico ao religar: as ações republicadas recebem do Core o resultado guardado, sem novo `audit_event` nem nova linha em `processed_events`, e os eventos de conversas já escaladas são descartados por estado;
 - a mesma mensagem enviada por dois lojistas novos gera, nas duas conversas, ação com o mesmo tipo, texto e ferramentas, e o Core grava `agent.escalate` e o `Handoff` nas duas;
+- com `AGENT_FAILURE_MODE=duplicate`, a API de ações recebe duas chamadas com `200` e o Core grava um único `agent.reply`, uma mensagem e uma entrega; com `stale`, a segunda mensagem do lojista recebe `409` e `agent.action.stale`, e a varredura do timeout envia a espera e escala; com `delay` e `AGENT_FAILURE_DELAY_MS=3000`, `agent_published_at` fica cerca de 3,6 s depois de `agent_consumed_at`; com `drop`, o log mostra `failure_drop` e nenhuma ação é publicada;
 - no ambiente de desenvolvimento do Compose, cada requisição ao `web` leva de 0,6 a 1,1 s, inclusive `GET /up`, enquanto o Rails registra cerca de 25 ms no controller; esse tempo aparece entre `agent_consumed_at` e `agent_published_at`, porque o `GET` do contexto fica nesse intervalo.
 
 ## Relação com as outras partes
@@ -280,7 +300,7 @@ No Compose:
 | Simulador de canais (F5) | Os modelos de texto do simulador formam o corpus de intenções |
 | API de ações e contexto (F8) | O Core responde o `GET` da `context_url` e processa a ação, com `409 stale` e `409 rejected` como barreira final |
 | Broker (F9) | Publica o evento em `agent.inbound` com os headers e consome `agent.outbound`, derivando a `Idempotency-Key` |
-| Handoff e timeout do agente (F11) | O `escalate` abre o handoff; o evento sem ação aceita é coberto pela varredura de SLA |
+| Handoff e timeout do agente (F11) | O `escalate` abre o handoff e leva a conversa à fila de escalação; o evento sem resposta da IA é coberto pela varredura do timeout, que os modos `delay`, `drop` e `stale` exercitam |
 | Observabilidade (F14) | Lag do grupo `cloudesk-agent` e os carimbos do agente na linha do tempo |
 
 ## Fontes

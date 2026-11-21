@@ -47,6 +47,17 @@ RSpec.describe Routing::Distributor do
     expect(event.payload.dig("payload", "priority")).to eq(50)
   end
 
+  it "a atribuição atualiza o painel do analista" do
+    conversation = waiting(0, "ip-financeiro", priority: 50, queued_at: 5.minutes.ago)
+    before_jobs = jobs_of(Conversations::PanelBroadcastJob).count
+
+    described_class.next_for(analyst)
+
+    job = jobs_of(Conversations::PanelBroadcastJob).order(:id).last
+    expect(jobs_of(Conversations::PanelBroadcastJob).count).to eq(before_jobs + 1)
+    expect(job_arguments(job)).to include("conversation_id" => conversation.id, "team_id" => analyst.team_id)
+  end
+
   it "puxa só das filas da equipe do analista" do
     waiting(0, "ip-suporte-geral", priority: 99, queued_at: 1.hour.ago)
     finance = waiting(1, "ip-financeiro-prioritaria", priority: 1, queued_at: 1.minute.ago)

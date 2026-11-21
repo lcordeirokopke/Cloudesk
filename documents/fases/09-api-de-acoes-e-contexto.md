@@ -29,7 +29,7 @@ O webhook `message.created` avisa o agente de uma mensagem nova e traz a `contex
 
 **Fronteira entre IA e humano.** Quando um analista assume a conversa, ou quando ela é encerrada, nenhuma ação atrasada da IA tem efeito. O lojista não recebe uma resposta automática no meio de um atendimento humano.
 
-**Rastreabilidade.** Cada ação, aceita ou recusada, vira um registro de auditoria com o corpo completo do que o agente enviou: ferramentas consultadas com entradas e saídas, modelo quando a decisão vem de um LLM e os horários de cada salto. Esse registro é a base da linha do tempo por mensagem e responde, para qualquer resposta dada ao lojista, o que a IA consultou e quanto tempo cada etapa levou.
+**Rastreabilidade.** Cada ação, aceita ou recusada, vira um registro de auditoria com o corpo completo do que o agente enviou: ferramentas consultadas com entradas e saídas, modelo quando o agente o informa e os horários de cada salto. Esse registro é a base da linha do tempo por mensagem e responde, para qualquer resposta dada ao lojista, o que a IA consultou e quanto tempo cada etapa levou.
 
 **Isolamento entre marcas.** Toda leitura e escrita acontece dentro da marca da conversa, com o Row-Level Security do Postgres. O agente de uma marca não lê nem altera conversas de outra, mesmo com um identificador correto em mãos.
 
@@ -87,7 +87,7 @@ O corpo da chamada é a ação do agente, exatamente como ela está no Kafka. A 
 | Ação | O que acontece |
 | - | - |
 | `reply` | A resposta é gravada como mensagem da IA, com o atendente da conversa, e a entrega ao lojista é enfileirada na mesma transação, pelo mesmo canal e pelo mesmo número ou e-mail da marca que recebeu a mensagem respondida |
-| `escalate` | O Core grava o handoff com motivo, resumo e contexto estruturado (intenção, entidades, ferramentas e retornos, tentativas, sentimento, próximo passo sugerido e confiança). A conversa vai para `awaiting_human`, na fila em que estava, sem atendente e com o horário de entrada na espera |
+| `escalate` | O Core grava o handoff com motivo, resumo e contexto estruturado (intenção, entidades, ferramentas e retornos, tentativas, sentimento, próximo passo sugerido e confiança). A conversa vai para `awaiting_human` na fila de escalação da fila em que estava, ou na mesma fila quando ela não tem fila de escalação, sem atendente e com o horário de entrada na espera (`Conversations::Escalate`) |
 | `categorize` | A categoria informada pelo agente dispara um novo roteamento pelas regras da marca. Conforme a regra que casar, a conversa volta à IA, vai para uma fila humana ou fica em triagem |
 | `resolve` | A conversa vai para `resolved`, com o horário de resolução, e o atendente continua registrado nela. Nenhuma mensagem vai ao lojista; se ele escrever dentro do prazo de reabertura, a conversa volta à triagem |
 
@@ -152,11 +152,11 @@ Esta parte fecha o caminho de volta do agente à plataforma. Sem ela, o Core avi
 | - | - | - |
 | Integração com o atendente por webhooks e broker | O lado do Core na volta: recebe a ação do Broker, aplica e responde conforme o contrato; e a leitura do contexto pelo agente | Webhook de ida (F7), Broker (F9) e agente mock (F10) |
 | Interface de conversa entre cliente e atendente (IA) | A resposta da IA vira mensagem da conversa e chega ao lojista pelo canal em que ele escreveu, pelo mesmo caminho de saída do analista | Telas de conversa (F4 e F11) |
-| Triagem, priorização e distribuição entre IA e analistas | A IA participa da triagem: o `categorize` reclassifica e dispara novo roteamento pelas regras da marca, e o `escalate` tira a conversa da IA e a coloca em espera por um humano | Classificador, regras e distribuição por capacidade (F6); fila humana pela regra de escalação e painel do analista (F11) |
+| Triagem, priorização e distribuição entre IA e analistas | A IA participa da triagem: o `categorize` reclassifica e dispara novo roteamento pelas regras da marca, e o `escalate` tira a conversa da IA e a coloca em espera por um humano | Classificador, regras e distribuição por capacidade (F6); fila de escalação e painel do analista (F11) |
 | Handoff com resumo e contexto, preservando o histórico | O `escalate` grava o handoff com motivo, resumo e contexto estruturado, e o histórico continua na mesma conversa | Painel do analista e notificação (F11) |
 | Rastreabilidade e auditoria das decisões | Cada ação, aceita ou recusada, tem registro próprio com o corpo completo, as ferramentas e os horários de cada salto | Linha do tempo na tela (F14) |
 | Memória e contexto entre interações | O agente lê o histórico completo da conversa antes de cada decisão | Memória do lojista entre conversas (F12) |
-| Agente mock com ferramentas falsas e modo LLM | A API registra as ferramentas consultadas e, no modo LLM, o modelo, a versão e os parâmetros de cada decisão | Agente (F10) e modo LLM (F16) |
+| Agente mock com ferramentas falsas | A API registra as ferramentas consultadas e, quando a ação traz o campo `model`, o modelo, a versão e os parâmetros de cada decisão | Agente (F10) |
 | Multi-marca | Toda leitura e ação acontece dentro da marca da conversa, com assinatura que inclui a marca no contexto | RLS e papéis de banco (F1) |
 
 ### No experimento técnico
@@ -171,7 +171,7 @@ Esta parte fecha o caminho de volta do agente à plataforma. Sem ela, o Core avi
 
 | Diferencial | Contribuição desta parte |
 | - | - |
-| 5 · Modos de falha do agente mock | Dois dos quatro modos são tratados aqui. A **ação duplicada** produz um único efeito e recebe a mesma resposta; a **ação desatualizada** recebe `409 stale` e fica registrada. Os modos de atraso e sem resposta são tratados pela varredura de SLA (F11). Com isso, a robustez pode ser demonstrada ligando um modo no agente e mostrando a resposta da API e o registro de auditoria |
+| 5 · Modos de falha do agente mock | Dois dos quatro modos são tratados aqui. A **ação duplicada** produz um único efeito e recebe a mesma resposta; a **ação desatualizada** recebe `409 stale` e fica registrada. Os modos de atraso e sem resposta são tratados pela varredura do timeout do agente (F11). Com isso, a robustez pode ser demonstrada ligando um modo no agente e mostrando a resposta da API e o registro de auditoria |
 | 1 · Briefing de handoff avaliado pelo analista | O `escalate` grava todo o conteúdo do briefing: problema resumido, intenção, entidades, ferramentas e retornos, tentativas, sentimento, próximo passo sugerido e confiança. O contrato recusa um `escalate` sem próximo passo ou sem confiança, o que garante que todo handoff tem esses campos. O cartão e a avaliação pelo analista são da F11 |
 | 4 · "Por que caiu aqui?" | Quando o agente reclassifica a conversa, o novo roteamento grava a regra e a versão que casaram, com a indicação de que o gatilho foi o `categorize` da IA. A tela consegue explicar a fila atual mesmo quando ela é resultado de uma decisão do agente |
 | 2 · Cockpit operacional | O motivo de cada escalação fica gravado no handoff e no registro da ação, e é o dado de origem do Pareto de motivos de escalação; o painel é da F14 |
@@ -181,7 +181,7 @@ Esta parte fecha o caminho de volta do agente à plataforma. Sem ela, o Core avi
 - **Uma conversa de cada vez.** A trava serializa tudo o que acontece em uma conversa: ações do agente e mensagens do lojista. Conversas diferentes seguem em paralelo, mas uma conversa muito ativa forma fila. O efeito na carga é medido na F15.
 - **Carga no `web`.** Cada mensagem do lojista gera duas chamadas a mais no processo `web`, a leitura do contexto e a ação; na meta de 250 msg/s, são cerca de 500 requisições por segundo. O contexto é montado do banco a cada leitura, e o cache fica para a F15, se a medida pedir.
 - **Histórico inteiro.** O contexto traz todas as mensagens da conversa, sem paginação. O tamanho é limitado pelo ciclo de vida da conversa, que fecha depois do prazo de reabertura.
-- **Escalação na fila de origem.** A conversa escalada fica em `awaiting_human` na fila em que estava, com a prioridade que tinha nela. As filas da IA nas seeds pertencem a uma equipe, e os analistas dessa equipe recebem o caso pela distribuição (`Routing::Distributor.next_for`), com a prioridade da fila da IA. O roteamento para a fila humana pela regra de escalação e o painel em que o analista pede o próximo caso são da F11.
+- **Escalação sem conferência de capacidade.** A conversa escalada vai para a fila de escalação da fila em que estava (`Conversations::Escalate`), com a prioridade que tinha e o SLA do destino, ou fica na mesma fila quando ela não tem fila de escalação. A capacidade do destino não é conferida; a contagem das conversas abertas e a capacidade ficam no `conversation.escalated`. O analista recebe o caso quando pede o próximo no painel (`Routing::Distributor.next_for`).
 - **Memória do lojista.** `customer_memory` é sempre nulo; o resumo das conversas anteriores entra na F12.
 - **Uma ação por tipo e evento.** A chave não distingue duas ações do mesmo tipo para o mesmo evento: a segunda é tratada como repetição da primeira.
 - **Ordem das chaves.** O corpo guardado para a repetição fica em `jsonb`, que não preserva a ordem das chaves: a repetição traz o mesmo conteúdo com as chaves em outra ordem.
@@ -229,7 +229,7 @@ No Compose, sem o Broker, uma mensagem de WhatsApp enviada pelo simulador recebe
 | Saída para o Broker (F7) | O webhook leva a `context_url`; a conferência de estado antes do envio economiza trabalho do agente, e a recusa na API é a barreira final |
 | Broker (F9) | Chama a API de ações com `AGENT_ACTIONS_SECRET` e trata os `409` como resultado final; os demais `4xx` vão para a DLQ |
 | Agente mock (F10) | Lê o contexto com `AGENT_CONTEXT_SECRET` e devolve na ação os horários que recebeu e os seus |
-| Handoff e painel (F11) | Completa o `escalate` com o roteamento para a fila humana e o painel do analista |
+| Handoff e painel (F11) | `Conversations::Escalate`, chamado pelo `escalate`, leva a conversa à fila de escalação; painel do analista |
 | Memória (F12) | Preenche `customer_memory` no contexto |
 | Observabilidade (F14) | Monta a linha do tempo por mensagem a partir dos registros das ações |
 | Robustez e escala (F15) | Mede o efeito da trava e da leitura do contexto sem cache |

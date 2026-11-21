@@ -5,7 +5,7 @@ module Routing
   #   2. conta as conversas with_human do analista; na capacidade, não recebe caso;
   #   3. escolhe a conversa awaiting_human das filas da equipe por prioridade e tempo na fila, com
   #      FOR UPDATE SKIP LOCKED: a conversa travada por outro analista é pulada;
-  #   4. passa a conversa para with_human com o analista (conversation.assigned).
+  #   4. passa a conversa para with_human com o analista (conversation.assigned) e atualiza o painel.
   # Devolve a conversa atribuída, ou nil.
   module Distributor
     class << self
@@ -35,7 +35,8 @@ module Routing
       end
 
       def assign(brand, analyst, conversation)
-        Audit::Command.call(brand: brand, type: "conversation.assigned", actor_type: "analyst", actor_id: analyst.id) do |change|
+        Audit::Command.call(brand: brand, type: "conversation.assigned", actor_type: "analyst", actor_id: analyst.id,
+                                    panel: true) do |change|
           change.before = { state: conversation.state, attendant_id: conversation.attendant_id }
           conversation.update!(state: "with_human", attendant_id: analyst.id)
           change.after = { state: conversation.state, attendant_id: conversation.attendant_id }
