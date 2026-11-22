@@ -88,8 +88,8 @@ def test_transacao_contestada_ou_ausente_escala(status, reason):
     assert output["status"] == status
     assert context["tools"] == [{"name": "consultar_transacao", "output": output}]
     assert context["sentiment"] == "negative"
-    assert context["suggested_next_step"] == decision.ESCALATIONS[reason][0]
-    assert context["confidence"] == decision.ESCALATIONS[reason][1]
+    assert context["suggested_next_step"] == decision.ESCALATIONS[reason]
+    assert context["confidence"] == decision.CONFIDENCE_BASE[reason]
     assert context["attempts"]
 
 
@@ -258,12 +258,25 @@ def test_saudacao_resolve_e_escalate_nao_mudam(text, expected_type):
     assert result.type == expected_type
 
 
-def test_escalate_da_intencao_com_memoria_nao_muda():
+def test_escalate_com_memoria_do_mesmo_assunto_so_muda_a_confianca():
     serial = find("SN", 8, tools.status_maquininha, "defeito")
     text = f"Preciso trocar a maquininha {serial}."
     entry = memory_entry(category="maquininha", resolved_at="2026-11-12T10:00:00.000Z")
 
-    assert decide_with_memory(text, "infinitepay", "pt-BR", entry) == decide(text)
+    plain = decide(text)
+    result = decide_with_memory(text, "infinitepay", "pt-BR", entry)
+
+    assert result.fields["context"]["confidence"] == 0.7
+    assert result.fields["context"]["attempts"][-1] == (
+        "Confiança 0,7: base 0,8 por maquininha_com_defeito; -0,1 conversa do mesmo assunto em 12/11/2026"
+    )
+
+    def without_confidence(item):
+        context = {key: value for key, value in item.fields["context"].items() if key not in ("confidence", "attempts")}
+        return {**item.fields, "context": context}
+
+    assert without_confidence(result) == without_confidence(plain)
+    assert result.fields["context"]["attempts"][:-1] == plain.fields["context"]["attempts"][:-1]
 
 
 def test_sem_prefixo_com_memoria_sem_relacao_ou_fora_da_janela():
@@ -282,3 +295,146 @@ def test_mesma_entrada_com_memoria_mesma_acao():
     results = [decide_with_memory("Quando cai o repasse?", "infinitepay", "pt-BR", entry) for _ in range(3)]
 
     assert results[0].fields == results[1].fields == results[2].fields
+
+
+def escalation_of(reason, locale="pt-BR", brand="infinitepay", memory=None):
+    """Escalação do motivo pedido, com memória do lojista opcional."""
+    if reason in ("transacao_contestada", "transacao_nao_localizada"):
+        status = "contestada" if reason == "transacao_contestada" else "nao_encontrada"
+        transaction_id = find("TX", 10, tools.consultar_transacao, status)
+        text = (f"Podem verificar a transação {transaction_id}?" if locale == "pt-BR"
+                else f"Can you check transaction {transaction_id}?")
+    elif reason == "maquininha_com_defeito":
+        serial = find("SN", 8, tools.status_maquininha, "defeito")
+        text = f"A maquininha {serial} não liga." if locale == "pt-BR" else f"Card reader {serial} is broken."
+    elif reason == "repasse_nao_localizado":
+        text = f"Meu repasse de {br_date(find_date('nao_encontrado'))} ainda não caiu."
+    else:
+        text = "Quero mudar o endereço cadastrado." if locale == "pt-BR" else "I want to change my address."
+    body = event_body(text=text, brand=brand)
+    context = context_for(body) if memory is None else with_memory(context_for(body), memory)
+    result = decision.decide(events.parse(record(body)), context, locale)
+    assert result.type == "escalate"
+    return result
+
+
+def decider(intent, found, previous=None):
+    """_Decider sem passar pelas ferramentas, para os ajustes que o fluxo das ferramentas falsas não alcança."""
+    return decision._Decider("texto", intent, found, "infinitepay", "pt-BR", lambda: "2026-11-13T14:02:11.482Z",
+                             previous)
+
+
+@pytest.mark.parametrize("reason, expected", [
+    ("transacao_contestada", 0.8), ("maquininha_com_defeito", 0.8), ("transacao_nao_localizada", 0.5),
+    ("repasse_nao_localizado", 0.5), ("intencao_nao_identificada", 0.2),
+])
+def test_confianca_de_cada_motivo_sem_ajuste(reason, expected):
+    result = escalation_of(reason)
+
+    assert result.fields["reason"] == reason
+    assert result.fields["context"]["confidence"] == expected
+    assert result.fields["context"]["attempts"][-1] == (
+        f"Confiança {decision.decimal(expected)}: base {decision.decimal(expected)} por {reason}"
+    )
+
+
+def test_repasse_sem_data_nao_escala_com_as_ferramentas_falsas():
+    assert tools.consultar_repasse({})["status"] == "pago"
+    assert decide("Meu repasse ainda não caiu.").type == "reply"
+
+
+def test_confianca_do_repasse_sem_data():
+    assert decider("repasse", {}).confidence("repasse_nao_localizado") == (
+        0.35, "Confiança 0,35: base 0,5 por repasse_nao_localizado; -0,15 sem data do repasse"
+    )
+
+
+def test_repasse_com_data_nao_perde_confianca():
+    assert decider("repasse", {"data": "2026-11-12"}).confidence("repasse_nao_localizado")[0] == 0.5
+
+
+def test_confianca_com_os_dois_ajustes():
+    previous = memory_entry(category="repasse", resolved_at="2026-11-03T10:00:00.000Z")
+
+    assert decider("repasse", {}, previous).confidence("repasse_nao_localizado") == (
+        0.25,
+        "Confiança 0,25: base 0,5 por repasse_nao_localizado; -0,15 sem data do repasse; "
+        "-0,1 conversa do mesmo assunto em 03/11/2026",
+    )
+
+
+def test_confianca_fica_entre_os_limites(monkeypatch):
+    monkeypatch.setitem(decision.CONFIDENCE_BASE, "intencao_nao_identificada", 0.1)
+    previous = memory_entry(category="repasse", resolved_at="2026-11-03T10:00:00.000Z")
+    assert decider("repasse", {}, previous).confidence("intencao_nao_identificada")[0] == 0.05
+
+    monkeypatch.setitem(decision.CONFIDENCE_BASE, "intencao_nao_identificada", 1.0)
+    assert decider("desconhecida", {}).confidence("intencao_nao_identificada") == (
+        0.95, "Confiança 0,95: base 1 por intencao_nao_identificada"
+    )
+
+
+def test_confianca_com_memoria_do_mesmo_assunto_na_janela():
+    entry = memory_entry(category="repasse", resolved_at="2026-11-03T10:00:00.000Z")
+
+    result = escalation_of("repasse_nao_localizado", memory=entry)
+
+    assert result.fields["context"]["confidence"] == 0.4
+    assert result.fields["context"]["attempts"][-1] == (
+        "Confiança 0,4: base 0,5 por repasse_nao_localizado; -0,1 conversa do mesmo assunto em 03/11/2026"
+    )
+
+
+def test_memoria_fora_da_janela_ou_de_outro_assunto_nao_ajusta():
+    outside = memory_entry(category="repasse", resolved_at="2026-10-01T10:00:00.000Z")
+    other = memory_entry(category="taxas", resolved_at="2026-11-03T10:00:00.000Z")
+
+    assert escalation_of("repasse_nao_localizado", memory=outside).fields["context"]["confidence"] == 0.5
+    assert escalation_of("repasse_nao_localizado", memory=other).fields["context"]["confidence"] == 0.5
+
+
+def test_intencao_desconhecida_nao_tem_assunto_na_memoria():
+    entry = memory_entry(category="repasse", resolved_at="2026-11-03T10:00:00.000Z")
+
+    assert escalation_of("intencao_nao_identificada", memory=entry).fields["context"]["confidence"] == 0.2
+
+
+@pytest.mark.parametrize("reason", ["transacao_contestada", "maquininha_com_defeito", "intencao_nao_identificada"])
+def test_explicacao_da_confianca_em_portugues_no_locale_en_us(reason):
+    entry = memory_entry(category="card_reader", resolved_at="2026-11-03T10:00:00.000Z")
+
+    result = escalation_of(reason, locale="en-US", brand="jim", memory=entry)
+
+    context = result.fields["context"]
+    assert context["attempts"][-1].startswith(f"Confiança {decision.decimal(context['confidence'])}: base ")
+    if reason == "maquininha_com_defeito":
+        assert context["confidence"] == 0.7
+        assert context["attempts"][-1].endswith("; -0,1 conversa do mesmo assunto em 03/11/2026")
+
+
+def test_explicacao_e_a_ultima_linha_das_tentativas():
+    transaction_id = find("TX", 10, tools.consultar_transacao, "contestada")
+
+    result = decide(f"Podem verificar a transação {transaction_id}?")
+
+    attempts = result.fields["context"]["attempts"]
+    assert attempts == [
+        f'consultar_transacao com entrada {{"id_transacao":"{transaction_id}"}}: contestada',
+        "Confiança 0,8: base 0,8 por transacao_contestada",
+    ]
+
+
+def test_decide_usa_o_texto_informado():
+    body = event_body(text="Oi")
+
+    result = decision.decide(events.parse(record(body)), context_for(body), "pt-BR", text="Obrigado!")
+
+    assert result.type == "resolve"
+
+
+def test_mesma_escalacao_mesma_confianca():
+    entry = memory_entry(category="repasse", resolved_at="2026-11-03T10:00:00.000Z")
+
+    results = [escalation_of("repasse_nao_localizado", memory=entry).fields for _ in range(3)]
+
+    assert results[0] == results[1] == results[2]

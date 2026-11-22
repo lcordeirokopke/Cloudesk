@@ -50,3 +50,24 @@ def test_le_a_janela_da_memoria():
 def test_recusa_janela_da_memoria_invalida(value):
     with pytest.raises(ValueError):
         Settings.from_env({"AGENT_MEMORY_WINDOW_DAYS": value})
+
+
+def test_topicos_padrao():
+    settings = Settings.from_env({})
+
+    assert (settings.inbound_topic, settings.outbound_topic) == ("agent.inbound", "agent.outbound")
+
+
+def test_le_os_topicos():
+    settings = Settings.from_env({
+        "AGENT_INBOUND_TOPIC": "conformance.inbound", "AGENT_OUTBOUND_TOPIC": "conformance.outbound",
+    })
+
+    assert (settings.inbound_topic, settings.outbound_topic) == ("conformance.inbound", "conformance.outbound")
+
+
+@pytest.mark.parametrize("name", ["AGENT_INBOUND_TOPIC", "AGENT_OUTBOUND_TOPIC"])
+@pytest.mark.parametrize("value", ["", "  "])
+def test_recusa_topico_vazio(name, value):
+    with pytest.raises(ValueError, match=name):
+        Settings.from_env({name: value})

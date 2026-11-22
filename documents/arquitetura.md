@@ -163,6 +163,8 @@ flowchart LR
 
 Os processos `broker-web` e `broker-consumer` não têm seta para o PostgreSQL: o Broker não acessa o banco e fala com o Core somente por HTTP. O chat chega ao lojista por Turbo Stream, pelo Solid Cable, no WebSocket que o `web` mantém com o navegador.
 
+Fora do ambiente padrão, o profile `conformance` do Compose sobe o kit de conformidade do agente: `agent-conformance` (o kit, com o Core falso) e `agent-mock-conformance` (o agente sob teste, mesma imagem do `agent-mock`), nos tópicos `conformance.inbound` e `conformance.outbound`. Os dois não aparecem no diagrama e não sobem com `docker compose up` sem o profile.
+
 ### Componentes
 
 | Componente | Tecnologia | Responsabilidade |
@@ -663,6 +665,24 @@ flowchart LR
 
 Como a varredura roda a cada 15 segundos, cada passo acontece até 15 segundos depois do instante marcado.
 
+#### Kit de conformidade do agente
+
+O kit (`agent_conformance/`, Python) verifica que um agente cumpre o contrato v1 sem depender do Core: é o mesmo teste para o agente mock e para um agente real com LLM. Ele sobe um Core falso que responde à `context_url`, publica eventos `message.created` em `conformance.inbound` e lê as ações em `conformance.outbound`, tópicos próprios com 6 partições (o de entrada com `LogAppendTime`), criados pelo `redpanda-init`. O agente sob teste só troca os tópicos (`AGENT_INBOUND_TOPIC`, `AGENT_OUTBOUND_TOPIC`) e a base do Core.
+
+O kit não exige determinismo; confere forma, coerência e comportamento observável:
+
+| Caso | O que o agente deve fazer |
+| - | - |
+| Leitura do contexto | `GET` assinado pelo contrato, com a marca no caminho e o mesmo `trace_id` do evento |
+| Ação válida | Ação no schema `action`, chave `conversation_id`, headers do contrato, `inbound_event_id`, `based_on_sequence` e carimbos coerentes com o evento e o registro Kafka |
+| Reentrega | O mesmo evento duas vezes gera a mesma `Idempotency-Key` |
+| Mensagem mais nova ou conversa fora da IA | Nenhuma ação |
+| Erro permanente no contexto | Nenhuma ação, sem travar os eventos seguintes |
+| Erro transitório no contexto | Nova leitura e uma ação |
+| Escalação | Contexto estruturado completo e confiança entre 0 e 1 |
+
+Roda com `docker compose --profile conformance up --build --abort-on-container-exit --exit-code-from agent-conformance agent-conformance agent-mock-conformance`; o código de saída é o do pytest do kit. A verificação do lado do Core (`409 stale`, `409 rejected`, idempotência) fica nos testes do Core.
+
 ### Handoff com resumo e contexto
 
 Na ação `escalate`, o agente envia motivo, resumo curto e contexto estruturado: intenção, entidades (ex.: id da transação sintética), ferramentas consultadas e seus retornos, tentativas feitas, sentimento, próximo passo sugerido e confiança. A plataforma grava o Handoff com esses dados e leva a conversa de `with_ai` a `awaiting_human`, sem atendente, na fila de escalação da fila em que ela estava (`queues.escalation_queue_id`, uma fila humana da mesma marca), com a prioridade mantida e o SLA da fila de destino; sem fila de escalação, a conversa fica na mesma fila. O painel dos analistas da equipe é atualizado em tempo real, e o histórico completo segue na mesma conversa. A escalação passa sempre por `Conversations::Escalate`, chamado pelo `escalate` do agente e pela varredura do timeout.
@@ -810,8 +830,8 @@ O detalhamento está em `documents/fases/13-memoria-e-contexto.md`.
 
 - **Canais:** WhatsApp com payloads no formato da Cloud API da Meta; e-mail via Mailpit (SMTP local); chat in-app como widget web. Cada marca tem números de WhatsApp e e-mails de suporte próprios, na tabela `brand_channels`, e o chat leva a marca na URL.
 - **Entrada do e-mail:** o webhook do Mailpit avisa o Core de cada e-mail recebido; o Core baixa o original pela API do Mailpit e cria o `InboundEmail` do Action Mailbox só quando o e-mail é endereçado a um e-mail de suporte de uma marca. Um job recorrente busca no Mailpit os e-mails sem tag e recupera o que o webhook perde. A resposta sai por SMTP para o Mailpit. O detalhamento está em `documents/fases/05-canais-de-entrada-e-identidade.md`.
-- **Simulador de canais:** envia mensagens sintéticas nos três formatos e recebe as respostas de saída, registrando cada uma para a reconciliação. O detalhamento está em `documents/fases/06-simulador-de-canais.md`.
-- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Quando a memória do lojista no contexto tem conversa do mesmo assunto resolvida até `AGENT_MEMORY_WINDOW_DAYS` dias (padrão 30) antes do `received_at` do evento, o `reply` das intenções de transação, repasse, taxas e maquininha começa com um prefixo que cita o assunto e a data dela; a referência é o horário do evento, e a mesma entrada continua gerando a mesma ação. Modos de falha configuráveis (ver Diferenciais). O detalhamento está em `documents/fases/11-agente-mock.md`.
+- **Simulador de canais:** envia mensagens sintéticas nos três formatos e recebe as respostas de saída, registrando cada uma para a reconciliação. Os cenários de demonstração (`reply`, `handoff`, `reopen`, `memory`, `failure-duplicate`, `failure-stale`, `failure-drop`, `failure-delay`) usam um lojista novo e textos fixos, conferem o que chega ao canal e imprimem o `bin/rails demo:check`, task só de leitura que confere no Core o estado da conversa, o handoff e os eventos de auditoria. O detalhamento está em `documents/fases/06-simulador-de-canais.md`.
+- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Quando a memória do lojista no contexto tem conversa do mesmo assunto resolvida até `AGENT_MEMORY_WINDOW_DAYS` dias (padrão 30) antes do `received_at` do evento, o `reply` das intenções de transação, repasse, taxas e maquininha começa com um prefixo que cita o assunto e a data dela; a referência é o horário do evento, e a mesma entrada continua gerando a mesma ação. A confiança do `escalate` sai de uma regra: base por motivo, menos 0,15 quando falta a data do repasse e menos 0,1 quando a memória tem conversa do mesmo assunto na janela, com a explicação na última linha de `attempts`. Modos de falha por configuração e por marcador no texto (`[falha:<modo>]`, que escolhe a conversa e sai do texto antes da decisão; ver Diferenciais). Os tópicos são configuráveis (`AGENT_INBOUND_TOPIC`, `AGENT_OUTBOUND_TOPIC`), o que permite rodar o agente no kit de conformidade. O detalhamento está em `documents/fases/11-agente-mock.md`.
 - **Dados sintéticos:** lojistas, transações e conversas gerados com seeds fixas (Faker pt\_BR e en\_US), sem nenhum dado real. Rodar as seeds de novo no mesmo banco não duplica registros.
 
 Caminho do e-mail até o `Conversations::Intake`:
@@ -842,8 +862,9 @@ flowchart TB
     NW -.->|"sim"| D4["descarta: discarded_newer"]
     NW ==> SW{"conversa<br/>em with_ai?"}
     SW -.->|"não"| D5["descarta: discarded_state"]
-    SW ==> DEC["intenção pelas palavras-chave do locale<br/>ferramentas falsas e memória do lojista<br/>reply, escalate ou resolve"]
-    DEC ==> LAT["latência artificial e<br/>modo de falha, quando afeta o evento"]
+    SW ==> MK["separa o marcador de falha do texto"]
+    MK ==> DEC["intenção pelas palavras-chave do locale<br/>ferramentas falsas e memória do lojista<br/>reply, escalate ou resolve"]
+    DEC ==> LAT["latência artificial e modo de falha:<br/>o do marcador ou, sem ele, o da configuração"]
     LAT ==> PUB["publica em agent.outbound<br/>based_on_sequence = sequence do evento"]
     PUB ==> OFF["confirma o offset"]
     D1 ==> OFF
@@ -983,7 +1004,7 @@ Quatro diferenciais fazem parte do escopo, escolhidos por esforço baixo e por a
 
 **1. Briefing de handoff avaliado pelo analista**
 
-O handoff chega como cartão na tela da conversa: problema em uma frase, o que a IA tentou, ferramentas e retornos, sentimento, próximo passo sugerido e confiança. O analista da conversa marca o briefing como útil ou não, uma vez (`handoffs.rating`, evento `handoff.rated`). O tempo até a primeira resposta humana é calculado na leitura, da criação do handoff até a primeira mensagem de analista, e aparece no cartão e no payload do `handoff.rated`.
+O handoff chega como cartão na tela da conversa: problema em uma frase, o que a IA tentou, ferramentas e retornos, sentimento, próximo passo sugerido e confiança. No agente mock, a confiança vem de uma regra (base por motivo e ajustes pela evidência), e a última linha das tentativas explica o cálculo, por exemplo `Confiança 0,4: base 0,5 por repasse_nao_localizado; -0,1 conversa do mesmo assunto em 03/11/2026`. O analista da conversa marca o briefing como útil ou não, uma vez (`handoffs.rating`, evento `handoff.rated`). O tempo até a primeira resposta humana é calculado na leitura, da criação do handoff até a primeira mensagem de analista, e aparece no cartão e no payload do `handoff.rated`.
 
 **2. Cockpit operacional em tempo real**
 
@@ -995,11 +1016,11 @@ Em cada conversa, a tela mostra a regra e a versão que definiram fila, priorida
 
 **4. Modos de falha do agente mock**
 
-Por configuração (`AGENT_FAILURE_MODE`: `delay`, `drop`, `duplicate` ou `stale`, com a fração dos eventos afetados em `AGENT_FAILURE_RATE`), o agente mock atrasa, não responde, publica a mesma ação duas vezes ou envia ação desatualizada. Cada modo exercita um caminho da plataforma: a varredura do timeout, a idempotência no Core e a rejeição com `409 stale`. Reforça a robustez diante de falhas e reentregas e permite demonstrá-la.
+Por configuração (`AGENT_FAILURE_MODE`: `delay`, `drop`, `duplicate` ou `stale`, com a fração dos eventos afetados em `AGENT_FAILURE_RATE`), o agente mock atrasa, não responde, publica a mesma ação duas vezes ou envia ação desatualizada. Para escolher uma conversa da demonstração, o marcador no texto da mensagem (`[falha:drop]`, `[falha:duplicate]`, `[falha:stale]`, `[falha:delay]` ou `[falha:delay=<ms>]`) aplica o modo dele ao evento, sempre, acima de `AGENT_FAILURE_MODE` e `AGENT_FAILURE_RATE`; o marcador sai do texto antes da decisão, e os cenários `failure-*` do simulador o usam. Cada modo exercita um caminho da plataforma: a varredura do timeout, a idempotência no Core e a rejeição com `409 stale`. Reforça a robustez diante de falhas e reentregas e permite demonstrá-la.
 
 | Modo | O que o agente faz | Caminho exercitado na plataforma |
 | - | - | - |
-| `delay` | Soma `AGENT_FAILURE_DELAY_MS` à latência | Mensagem de espera e escalação por timeout |
+| `delay` | Soma à latência o valor de `[falha:delay=<ms>]` ou, sem ele, `AGENT_FAILURE_DELAY_MS` | Mensagem de espera e escalação por timeout |
 | `drop` | Não publica a ação | Escalação por timeout |
 | `duplicate` | Publica a mesma ação duas vezes | Idempotência no Core (`processed_events`) |
 | `stale` | Publica com `based_on_sequence` menos 1 | Recusa com `409 stale` |

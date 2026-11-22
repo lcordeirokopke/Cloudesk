@@ -66,6 +66,18 @@ class Planned:
     support_email: str
 
 
+def planned_text(brand: Brand, channel: str, contact: Contact, text: str, intent: str, rng: random.Random) -> Planned:
+    """Mensagem com lojista e texto dados, sem anexo; o rng escolhe o número e o e-mail da marca."""
+    return Planned(
+        brand=brand,
+        channel=channel,
+        contact=contact,
+        content=templates.Content(intent=intent, text=text, subject=text[:60], attachment=None),
+        whatsapp_number=rng.choice(brand.whatsapp_numbers),
+        support_email=rng.choice(brand.support_emails),
+    )
+
+
 def plan(personas: Personas, options: SendOptions, rng: random.Random) -> Planned:
     """Sorteia uma mensagem com o rng da execução."""
     brands = personas.brands if options.brand == "all" else (personas.brand(options.brand),)

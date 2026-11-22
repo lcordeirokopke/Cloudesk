@@ -1,4 +1,7 @@
-"""Consumidor de agent.inbound e produtor de agent.outbound, com concorrência por conversa.
+"""Consumidor do tópico de entrada e produtor do tópico de saída, com concorrência por conversa.
+
+Os tópicos vêm de Settings (AGENT_INBOUND_TOPIC e AGENT_OUTBOUND_TOPIC, com padrão agent.inbound e
+agent.outbound).
 
 - AIOKafkaConsumer no grupo AGENT_GROUP_ID, com enable_auto_commit=False e
   auto_offset_reset="earliest"; AIOKafkaProducer com acks="all" e enable_idempotence=True.
@@ -23,7 +26,7 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, TopicPartition
 from aiokafka.abc import ConsumerRebalanceListener
 
 from agent_mock import logs
-from agent_mock.config import INBOUND_TOPIC, OUTBOUND_TOPIC, Settings
+from agent_mock.config import Settings
 from agent_mock.context_client import ContextClient
 from agent_mock.processor import Processor
 
@@ -174,7 +177,7 @@ class Runner:
         self.producer = AIOKafkaProducer(
             bootstrap_servers=settings.kafka_brokers, acks="all", enable_idempotence=True,
         )
-        self.consumer.subscribe([INBOUND_TOPIC], listener=_Listener(self))
+        self.consumer.subscribe([settings.inbound_topic], listener=_Listener(self))
         await self.producer.start()
         await self.consumer.start()
         session = aiohttp.ClientSession()
@@ -190,7 +193,8 @@ class Runner:
         processor = Processor(settings, fetch_context, self.publish)
         committer = asyncio.create_task(self._commit_periodically())
         logs.info("agente iniciado", group_id=settings.group_id, concurrency=settings.concurrency,
-                  latency_ms=settings.latency_ms)
+                  latency_ms=settings.latency_ms, inbound_topic=settings.inbound_topic,
+                  outbound_topic=settings.outbound_topic)
         try:
             await self._consume(processor)
         finally:
@@ -205,7 +209,7 @@ class Runner:
             raise SystemExit(1)
 
     async def publish(self, key: bytes, value: bytes, headers: list[tuple[str, bytes]]):
-        return await self.producer.send_and_wait(OUTBOUND_TOPIC, value=value, key=key, headers=headers)
+        return await self.producer.send_and_wait(self.settings.outbound_topic, value=value, key=key, headers=headers)
 
     async def _consume(self, processor: Processor) -> None:
         while not self.stopping.is_set() and self.scheduler.failure is None:

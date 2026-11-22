@@ -92,3 +92,24 @@ def test_valor_codificado_e_json_da_acao():
     import json
 
     assert json.loads(action.encode(ACTIONS[0])) == ACTIONS[0]
+
+
+def test_escalacoes_com_a_confianca_por_regra_seguem_o_schema(action_validator):
+    from conftest import memory_entry, with_memory
+
+    escalations = [item for item in ACTIONS if item["type"] == "escalate"]
+    assert {item["context"]["confidence"] for item in escalations} == {0.8, 0.5, 0.2}
+
+    serial = find("SN", 8, tools.status_maquininha, "defeito")
+    body = event_body(text=f"A maquininha {serial} não liga.")
+    context = with_memory(context_for(body), memory_entry(category="maquininha",
+                                                          resolved_at="2026-11-03T10:00:00.000Z"))
+    event = events.parse(record(body))
+    generated = action.build(event, decision.decide(event, context, "pt-BR"), traceparent=TRACEPARENT,
+                             consumed_at="2026-11-13T14:02:11.560Z", published_at="2026-11-13T14:02:11.905Z")
+
+    assert generated["context"]["confidence"] == 0.7
+    assert generated["context"]["attempts"][-1].startswith("Confiança 0,7: ")
+    assert [error.message for error in action_validator.iter_errors(generated)] == []
+    for item in escalations:
+        assert item["context"]["attempts"][-1].startswith("Confiança ")

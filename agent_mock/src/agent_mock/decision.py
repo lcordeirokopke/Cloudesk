@@ -21,9 +21,15 @@ categoria resolvida dentro da janela AGENT_MEMORY_WINDOW_DAYS antes do received_
 (memory.previous): o prefixo cita o assunto e a data UTC da conversa mais recente. saudacao, resolve
 e escalate não mudam.
 
-A decisão depende só do texto, da marca e do locale e, no prefixo do reply, da memória do contexto
-e do received_at do evento; os horários das ferramentas ficam fora da comparação. Os textos ao lojista seguem o locale da marca; resumo, tentativas e próximo passo do
-escalate são para o analista e ficam em português.
+Confiança do escalate, por regra: base por motivo (CONFIDENCE_BASE), menos 0,15 quando a
+intenção é repasse e falta a data que consultar_repasse aceitaria, e menos 0,1 quando a memória do
+lojista tem conversa do mesmo assunto na janela (memory.previous, problema recorrente). O resultado
+fica entre 0,05 e 0,95, com 2 casas, e a última linha de attempts explica o cálculo.
+
+A decisão depende só do texto, da marca e do locale e, no prefixo do reply e na confiança do
+escalate, da memória do contexto e do received_at do evento; os horários das ferramentas ficam fora
+da comparação. Os textos ao lojista seguem o locale da marca; resumo, tentativas, explicação da
+confiança e próximo passo do escalate são para o analista e ficam em português.
 """
 
 from collections.abc import Callable
@@ -73,14 +79,27 @@ TOPICS = {
     "en-US": {"transacao": "a transaction", "repasse": "payouts", "taxas": "fees", "maquininha": "your card reader"},
 }
 
-# Próximo passo e confiança fixos por motivo de escalação.
+# Próximo passo sugerido por motivo de escalação.
 ESCALATIONS = {
-    "transacao_contestada": ("Abrir a contestação da transação e informar o prazo ao lojista", 0.6),
-    "transacao_nao_localizada": ("Localizar a transação no sistema de pagamentos e confirmar com o lojista", 0.4),
-    "repasse_nao_localizado": ("Verificar o repasse no sistema financeiro e informar o prazo ao lojista", 0.35),
-    "maquininha_com_defeito": ("Enviar uma maquininha de troca ao lojista", 0.7),
-    "intencao_nao_identificada": ("Ler a mensagem e identificar a necessidade do lojista", 0.2),
+    "transacao_contestada": "Abrir a contestação da transação e informar o prazo ao lojista",
+    "transacao_nao_localizada": "Localizar a transação no sistema de pagamentos e confirmar com o lojista",
+    "repasse_nao_localizado": "Verificar o repasse no sistema financeiro e informar o prazo ao lojista",
+    "maquininha_com_defeito": "Enviar uma maquininha de troca ao lojista",
+    "intencao_nao_identificada": "Ler a mensagem e identificar a necessidade do lojista",
 }
+
+# Base da confiança por motivo de escalação.
+CONFIDENCE_BASE = {
+    "transacao_contestada": 0.8,
+    "maquininha_com_defeito": 0.8,
+    "transacao_nao_localizada": 0.5,
+    "repasse_nao_localizado": 0.5,
+    "intencao_nao_identificada": 0.2,
+}
+MISSING_DATE_PENALTY = 0.15
+RECURRING_PENALTY = 0.1
+CONFIDENCE_MIN = 0.05
+CONFIDENCE_MAX = 0.95
 
 NEGATIVE = {
     "pt-BR": [
@@ -141,10 +160,17 @@ def percent(value: str, locale: str) -> str:
     return value.replace(".", ",") if locale == "pt-BR" else value
 
 
+def decimal(value: float) -> str:
+    """Número com até 2 casas e vírgula decimal, sem zeros à direita: 0,8, 0,25, 0,05."""
+    return f"{value:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
 def decide(event: Event, context: dict, locale: str, stamp: Callable[[], str] = clock.stamp,
-           memory_window_days: int = DEFAULT_MEMORY_WINDOW_DAYS) -> Decision:
-    """Decisão para o evento, com o texto decidido pelo contexto e a memória do lojista na janela."""
-    text = decided_text(event, context)
+           memory_window_days: int = DEFAULT_MEMORY_WINDOW_DAYS, text: str | None = None) -> Decision:
+    """Decisão para o evento, com a memória do lojista na janela. O texto é text quando informado
+    (o texto decidido sem o marcador de falha) e, sem ele, o texto decidido pelo contexto."""
+    if text is None:
+        text = decided_text(event, context)
     intent = intents.classify(text, locale)
     found = entities.extract(text, locale)
     earlier = memory.previous(context, intent, event.received_at, memory_window_days)
@@ -245,15 +271,30 @@ class _Decider:
             for call in self.calls
         ]
 
+    def confidence(self, reason: str) -> tuple[float, str]:
+        """Confiança do escalate e a linha de attempts que explica o cálculo."""
+        base = CONFIDENCE_BASE[reason]
+        value = base
+        parts = [f"base {decimal(base)} por {reason}"]
+        if self.intent == "repasse" and "data" not in self.entities:
+            value -= MISSING_DATE_PENALTY
+            parts.append(f"-{decimal(MISSING_DATE_PENALTY)} sem data do repasse")
+        if self.previous is not None:
+            value -= RECURRING_PENALTY
+            parts.append(f"-{decimal(RECURRING_PENALTY)} conversa do mesmo assunto em "
+                         f"{day(self.previous['resolved_at'][:10], 'pt-BR')}")
+        value = round(min(max(value, CONFIDENCE_MIN), CONFIDENCE_MAX), 2)
+        return value, f"Confiança {decimal(value)}: " + "; ".join(parts)
+
     def escalate(self, reason: str, summary: str) -> Decision:
-        next_step, confidence = ESCALATIONS[reason]
+        confidence, explanation = self.confidence(reason)
         context = {
             "intent": self.intent,
             "entities": dict(self.entities),
             "tools": [{"name": call["name"], "output": call["output"]} for call in self.calls],
-            "attempts": self.attempts(),
+            "attempts": [*self.attempts(), explanation],
             "sentiment": sentiment(self.text, self.locale),
-            "suggested_next_step": next_step,
+            "suggested_next_step": ESCALATIONS[reason],
             "confidence": confidence,
         }
         return self.build("escalate", {"reason": reason, "summary": summary, "context": context})

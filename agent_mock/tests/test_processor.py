@@ -365,3 +365,117 @@ async def test_repassa_a_janela_da_memoria_a_decisao():
 
     assert inside.action["text"].startswith("Vi que você já falou com a gente sobre repasse em 03/11/2026. ")
     assert not outside.action["text"].startswith("Vi que")
+
+
+GREETING = "Oi, tudo bem? Preciso de ajuda."
+
+
+def process_lines(capsys):
+    return [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+
+
+async def test_marcador_vence_modo_none_e_taxa_zero():
+    body = event_body(text=f"{GREETING} [falha:drop]")
+    harness = Harness(context_for(body), settings=Settings(failure_mode="none", failure_rate=0))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.FAILURE_DROP
+    assert harness.published == []
+
+
+async def test_marcador_vence_outro_modo_da_configuracao():
+    body = event_body(text=f"[falha:duplicate] {GREETING}")
+    harness = Harness(context_for(body), settings=Settings(failure_mode="drop", failure_rate=1))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.PUBLISHED
+    assert len(harness.published) == 2
+
+
+async def test_delay_do_marcador_com_valor_soma_o_valor():
+    body = event_body(text=f"{GREETING} [falha:delay=50000]")
+    harness = Harness(context_for(body), settings=Settings(latency_ms=250, failure_delay_ms=1000))
+
+    await harness.processor.handle(record(body))
+
+    assert harness.sleeps == [50.25]
+
+
+async def test_delay_do_marcador_sem_valor_soma_a_configuracao():
+    body = event_body(text=f"{GREETING} [falha:delay]")
+    harness = Harness(context_for(body), settings=Settings(latency_ms=250, failure_delay_ms=1000))
+
+    await harness.processor.handle(record(body))
+
+    assert harness.sleeps == [1.25]
+
+
+async def test_stale_do_marcador_com_sequence_1():
+    body = event_body(text=f"{GREETING} [falha:stale]", sequence=1)
+    harness = Harness(context_for(body))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.FAILURE_STALE_SKIPPED
+    assert outcome.action["based_on_sequence"] == 1
+
+
+async def test_stale_do_marcador_publica_com_based_on_sequence_menos_1():
+    body = event_body(text=f"{GREETING} [falha:stale]", sequence=3)
+    harness = Harness(context_for(body))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.result == logs.PUBLISHED
+    assert outcome.action["based_on_sequence"] == 2
+
+
+@pytest.mark.parametrize("text", [GREETING, TEXT, "Quero mudar o endereço cadastrado."])
+async def test_decisao_feita_sobre_o_texto_sem_marcador(text):
+    marked = event_body(text=f"{text} [falha:duplicate]")
+    plain = event_body(text=text)
+
+    with_marker = (await Harness(context_for(marked)).processor.handle(record(marked))).action
+    without_marker = (await Harness(context_for(plain)).processor.handle(record(plain))).action
+
+    assert without_times(with_marker) == without_times(without_marker)
+
+
+async def test_marcador_lido_no_texto_do_contexto():
+    body = event_body(text=GREETING, sequence=7)
+    context = context_for(body, messages=[
+        {"sequence": 7, "author": "customer", "channel": "whatsapp", "text": f"{GREETING} [falha:drop]",
+         "created_at": "2026-11-13T14:02:11.482Z"},
+    ])
+
+    outcome = await Harness(context).processor.handle(record(body))
+
+    assert outcome.result == logs.FAILURE_DROP
+
+
+async def test_log_leva_a_origem_da_falha(capsys):
+    marked = event_body(text=f"{GREETING} [falha:duplicate]")
+    configured = event_body(text=GREETING)
+
+    await Harness(context_for(marked)).processor.handle(record(marked))
+    by_marker = [line for line in process_lines(capsys) if line.get("result")][-1]
+    await Harness(context_for(configured), settings=Settings(failure_mode="duplicate")).processor.handle(
+        record(configured))
+    by_config = [line for line in process_lines(capsys) if line.get("result")][-1]
+    await Harness(context_for(configured)).processor.handle(record(configured))
+    unaffected = [line for line in process_lines(capsys) if line.get("result")][-1]
+
+    assert (by_marker["failure"], by_marker["failure_source"]) == ("duplicate", "marker")
+    assert (by_config["failure"], by_config["failure_source"]) == ("duplicate", "config")
+    assert "failure" not in unaffected and "failure_source" not in unaffected
+
+
+async def test_drop_do_marcador_no_log(capsys):
+    body = event_body(text=f"{GREETING} [falha:drop]")
+
+    await Harness(context_for(body)).processor.handle(record(body))
+
+    line = [line for line in process_lines(capsys) if line.get("result")][-1]
+    assert (line["result"], line["failure"], line["failure_source"]) == (logs.FAILURE_DROP, "drop", "marker")

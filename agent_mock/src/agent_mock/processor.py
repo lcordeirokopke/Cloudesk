@@ -6,15 +6,18 @@
    (context_client), sem concluir o registro.
 4. Mensagem do lojista no contexto com sequence maior que a do evento: discarded_newer.
 5. Conversa fora de with_ai: discarded_state.
-6. Decide pelo texto da mensagem com a sequence do evento e pela memória do lojista no contexto,
-   com a janela AGENT_MEMORY_WINDOW_DAYS (decision).
-7. Espera AGENT_LATENCY_MS, carimba agent_published_at e publica em agent.outbound com a chave
+6. Separa o marcador de falha do texto da mensagem com a sequence do evento (failure.marker) e
+   decide pelo texto sem os marcadores e pela memória do lojista no contexto, com a janela
+   AGENT_MEMORY_WINDOW_DAYS (decision).
+7. Espera AGENT_LATENCY_MS, carimba agent_published_at e publica no tópico de saída com a chave
    conversation_id e os headers brand e traceparent, aguardando a confirmação do Kafka. Falha na
    publicação: nova tentativa com a mesma pausa do contexto, com novo agent_published_at.
 
-Modo de falha (AGENT_FAILURE_MODE), só no evento afetado (failure.affected, pelo event_id e por
-AGENT_FAILURE_RATE), depois da decisão:
-- delay: soma AGENT_FAILURE_DELAY_MS à latência antes da publicação;
+Modo de falha, depois da decisão: com marcador no texto, o modo do marcador, sempre; sem marcador,
+AGENT_FAILURE_MODE, só no evento afetado (failure.affected, pelo event_id e por
+AGENT_FAILURE_RATE). O log leva failure com o modo e failure_source com a origem (marker ou config).
+- delay: soma à latência antes da publicação o valor de [falha:delay=<ms>] ou, sem valor,
+  AGENT_FAILURE_DELAY_MS;
 - drop: termina sem publicar (failure_drop);
 - duplicate: publica a mesma ação duas vezes, cada uma aguardando a confirmação do Kafka;
 - stale: publica a ação com based_on_sequence igual à sequence do evento menos 1; com sequence 1,
@@ -81,16 +84,17 @@ class Processor:
         if state != "with_ai":
             return self._finish(logs.DISCARDED_STATE, None, state=state, **fields)
 
+        found, text = failure.marker(decision.decided_text(event, context))
         chosen = decision.decide(event, context, locale, self.stamp,
-                                 memory_window_days=self.settings.memory_window_days)
+                                 memory_window_days=self.settings.memory_window_days, text=text)
 
-        mode = self.settings.failure_mode
-        if mode == "none" or not failure.affected(event.event_id, self.settings.failure_rate):
-            mode = None
+        mode, source, delay_ms = self._failure(event, found)
+        if mode is not None:
+            fields["failure_source"] = source
         if mode == "drop":
             return self._finish(logs.FAILURE_DROP, None, action=chosen.type, failure=mode, **fields)
 
-        latency_ms = self.settings.latency_ms + (self.settings.failure_delay_ms if mode == "delay" else 0)
+        latency_ms = self.settings.latency_ms + (delay_ms if mode == "delay" else 0)
         if latency_ms > 0:
             await self.sleep(latency_ms / 1000)
 
@@ -107,6 +111,16 @@ class Processor:
             await self._send(event, published, fields)
         return self._finish(result, published, action=published["type"], failure=mode,
                             idempotency_key=action.idempotency_key(published), traceparent=traceparent, **fields)
+
+    def _failure(self, event, found: failure.Marker | None) -> tuple[str | None, str | None, int]:
+        """Modo de falha do evento, a origem (marker ou config) e o atraso do delay."""
+        if found is not None:
+            delay_ms = found.delay_ms if found.delay_ms is not None else self.settings.failure_delay_ms
+            return found.mode, "marker", delay_ms
+        mode = self.settings.failure_mode
+        if mode == "none" or not failure.affected(event.event_id, self.settings.failure_rate):
+            return None, None, 0
+        return mode, "config", self.settings.failure_delay_ms
 
     async def _publish(self, event, chosen, traceparent, consumed_at, fields, based_on_sequence) -> dict:
         def build() -> dict:

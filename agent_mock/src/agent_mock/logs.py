@@ -13,7 +13,8 @@ Cada evento processado gera uma linha com result igual a um destes valores:
 | failure_drop | Modo de falha drop: o evento afetado termina sem publicação | confirmado |
 | failure_stale_skipped | Modo de falha stale com sequence 1: a ação é publicada sem alteração | confirmado |
 
-No modo de falha, o log published do evento afetado leva o campo failure com o modo.
+No modo de falha, o log do evento afetado leva o campo failure com o modo e o campo
+failure_source com a origem: marker (marcador no texto) ou config (AGENT_FAILURE_MODE).
 """
 
 import json

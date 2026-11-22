@@ -5,7 +5,9 @@
 | KAFKA_BROKERS | redpanda:9092 | Endereços do Kafka, separados por vírgula |
 | CORE_URL | http://web:3000 | Base da context_url |
 | AGENT_CONTEXT_SECRET | | Assinatura do GET da context_url |
-| AGENT_GROUP_ID | cloudesk-agent | Grupo de consumo de agent.inbound |
+| AGENT_GROUP_ID | cloudesk-agent | Grupo de consumo do tópico de entrada |
+| AGENT_INBOUND_TOPIC | agent.inbound | Tópico de entrada (eventos message.created) |
+| AGENT_OUTBOUND_TOPIC | agent.outbound | Tópico de saída (ações) |
 | AGENT_CONCURRENCY | 100 | Eventos em andamento por processo |
 | AGENT_LATENCY_MS | 0 | Latência artificial fixa antes da publicação |
 | AGENT_CONTEXT_TIMEOUT_SECONDS | 5 | Timeout de cada GET da context_url |
@@ -13,7 +15,9 @@
 | AGENT_FAILURE_MODE | none | Modo de falha: none, delay, drop, duplicate ou stale |
 | AGENT_FAILURE_RATE | 1 | Fração dos eventos afetados pelo modo de falha, de 0 a 1 |
 | AGENT_FAILURE_DELAY_MS | 0 | Atraso somado à latência no modo delay |
-| AGENT_MEMORY_WINDOW_DAYS | 30 | Dias antes do received_at do evento em que uma conversa da memória do lojista entra no prefixo do reply |
+| AGENT_MEMORY_WINDOW_DAYS | 30 | Dias antes do received_at do evento em que uma conversa da memória do lojista entra no prefixo do reply e na confiança do escalate |
+
+Os tópicos ausentes usam o padrão; presentes e vazios são erro de configuração.
 """
 
 import os
@@ -43,6 +47,8 @@ class Settings:
     core_url: str = "http://web:3000"
     context_secret: str = ""
     group_id: str = "cloudesk-agent"
+    inbound_topic: str = INBOUND_TOPIC
+    outbound_topic: str = OUTBOUND_TOPIC
     concurrency: int = 100
     latency_ms: int = 0
     context_timeout_seconds: float = 5.0
@@ -60,11 +66,20 @@ class Settings:
         def value(name: str, default):
             return env.get(name) or default
 
+        def topic(name: str, default: str) -> str:
+            if name not in env:
+                return default
+            if not env[name].strip():
+                raise ValueError(f"{name} não pode ser vazio")
+            return env[name].strip()
+
         settings = cls(
             kafka_brokers=value("KAFKA_BROKERS", defaults.kafka_brokers),
             core_url=value("CORE_URL", defaults.core_url).rstrip("/"),
             context_secret=value("AGENT_CONTEXT_SECRET", ""),
             group_id=value("AGENT_GROUP_ID", defaults.group_id),
+            inbound_topic=topic("AGENT_INBOUND_TOPIC", defaults.inbound_topic),
+            outbound_topic=topic("AGENT_OUTBOUND_TOPIC", defaults.outbound_topic),
             concurrency=int(value("AGENT_CONCURRENCY", defaults.concurrency)),
             latency_ms=int(value("AGENT_LATENCY_MS", defaults.latency_ms)),
             context_timeout_seconds=float(value("AGENT_CONTEXT_TIMEOUT_SECONDS", defaults.context_timeout_seconds)),

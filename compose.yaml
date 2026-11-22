@@ -215,6 +215,52 @@ services:
       web:
         condition: service_started
 
+  # Kit de conformidade do agente, só no profile conformance:
+  #   docker compose --profile conformance up --build --abort-on-container-exit   #     --exit-code-from agent-conformance agent-conformance agent-mock-conformance
+  # O agent-conformance sobe o Core falso na porta 8080 e roda o pytest contra o agente sob teste,
+  # pelos tópicos conformance.inbound e conformance.outbound.
+  agent-conformance:
+    build: ./agent_conformance
+    image: cloudesk-agent-conformance:dev
+    profiles: [conformance]
+    command: ["pytest"]
+    environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
+      CONFORMANCE_CONTEXT_SECRET: ${AGENT_CONTEXT_SECRET}
+      CONTRACTS_PATH: /contracts
+    volumes:
+      - ./agent_conformance:/app
+      - ./contracts:/contracts:ro
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+
+  # Agente sob teste do kit: mesma imagem do agent-mock, nos tópicos do kit e com o Core falso.
+  agent-mock-conformance:
+    build: ./agent_mock
+    image: cloudesk-agent-mock:dev
+    profiles: [conformance]
+    environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
+      CORE_URL: http://agent-conformance:8080
+      AGENT_CONTEXT_SECRET: ${AGENT_CONTEXT_SECRET}
+      AGENT_GROUP_ID: cloudesk-agent-conformance
+      AGENT_INBOUND_TOPIC: conformance.inbound
+      AGENT_OUTBOUND_TOPIC: conformance.outbound
+      AGENT_LATENCY_MS: "0"
+      AGENT_CONCURRENCY: ${AGENT_CONCURRENCY:-100}
+      AGENT_FAILURE_MODE: none
+      AGENT_FAILURE_RATE: ${AGENT_FAILURE_RATE:-1}
+      AGENT_FAILURE_DELAY_MS: ${AGENT_FAILURE_DELAY_MS:-0}
+      AGENT_MEMORY_WINDOW_DAYS: ${AGENT_MEMORY_WINDOW_DAYS:-30}
+      CONTRACTS_PATH: /contracts
+    volumes:
+      - ./agent_mock:/app
+      - ./contracts:/contracts:ro
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+
 volumes:
   postgres-data:
   redpanda-data:

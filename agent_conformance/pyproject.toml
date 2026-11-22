@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-conformance"
+version = "0.1.0"
+description = "Kit de conformidade do agente do Cloudesk"
+requires-python = ">=3.13"
+dependencies = ["aiokafka==0.15.0", "aiohttp==3.14.5"]
+
+[project.optional-dependencies]
+test = ["pytest==9.2.0", "pytest-asyncio==1.5.0", "jsonschema==4.26.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"

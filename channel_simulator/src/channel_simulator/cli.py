@@ -5,6 +5,8 @@
 | channel-simulator serve | Sobe os receptores dos três canais |
 | channel-simulator send | Envia mensagens sintéticas na taxa pedida |
 | channel-simulator scenario cross-channel | Um lojista das seeds escreve por WhatsApp, chat e e-mail |
+| channel-simulator scenario <cenário de demonstração> | Lojista novo, passos fixos e conferência no canal (scenarios); termina com 1 quando uma expectativa falha |
+| channel-simulator scenario memory --continue <run_id> | Parte 2 do cenário memory, com o lojista da parte 1 |
 | channel-simulator verify-whatsapp | Handshake GET do webhook do WhatsApp |
 """
 
@@ -15,7 +17,7 @@ import sys
 
 import aiohttp
 
-from . import personas, whatsapp
+from . import personas, scenarios, whatsapp
 from .config import Settings
 from .sender import SendOptions, run_cross_channel, run_send
 
@@ -60,9 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--seed", type=int, default=1)
 
     scenario = commands.add_parser("scenario", help="cenários prontos")
-    scenario.add_argument("name", choices=["cross-channel"])
+    scenario.add_argument("name", choices=["cross-channel", *scenarios.NAMES])
     scenario.add_argument("--brand", choices=["infinitepay", "jim"], default="infinitepay")
     scenario.add_argument("--seed", type=int, default=1)
+    scenario.add_argument("--continue", dest="continue_run", metavar="RUN_ID",
+                          help="parte 2 do cenário memory, com o run_id da parte 1")
 
     commands.add_parser("verify-whatsapp", help="handshake GET do webhook do WhatsApp")
     return parser
@@ -89,6 +93,12 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_verify(settings))
 
     loaded = personas.load(settings.personas_path)
+    if args.command == "scenario" and args.continue_run and args.name != "memory":
+        build_parser().error("--continue só vale com o cenário memory")
+    if args.command == "scenario" and args.name != "cross-channel":
+        return asyncio.run(
+            scenarios.run_scenario(settings, loaded, args.name, args.brand, args.seed, args.continue_run)
+        )
     if args.command == "send":
         options = SendOptions(
             channel=args.channel,

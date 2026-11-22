@@ -135,7 +135,37 @@ Rodados no contêiner com `docker compose exec channel-simulator channel-simulat
 | `serve` | nenhuma | Sobe os receptores; é o comando padrão da imagem |
 | `send` | `channel` (`whatsapp`, `chat`, `email` ou `all`), `brand` (`infinitepay`, `jim` ou `all`), `count`, `rate` (msg/s), `contacts` (`seed` ou `new`), `attachments` (fração de 0 a 1), `urgency-ratio` (fração de 0 a 1 com frase de urgência), `seed` | Envia `count` mensagens na taxa pedida, grava `sent.jsonl` e imprime o resumo por canal e status |
 | `scenario cross-channel` | `brand`, `seed` | Um lojista das seeds escreve por WhatsApp, chat e e-mail, nessa ordem, e o comando imprime o `conversation_id` |
+| `scenario <cenário de demonstração>` | `brand`, `seed`; `continue` (só no `memory`) | Lojista novo, passos com textos fixos, conferência no canal e impressão do `demo:check`; termina com código 1 quando uma expectativa no canal falha |
 | `verify-whatsapp` | nenhuma | Handshake `GET` do webhook do WhatsApp |
+
+### Cenários de demonstração
+
+Cada cenário cria um lojista novo (`personas.new_contact`, com a semente e o `run_id`, então cada execução tem lojista próprio), envia os passos pelo canal do cenário com textos fixos no locale da marca (pt-BR em `infinitepay`, en-US em `jim`) e acompanha `received.jsonl`, filtrando pelo destinatário do lojista. Cada expectativa no canal imprime uma linha `ok` ou `falhou`: o trecho esperado em cada resposta, na ordem, ou nenhuma resposta durante o silêncio do passo. No fim, o comando imprime o `bin/rails demo:check` com `SCENARIO`, `BRAND`, `CHANNEL` e `EXTERNAL_IDS`, que confere no Core o que o lojista não vê (`core/lib/tasks/demo.rake`, só leitura). Os cenários exigem o `serve` de pé e rodam com `docker compose exec`, como o `cross-channel`.
+
+| Cenário | Canal | Passos | No canal | No Core (`demo:check`) |
+| - | - | - | - | - |
+| `reply` | whatsapp | pergunta de taxas | resposta com as taxas da marca | conversa `with_ai`; um `agent.reply`; `message.delivered` |
+| `handoff` | chat | mensagem sem intenção | nenhuma resposta em 10 s | `awaiting_human` na fila de escalação da fila de origem (ou na mesma, sem ela); `Handoff` `intencao_nao_identificada` com confiança 0,2 e a explicação em `attempts`; `conversation.escalated` |
+| `reopen` | chat | taxas; agradecimento; taxas | taxas; nada em 5 s; taxas sem prefixo da memória | a conversa tem `conversation.resolved` e depois `conversation.reopened`; `with_ai`; dois `agent.reply` |
+| `memory`, parte 1 | chat | taxas; agradecimento | taxas; nada em 5 s | imprime o `memory:demo_close` da conversa e o comando da parte 2 |
+| `memory`, parte 2 | chat | taxas, com o mesmo lojista | taxas, começando com o prefixo da memória | duas conversas do lojista, a primeira `closed` e a segunda `with_ai`; `customer_memory`; `agent.reply` da segunda com o prefixo |
+| `failure-duplicate` | chat | saudação com `[falha:duplicate]` | uma resposta e nada em 10 s | um `agent.reply`; uma linha em `processed_events` para a chave |
+| `failure-stale` | chat | saudação; saudação com `[falha:stale]` | boas-vindas; mensagem de espera; nada em 50 s | SLA de 1 min; `agent.action.stale`; `conversation.escalated` `ai_timeout`; `awaiting_human` |
+| `failure-drop` | chat | saudação com `[falha:drop]` | mensagem de espera; nada em 50 s | SLA de 1 min; nenhum evento de ação do agente; mensagem `system` `ai_timeout_wait`; `conversation.escalated` `ai_timeout` |
+| `failure-delay` | chat | saudação com `[falha:delay=50000]` | mensagem de espera; boas-vindas | SLA de 1 min; espera antes do `agent.reply`; `with_ai`; nenhum `conversation.escalated` |
+
+No `handoff`, o lojista não recebe mensagem; o trabalho do analista no painel é manual. O `memory` tem duas partes: a parte 1 imprime `docker compose exec web bin/rails memory:demo_close CONVERSATION=<id>` com o `conversation_id` devolvido pelo chat e o comando da parte 2, `scenario memory --continue <run_id>`, que lê o lojista em `runs/<run_id>/scenario.json`; o `demo:check` impresso pela parte 2 leva os `EXTERNAL_IDS` das duas partes. A troca de canal fica no `cross-channel`, com lojista das seeds, porque cada lojista novo tem uma identidade por canal.
+
+Os cenários `failure-stale`, `failure-drop` e `failure-delay` dependem da varredura do timeout: as saudações não têm categoria no Core e caem na regra genérica, que precisa do SLA de 1 min. Com esse SLA, a espera sai entre 30 e 45 s (a varredura roda a cada 15 s) e a escalação entre 60 e 75 s; no `failure-delay`, o `reply` sai em cerca de 51 s, antes da escalação. Quando a espera não chega em 100 s, o comando lembra o `panel:demo_sla`, e o `demo:check` confere o SLA da conversa.
+
+```text
+docker compose exec web bin/rails panel:demo_sla BRAND=infinitepay MINUTES=1
+docker compose exec channel-simulator channel-simulator scenario failure-drop --brand infinitepay
+docker compose exec web bin/rails demo:check SCENARIO=failure-drop BRAND=infinitepay CHANNEL=chat EXTERNAL_IDS=<id>
+docker compose exec web bin/rails panel:demo_sla_reset BRAND=infinitepay
+```
+
+Cada execução grava `runs/<run_id>/sent.jsonl` e `runs/<run_id>/scenario.json` (cenário, parte, marca, canal, lojista, ids externos, `conversation_id` devolvidos pelo chat e a execução continuada).
 
 ## O que o sistema garante
 
@@ -208,6 +238,8 @@ No Core, `WHATSAPP_API_URL` é `http://channel-simulator:8080/v1`.
 | - | - |
 | `channel_simulator/src/channel_simulator/cli.py` | Comandos |
 | `channel_simulator/src/channel_simulator/sender.py` | Envio com taxa controlada e cenário entre canais |
+| `channel_simulator/src/channel_simulator/scenarios.py` | Cenários de demonstração: textos por locale, respostas esperadas e executor com a conferência no canal |
+| `core/lib/tasks/demo.rake` | Task `demo:check`, conferência dos cenários de demonstração no Core |
 | `channel_simulator/src/channel_simulator/whatsapp.py` | Payload da Cloud API, assinatura, envio, verificação e receptor |
 | `channel_simulator/src/channel_simulator/chat.py` | Envio assinado, registro de streams, leitura do Turbo Stream e cliente Action Cable |
 | `channel_simulator/src/channel_simulator/email.py` | Montagem do e-mail, envio SMTP e poller do Mailpit |
@@ -232,10 +264,12 @@ Os testes do simulador rodam no contêiner com `docker compose exec channel-simu
 | `channel_simulator/tests/test_email.py` | Montagem com e sem anexo; envio SMTP com sucesso, destinatário recusado e servidor fora do ar; poller com paginação, header ausente, id já visto, ids relidos, headers RFC 2047 e Mailpit fora do ar |
 | `channel_simulator/tests/test_sender.py` | Sorteio determinístico; `send` nos três canais; cenário entre canais; erro de montagem registrado; Core fora do ar |
 | `channel_simulator/tests/test_server.py` | Rotas, `GET /health` e streams relidos na partida |
+| `channel_simulator/tests/test_scenarios.py` | Textos e respostas nos dois locales; marcadores dos cenários de falha; executor com envio e `received.jsonl` simulados: expectativa cumprida, resposta faltando ou diferente, resposta a mais no silêncio, envio com erro, código de saída, `scenario.json`, lojista novo por execução, as duas partes do `memory` com `--continue` e o `demo:check` impresso com os `EXTERNAL_IDS` |
+| `core/spec/tasks/demo_check_spec.rb` | Cada cenário montado com os serviços reais passa e, com uma expectativa quebrada, falha; mensagem não encontrada; cenário, canal e marca desconhecidos; aviso do SLA nos cenários de timeout; a task não grava nada |
 | `core/spec/tasks/simulator_personas_spec.rb` | Marcas e canais, lojistas da própria marca com as três identidades, lojista incompleto fora e mesma saída em duas execuções |
 | `core/spec/seeds_spec.rb` | E-mails dos lojistas em ASCII |
 
-No Compose, com `web`, `jobs-default`, `mailpit` e `channel-simulator`: o `verify-whatsapp` responde 200 com o `challenge`; o `scenario cross-channel` grava três mensagens do mesmo lojista na mesma conversa; o `send` nos três canais e nas duas marcas grava uma mensagem por envio, com `message.created`, e o job de webhook para as conversas que ficaram com a IA; as respostas do Core chegam a `received.jsonl`, uma por canal, com o id da mensagem do Core; a mesma entrega repetida aparece como o mesmo `core_message_id` duas vezes; e, depois de um reinício do `channel-simulator`, os streams são inscritos de novo e os e-mails já vistos não são registrados outra vez.
+No Compose, com `web`, `jobs-default`, `mailpit` e `channel-simulator`: o `verify-whatsapp` responde 200 com o `challenge`; o `scenario cross-channel` grava três mensagens do mesmo lojista na mesma conversa; o `send` nos três canais e nas duas marcas grava uma mensagem por envio, com `message.created`, e o job de webhook para as conversas que ficaram com a IA; as respostas do Core chegam a `received.jsonl`, uma por canal, com o id da mensagem do Core; a mesma entrega repetida aparece como o mesmo `core_message_id` duas vezes; e, depois de um reinício do `channel-simulator`, os streams são inscritos de novo e os e-mails já vistos não são registrados outra vez. Com o `agent-mock` de pé, cada cenário de demonstração, nas duas marcas, termina com código 0 no simulador e no `demo:check` impresso (os de timeout com o `panel:demo_sla` de 1 min).
 
 ## Relação com as outras partes
 

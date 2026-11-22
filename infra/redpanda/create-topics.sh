@@ -14,4 +14,11 @@ rpk topic create agent.dlq -r 1 --if-not-exists -X brokers="$BROKERS"
 # O alter-config vale também para o tópico que já existe.
 rpk topic alter-config agent.inbound --set message.timestamp.type=LogAppendTime -X brokers="$BROKERS"
 
+# Tópicos do kit de conformidade do agente (profile conformance do Compose): o kit publica eventos
+# em conformance.inbound e lê as ações do agente sob teste em conformance.outbound, sem tocar nos
+# tópicos do ambiente padrão. Mesmas partições e mesmo LogAppendTime de agent.inbound.
+rpk topic create conformance.inbound -p 6 -r 1 --if-not-exists -X brokers="$BROKERS"
+rpk topic create conformance.outbound -p 6 -r 1 --if-not-exists -X brokers="$BROKERS"
+rpk topic alter-config conformance.inbound --set message.timestamp.type=LogAppendTime -X brokers="$BROKERS"
+
 rpk topic list -X brokers="$BROKERS"

@@ -162,3 +162,42 @@ def test_configuracao_do_ambiente():
 def test_locale_invalido():
     with pytest.raises(ValueError):
         parse_locales("a:fr-FR")
+
+
+class StopRun(Exception):
+    pass
+
+
+async def test_runner_assina_e_publica_nos_topicos_de_settings(monkeypatch):
+    from agent_mock import runner as runner_module
+
+    subscribed, sent = [], []
+
+    class FakeConsumer:
+        def __init__(self, **_options):
+            pass
+
+        def subscribe(self, topics, listener=None):
+            subscribed.extend(topics)
+
+    class FakeProducer:
+        def __init__(self, **_options):
+            pass
+
+        async def start(self):
+            raise StopRun
+
+        async def send_and_wait(self, topic, value=None, key=None, headers=None):
+            sent.append(topic)
+
+    monkeypatch.setattr(runner_module, "AIOKafkaConsumer", FakeConsumer)
+    monkeypatch.setattr(runner_module, "AIOKafkaProducer", FakeProducer)
+    settings = Settings(inbound_topic="conformance.inbound", outbound_topic="conformance.outbound")
+    runner = runner_module.Runner(settings)
+
+    with pytest.raises(StopRun):
+        await runner.run()
+    await runner.publish(b"k", b"v", [])
+
+    assert subscribed == ["conformance.inbound"]
+    assert sent == ["conformance.outbound"]
