@@ -68,6 +68,19 @@ def test_campos_da_acao():
     }
 
 
+def test_model_entra_na_acao_quando_informado(action_validator):
+    body = event_body(text="Obrigado!")
+    event = events.parse(record(body))
+    generated = action.build(event, decision.decide(event, context_for(body), "pt-BR"), traceparent=TRACEPARENT,
+                             consumed_at="2026-11-13T14:02:11.560Z", published_at="2026-11-13T14:02:11.905Z",
+                             model=action.model(500))
+
+    assert generated["model"]["name"] == "agent-mock"
+    assert generated["model"]["version"]
+    assert generated["model"]["parameters"] == {"artificial_latency_ms": 500}
+    assert [error.message for error in action_validator.iter_errors(generated)] == []
+
+
 def test_headers_seguem_o_schema():
     validator = schema_validator("kafka.outbound-headers")
 

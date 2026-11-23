@@ -35,6 +35,7 @@ Rails.application.routes.draw do
     get "queue", to: "queues#show", as: :queue
     post "assignments", to: "assignments#create", as: :assignments
     get "conversations/:id", to: "conversations#show", as: :conversation
+    get "conversations/:conversation_id/messages/:message_id/timeline", to: "timelines#show", as: :message_timeline
     post "conversations/:conversation_id/replies", to: "replies#create", as: :conversation_replies
     post "conversations/:conversation_id/resolution", to: "resolutions#create", as: :conversation_resolution
     post "handoffs/:handoff_id/rating", to: "handoff_ratings#create", as: :handoff_rating

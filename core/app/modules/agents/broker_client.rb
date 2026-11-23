@@ -45,7 +45,13 @@ module Agents
       return response if status.between?(200, 299)
       raise WebhookError::Transient, "Broker respondeu #{status}" if status >= 500 || TRANSIENT_STATUSES.include?(status)
 
-      raise WebhookError::Permanent, "Broker recusou o webhook com #{status}: #{response.body.to_s.truncate(500)}"
+      raise WebhookError::Permanent, "Broker recusou o webhook com #{status}: #{utf8(response.body).truncate(500)}"
+    end
+
+    # O Net::HTTP entrega o corpo em ASCII-8BIT. A mensagem do erro vai para a fila de falhas do Solid
+    # Queue, que a serializa em JSON: o corpo passa a UTF-8, com os bytes inválidos substituídos.
+    def utf8(body)
+      body.to_s.dup.force_encoding(Encoding::UTF_8).scrub
     end
   end
 end

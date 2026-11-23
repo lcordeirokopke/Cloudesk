@@ -159,9 +159,26 @@ flowchart LR
 
     JD ==>|"WhatsApp: POST"| SIM
     JD ==>|"e-mail: SMTP"| MP
+
+    subgraph OBS["Observabilidade"]
+        MET["metrics<br/>Puma, coleta a cada 5 s"]
+        PEX["postgres-exporter"]
+        PROM["Prometheus"]
+        GRAF["Grafana<br/>dashboards e alertas"]
+    end
+
+    MET -.->|"lê audit_events<br/>e solid_queue_*"| PG
+    PEX -.->|"pg_monitor"| PG
+    PROM -.->|"/metrics"| MET
+    PROM -.->|"/metrics"| BW
+    PROM -.->|"/public_metrics"| RP
+    PROM -.-> PEX
+    GRAF -.-> PROM
 ```
 
 Os processos `broker-web` e `broker-consumer` não têm seta para o PostgreSQL: o Broker não acessa o banco e fala com o Core somente por HTTP. O chat chega ao lojista por Turbo Stream, pelo Solid Cable, no WebSocket que o `web` mantém com o navegador.
+
+A observabilidade fica em cinco serviços. O `metrics` (mesma imagem do Core) lê `audit_events` e as tabelas do Solid Queue e expõe as métricas de latência e do cockpit em `/metrics`, só na rede do Compose. O `postgres-exporter` lê as estatísticas do Postgres com o papel `cloudesk_monitor`, criado pelo `postgres-monitor-init`, que roda e termina a cada subida. O Prometheus (`localhost:9090`) coleta o `metrics`, o `broker-web`, o Redpanda e o `postgres-exporter`, e o Grafana (`localhost:3002`) mostra os dashboards e avalia os alertas. O detalhamento está em "Observabilidade".
 
 Fora do ambiente padrão, o profile `conformance` do Compose sobe o kit de conformidade do agente: `agent-conformance` (o kit, com o Core falso) e `agent-mock-conformance` (o agente sob teste, mesma imagem do `agent-mock`), nos tópicos `conformance.inbound` e `conformance.outbound`. Os dois não aparecem no diagrama e não sobem com `docker compose up` sem o profile.
 
@@ -266,8 +283,9 @@ O monólito é um único código que roda em processos distintos, cada um escala
 | `broker-web` | Puma com o endpoint Rack do Broker | volume de webhooks vindos do Core |
 | `broker-consumer` | `karafka server` | número de partições de `agent.outbound` |
 | `agent-mock` | `agent-mock run`, consumidor Python no grupo `cloudesk-agent` | número de partições de `agent.inbound` |
+| `metrics` | Puma com o app Rack de métricas (`bundle exec puma -C config/puma_metrics.rb metrics.ru`), porta 9394 só na rede do Compose | não escala: uma réplica, porque o cursor das latências fica na memória do processo |
 
-Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-webhooks`, `jobs-default`, `broker-web`, `broker-consumer`, `agent-mock`, simulador de canais, Prometheus e Grafana. O k6 roda só durante o experimento.
+Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-webhooks`, `jobs-default`, `broker-web`, `broker-consumer`, `agent-mock`, simulador de canais, `metrics`, `postgres-exporter`, Prometheus e Grafana, mais os que rodam e terminam a cada subida: `redpanda-init` e `postgres-monitor-init`. O k6 roda só durante o experimento.
 
 #### Filas de jobs e tarefas recorrentes
 
@@ -483,7 +501,7 @@ flowchart TB
     AT ==>|"human"| HU["awaiting_human, sem atendente<br/>conversation.routed, painel atualizado"]
 ```
 
-O `categorize` do agente leva a conversa de `with_ai` a `triage` e a roteia de novo com a categoria informada. O detalhamento da triagem, do roteamento e da distribuição está em `documents/fases/07-triagem-roteamento-e-distribuicao.md`.
+O `categorize` do agente leva a conversa de `with_ai` a `triage` e a roteia de novo com a categoria informada. O detalhamento da triagem, do roteamento e da distribuição está em `documents/fases/07-triagem-roteamento-e-distribuicao.md`. O detalhamento do admin está em `documents/fases/14-admin-de-filas-e-regras.md`.
 
 ### Contrato com o agente (webhooks + Kafka)
 
@@ -774,6 +792,7 @@ O job só avisa que algo mudou; ele não lê o domínio. Cada tela busca de novo
 - `traceparent` (W3C) propagado em headers HTTP e Kafka, ligando cada salto da mensagem.
 - **Linha do tempo por mensagem:** cada salto carimba seu horário e o repassa adiante. O Broker registra o recebimento do webhook no header da mensagem, e o timestamp do registro Kafka marca a gravação no tópico; o agente devolve esses dois carimbos e os seus próprios (consumo, ferramentas, publicação) na ação. O Core grava tudo no `audit_event` da ação.
 - **Evento próprio de cada ação:** cada ação aceita grava `agent.reply`, `agent.escalate`, `agent.categorize` ou `agent.resolve`, com o corpo completo da ação (ferramentas, `model`, carimbos), a `Idempotency-Key` e o `received_at` do Core; os eventos de domínio da ação são gravados à parte, na mesma transação. As recusas gravam `agent.action.stale` e `agent.action.rejected`. O painel monta a linha do tempo canal → Core → Broker → Kafka → agente → Broker → cliente a partir de `audit_events` e `trace_id`, sem serviço de tracing externo.
+- **Página da linha do tempo:** cada mensagem do lojista no histórico da conversa tem o link "Linha do tempo" (`/panel/conversations/:conversation_id/messages/:message_id/timeline`). A página (`Conversations::MessageTimeline`, só leitura) mostra os saltos com o horário em milissegundos, a duração desde o anterior e o total desde a entrada; uma linha por ferramenta do agente; a latência artificial informada pelo agente; cada ação sobre a mensagem, aceita ou recusada; a entrega da resposta da IA; e todos os eventos do mesmo `trace_id`. Sem ação do agente, a página para no recebimento e mostra os eventos do trace, como a escalação ou o `webhook.skipped`.
 
 Toda escrita de domínio passa por `Audit::Command`, que junta, na mesma transação, a mudança, o registro de auditoria e os jobs que dependem dela:
 
@@ -799,6 +818,67 @@ flowchart LR
     D ==> E["received_at da ação<br/>Core recebe a ação"]
     E ==> F["message.delivered<br/>entrega no canal"]
 ```
+
+### Observabilidade
+
+A coleta é híbrida e nenhum caminho quente do Core é instrumentado:
+
+- **Entrada → Kafka (H2):** o `broker-web` observa, logo depois da confirmação do Kafka, o tempo desde o `received_at` do corpo do webhook, que é o recebimento HTTP no Core, e expõe o histograma no próprio `/metrics`.
+- **Saltos, ponta a ponta e cockpit:** o serviço `metrics` (`Observability`, sétimo namespace de `core/app/modules/`) lê os carimbos já gravados em `audit_events`, as tabelas do Solid Queue e o domínio, a cada 5 s, numa thread de fundo; o `GET /metrics` só serializa o registro.
+- **Lag do Kafka:** métricas nativas do Redpanda, `redpanda_kafka_consumer_group_lag_sum` e `_max` por grupo (`redpanda_group`), em `redpanda:9644/public_metrics`. O `redpanda-init` liga o cálculo (`enable_consumer_group_metrics` com `consumer_lag`) a cada 15 s.
+- **Postgres:** o `postgres_exporter` conecta com o papel `cloudesk_monitor`, membro de `pg_monitor` e sem acesso às tabelas de domínio. O papel é de cluster, fica fora do `db/structure.sql` e é criado ou atualizado pelo `postgres-monitor-init` com o superusuário, a cada subida.
+
+```mermaid
+flowchart LR
+    BW["broker-web<br/>histograma entrada → Kafka"] --> PROM["Prometheus<br/>a cada 5 s"]
+    AE[("audit_events<br/>solid_queue_*<br/>conversas e handoffs")] --> MET["metrics<br/>LatencyReader, QueueReader,<br/>CockpitReader"]
+    MET --> PROM
+    RP["Redpanda<br/>lag por grupo"] --> PROM
+    PEX["postgres-exporter<br/>TPS e conexões"] --> PROM
+    PROM --> GR["Grafana<br/>dois dashboards e seis alertas"]
+```
+
+**Saltos.** Para cada primeira entrega de uma resposta da IA (`message.delivered` de mensagem `ai`), o `metrics` acha a mensagem do lojista respondida (`in_reply_to_sequence`), o `message.created` dela e o `agent.reply` do mesmo `trace_id` cujo `inbound_event_id` é o `event_id` desse `message.created`:
+
+| `hop` | Cálculo |
+| - | - |
+| `core_to_broker` | `broker_received_at` menos o `received_at` do `message.created` do lojista, com a espera na fila `webhooks` |
+| `broker_to_kafka` | `kafka_appended_at` menos `broker_received_at` |
+| `kafka_to_agent` | `agent_consumed_at` menos `kafka_appended_at` |
+| `agent` | `agent_published_at` menos `agent_consumed_at`, com a latência artificial |
+| `agent_to_core` | `received_at` do `agent.reply` menos `agent_published_at` |
+| `core_to_channel` | `delivered_at` menos o `received_at` do `agent.reply`, com a fila `channels` |
+
+A ponta a ponta bruta vai do `received_at` da mensagem do lojista ao `delivered_at` da resposta da IA. A descontada subtrai a latência artificial que o agente informa em `model.parameters.artificial_latency_ms`, a efetivamente aplicada na ação; sem `model`, só a bruta é observada. Respostas do sistema e do analista ficam fora. Um valor negativo, por diferença de relógio, é observado como 0 e registrado em log.
+
+**Cursor.** O `metrics` lê `audit_events` por cursor, um por marca, em `Tenancy.with_brand`, e não grava nada. O cursor começa no boot, sem leitura retroativa, e só lê eventos criados há mais de 10 s: o `id` UUID v7 é gerado na inserção, e uma transação com `id` menor pode confirmar depois de outra com `id` maior. Por isso a latência aparece no Prometheus cerca de 10 s depois da entrega. O serviço roda com uma réplica, e ao reiniciar perde as contagens dos histogramas e o cursor e volta a contar do zero. A análise do experimento lê `audit_events` direto para os valores exatos.
+
+**Métricas.** Os histogramas de latência usam os buckets `0,005`, `0,01`, `0,025`, `0,05`, `0,1`, `0,2`, `0,3`, `0,5`, `0,75`, `1`, `1,5`, `2,5`, `5`, `10`, `30` e `60` s, com as fronteiras das metas (0,3 s e 1 s).
+
+| Métrica | Tipo | Labels | Origem |
+| - | - | - | - |
+| `cloudesk_broker_inbound_latency_seconds` | histogram | `brand` | `broker-web`, só nas respostas `200` |
+| `cloudesk_broker_webhooks_total` | counter | `status` | `broker-web` |
+| `cloudesk_hop_latency_seconds` | histogram | `hop`, `channel` | `metrics` |
+| `cloudesk_end_to_end_latency_seconds` | histogram | `channel` | `metrics`, descontada a latência artificial |
+| `cloudesk_end_to_end_raw_latency_seconds` | histogram | `channel` | `metrics`, sem desconto |
+| `cloudesk_solid_queue_jobs` | gauge | `queue`, `state` (`ready`, `scheduled`, `claimed`) | `metrics` |
+| `cloudesk_solid_queue_oldest_ready_age_seconds` | gauge | `queue` | `metrics` |
+| `cloudesk_solid_queue_failed_jobs` | gauge | `class` | `metrics` |
+| `cloudesk_solid_queue_failed_oldest_age_seconds` | gauge | `class` | `metrics` |
+| `cloudesk_conversations_open` | gauge | `brand`, `queue`, `state` | `metrics` |
+| `cloudesk_conversations_sla` | gauge | `brand`, `queue`, `level` (`at_risk`, `breached`) | `metrics` |
+| `cloudesk_conversations_resolved_24h` | gauge | `brand` | `metrics` |
+| `cloudesk_conversations_resolved_by_ai_24h` | gauge | `brand` | `metrics` |
+| `cloudesk_handoffs_24h` | gauge | `brand`, `reason` | `metrics` |
+| `cloudesk_metrics_collect_duration_seconds` | gauge | `reader` | `metrics` |
+| `cloudesk_metrics_collect_errors_total` | counter | `reader` | `metrics` |
+
+Os gauges são substituídos inteiros a cada coleta: a série que some volta a 0.
+
+**Dashboards e alertas.** O Grafana tem a pasta "Cloudesk", provisionada por arquivo, com dois dashboards: "Cloudesk - Saltos e experimento" (H2, H4, p95 por salto, taxas, Solid Queue, lag, Postgres e saúde da coleta) e "Cloudesk - Cockpit operacional" (diferencial 2), que é a página inicial. Os seis alertas aparecem só na interface do Grafana, sem notificação externa, e não disparam sem dado; a lista está em "Diferenciais". O acesso anônimo é só de leitura; o administrador usa `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD`. O `/metrics` não tem autenticação e só é alcançável na rede do Compose, exceto o do `broker-web`, que sai pela porta 3001 do host.
+
+O detalhamento está em `documents/fases/15-observabilidade.md`.
 
 ### Memória e contexto
 
@@ -831,7 +911,7 @@ O detalhamento está em `documents/fases/13-memoria-e-contexto.md`.
 - **Canais:** WhatsApp com payloads no formato da Cloud API da Meta; e-mail via Mailpit (SMTP local); chat in-app como widget web. Cada marca tem números de WhatsApp e e-mails de suporte próprios, na tabela `brand_channels`, e o chat leva a marca na URL.
 - **Entrada do e-mail:** o webhook do Mailpit avisa o Core de cada e-mail recebido; o Core baixa o original pela API do Mailpit e cria o `InboundEmail` do Action Mailbox só quando o e-mail é endereçado a um e-mail de suporte de uma marca. Um job recorrente busca no Mailpit os e-mails sem tag e recupera o que o webhook perde. A resposta sai por SMTP para o Mailpit. O detalhamento está em `documents/fases/05-canais-de-entrada-e-identidade.md`.
 - **Simulador de canais:** envia mensagens sintéticas nos três formatos e recebe as respostas de saída, registrando cada uma para a reconciliação. Os cenários de demonstração (`reply`, `handoff`, `reopen`, `memory`, `failure-duplicate`, `failure-stale`, `failure-drop`, `failure-delay`) usam um lojista novo e textos fixos, conferem o que chega ao canal e imprimem o `bin/rails demo:check`, task só de leitura que confere no Core o estado da conversa, o handoff e os eventos de auditoria. O detalhamento está em `documents/fases/06-simulador-de-canais.md`.
-- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Quando a memória do lojista no contexto tem conversa do mesmo assunto resolvida até `AGENT_MEMORY_WINDOW_DAYS` dias (padrão 30) antes do `received_at` do evento, o `reply` das intenções de transação, repasse, taxas e maquininha começa com um prefixo que cita o assunto e a data dela; a referência é o horário do evento, e a mesma entrada continua gerando a mesma ação. A confiança do `escalate` sai de uma regra: base por motivo, menos 0,15 quando falta a data do repasse e menos 0,1 quando a memória tem conversa do mesmo assunto na janela, com a explicação na última linha de `attempts`. Modos de falha por configuração e por marcador no texto (`[falha:<modo>]`, que escolhe a conversa e sai do texto antes da decisão; ver Diferenciais). Os tópicos são configuráveis (`AGENT_INBOUND_TOPIC`, `AGENT_OUTBOUND_TOPIC`), o que permite rodar o agente no kit de conformidade. O detalhamento está em `documents/fases/11-agente-mock.md`.
+- **Agente mock:** consumidor Python de `agent.inbound`, sem estado, que publica uma ação por evento (`reply`, `escalate` ou `resolve`) em `agent.outbound`. A intenção sai de uma tabela de palavras-chave por locale; as ferramentas falsas (`consultar_transacao`, `consultar_repasse`, `consultar_taxas`, `status_maquininha`) devolvem um retorno derivado do SHA-256 da entrada, então a mesma mensagem gera sempre a mesma ação. Antes de decidir, o agente lê o contexto na `context_url` e descarta o evento quando o contexto tem mensagem do lojista mais nova ou a conversa não está em `with_ai`. A latência artificial é fixa (`AGENT_LATENCY_MS`) e entra antes da publicação; a ação informa em `model` (`name` `agent-mock`, `version` do pacote) o valor aplicado em `parameters.artificial_latency_ms`, somado ao atraso do modo `delay` quando ele vale para o evento, e o Core o desconta da latência ponta a ponta. Os eventos de uma conversa são processados em série e os de conversas diferentes em paralelo, até `AGENT_CONCURRENCY` por processo. Quando a memória do lojista no contexto tem conversa do mesmo assunto resolvida até `AGENT_MEMORY_WINDOW_DAYS` dias (padrão 30) antes do `received_at` do evento, o `reply` das intenções de transação, repasse, taxas e maquininha começa com um prefixo que cita o assunto e a data dela; a referência é o horário do evento, e a mesma entrada continua gerando a mesma ação. A confiança do `escalate` sai de uma regra: base por motivo, menos 0,15 quando falta a data do repasse e menos 0,1 quando a memória tem conversa do mesmo assunto na janela, com a explicação na última linha de `attempts`. Modos de falha por configuração e por marcador no texto (`[falha:<modo>]`, que escolhe a conversa e sai do texto antes da decisão; ver Diferenciais). Os tópicos são configuráveis (`AGENT_INBOUND_TOPIC`, `AGENT_OUTBOUND_TOPIC`), o que permite rodar o agente no kit de conformidade. O detalhamento está em `documents/fases/11-agente-mock.md`.
 - **Dados sintéticos:** lojistas, transações e conversas gerados com seeds fixas (Faker pt\_BR e en\_US), sem nenhum dado real. Rodar as seeds de novo no mesmo banco não duplica registros.
 
 Caminho do e-mail até o `Conversations::Intake`:
@@ -949,7 +1029,10 @@ A H4 mede a latência que o lojista percebe; a H2 mede só o trecho interno até
 - **Carga:** k6 chama diretamente os endpoints de entrada de WhatsApp e chat, em degraus de 1×, 3×, 10× e 30× a média. O e-mail é coberto por teste funcional, fora da carga.
 - **Falhas:** `docker restart` no `broker-web` e no `broker-consumer` e `docker kill` em um worker `jobs-webhooks` em instantes definidos do teste.
 - **Reconciliação:** cada mensagem enviada tem identificador único; o simulador de canais recebe as respostas de saída e as registra. Perdida é a mensagem do lojista sem ação aceita que a cubra (ver "Ação sobre contexto desatualizado"); duplicada é a resposta entregue mais de uma vez ao canal.
-- **Métricas:** Prometheus coleta latência por salto, profundidade do Solid Queue, TPS e conexões do Postgres e lag de consumo do Kafka.
+- **Métricas:** Prometheus coleta latência por salto, profundidade do Solid Queue, TPS e conexões do Postgres e lag de consumo do Kafka. Cada hipótese tem a sua leitura, no dashboard "Cloudesk - Saltos e experimento":
+  - H1: `cloudesk_solid_queue_jobs` e `cloudesk_solid_queue_oldest_ready_age_seconds` por fila e `redpanda_kafka_consumer_group_lag_sum` dos grupos `cloudesk-agent` e `cloudesk-broker`, que não podem crescer ao longo do degrau;
+  - H2: p95 de `cloudesk_broker_inbound_latency_seconds`, do `received_at` no Core à confirmação do Kafka no `broker-web`;
+  - H4: p95 de `cloudesk_end_to_end_latency_seconds` por canal, descontada a latência artificial do agente, ao lado da bruta (`cloudesk_end_to_end_raw_latency_seconds`) e do p95 por salto (`cloudesk_hop_latency_seconds`).
 - **Análise:** pandas e Plotly, com as condições de cada execução registradas.
 
 Onde a carga entra, onde as falhas são injetadas e onde a reconciliação acontece:
@@ -1008,7 +1091,27 @@ O handoff chega como cartão na tela da conversa: problema em uma frase, o que a
 
 **2. Cockpit operacional em tempo real**
 
-Dashboard Grafana com profundidade por fila, casos em risco de SLA, taxa de contenção da IA, motivos de escalação (Pareto), lag do Kafka, backlog do Solid Queue e alertas.
+Dashboard Grafana "Cloudesk - Cockpit operacional", página inicial do Grafana, filtrado por marca, com profundidade por fila, casos em risco de SLA, taxa de contenção da IA, motivos de escalação (Pareto), lag do Kafka, backlog e fila de falhas do Solid Queue e alertas. Os indicadores vêm do serviço `metrics` (ver "Observabilidade"):
+
+| Indicador | Definição |
+| - | - |
+| Profundidade por fila | Conversas em `with_ai` e `awaiting_human` por fila (`cloudesk_conversations_open`, que também conta `with_human`) |
+| Casos em risco de SLA | Fração do SLA consumida: em `with_ai`, desde a última mensagem do lojista sem mensagem da IA depois dela; em `awaiting_human`, desde `queued_at`. `at_risk` de 50% até menos de 100%, `breached` a partir de 100% |
+| Contenção da IA (24 h) | Entre os `conversation.resolved` das últimas 24 h, a fração com ator `ai` e sem handoff da conversa criado antes do evento |
+| Pareto de motivos | `handoffs.reason` das últimas 24 h, do maior para o menor, com o percentual acumulado |
+| Lag do Kafka | Lag dos grupos `cloudesk-agent` e `cloudesk-broker`, nativo do Redpanda |
+| Backlog e fila de falhas | Jobs prontos por fila do Solid Queue e jobs na fila de falhas por classe |
+
+| Alerta | Condição | Pendente por |
+| - | - | - |
+| Job na fila de falhas há mais de 2 min | job mais antigo da fila de falhas com mais de 120 s | 0 s |
+| Lag do Kafka alto | lag de `cloudesk-agent` ou `cloudesk-broker` acima de 1000 | 2 min |
+| Backlog do Solid Queue alto | prontos em `webhooks` ou `channels` acima de 1000 | 2 min |
+| p95 entrada → Kafka acima da meta | p95 em 5 min acima de 0,3 s | 5 min |
+| p95 ponta a ponta acima da meta | p95 descontado em 5 min acima de 1 s | 5 min |
+| Casos em risco de SLA | alguma conversa `at_risk` ou `breached` | 1 min |
+
+Os limites ficam no arquivo de provisionamento dos alertas; sem dado, o alerta fica normal.
 
 **3. "Por que caiu aqui?"**
 

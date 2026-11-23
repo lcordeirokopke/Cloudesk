@@ -7,7 +7,7 @@ O Broker é a ponte entre o Core e o Kafka, nos dois sentidos. Ele roda em dois 
 - **`broker-web`** recebe o webhook `message.created` do Core e publica o evento em `agent.inbound`, onde o agente o consome;
 - **`broker-consumer`** consome as ações do agente em `agent.outbound` e as entrega à API de ações do Core.
 
-O Broker não acessa o banco e não guarda estado. Ele fala com o Core somente por HTTP assinado e com o agente somente pelo Kafka. O código fica em `core/lib/broker/` e roda sem Rails: carrega só o contrato (`core/lib/contract/`), o contexto de trace (`core/lib/trace_context.rb`), o Karafka e o WaterDrop.
+O Broker não acessa o banco e não guarda estado. Ele fala com o Core somente por HTTP assinado e com o agente somente pelo Kafka. O código fica em `core/lib/broker/` e roda sem Rails: carrega só o contrato (`core/lib/contract/`), o contexto de trace (`core/lib/trace_context.rb`), o Karafka, o WaterDrop e o cliente do Prometheus (gem `prometheus-client`).
 
 ## Onde fica no fluxo
 
@@ -66,7 +66,7 @@ Os headers são conferidos pelo schema `kafka.inbound-headers` antes da publica�
 | `503` | `kafka_unavailable` | O Kafka não confirmou a publicação |
 | `404`, `405` | `not_found`, `method_not_allowed` | Fora da rota ou do método |
 
-Os erros seguem o formato das respostas da API do Core: `status`, `error` e `message`. `GET /up` responde `200` e serve de healthcheck do contêiner.
+Os erros seguem o formato das respostas da API do Core: `status`, `error` e `message`. `GET /up` responde `200` e serve de healthcheck do contêiner. `GET /metrics` serve, no formato de texto do Prometheus, a latência entrada → Kafka e a contagem das respostas do webhook por código (`Broker::Metrics`); o detalhamento está em `documents/fases/15-observabilidade.md`.
 
 Para o Core, o `503` é transitório e o job reenvia com backoff; o `401` e o `422` são permanentes e levam o job à fila de falhas (`Agents::BrokerClient`).
 

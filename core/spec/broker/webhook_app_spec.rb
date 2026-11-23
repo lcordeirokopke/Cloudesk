@@ -10,7 +10,8 @@ RSpec.describe Broker::WebhookApp, broker: true do
       config.logger = Logger.new(IO::NULL)
     end
   end
-  let(:app) { described_class.new(producer: producer, logger: Logger.new(IO::NULL)) }
+  let(:metrics) { Broker::Metrics.new }
+  let(:app) { described_class.new(producer: producer, logger: Logger.new(IO::NULL), metrics: metrics) }
   let(:path) { "/webhooks/message-created" }
   let(:body) { contract_example("webhook.message-created", "whatsapp-infinitepay") }
   let(:event) { JSON.parse(body) }
@@ -33,6 +34,18 @@ RSpec.describe Broker::WebhookApp, broker: true do
 
   def response_json
     JSON.parse(last_response.body)
+  end
+
+  def webhooks_count(status)
+    metrics.webhooks.get(labels: { status: status.to_s })
+  end
+
+  def latency_observations(brand)
+    metrics.inbound_latency.get(labels: { brand: brand }).fetch("+Inf")
+  end
+
+  def latency_sum(brand)
+    metrics.inbound_latency.get(labels: { brand: brand }).fetch("sum")
   end
 
   describe "POST /webhooks/message-created" do
@@ -146,6 +159,45 @@ RSpec.describe Broker::WebhookApp, broker: true do
 
       expect(last_response.status).to eq(405)
       expect(last_response.headers["allow"]).to eq("POST")
+    end
+  end
+
+  describe "métricas" do
+    it "observa a latência entrada → Kafka com a marca e conta a resposta 200" do
+      acked_at = Time.iso8601(event.fetch("received_at")) + 0.25
+      allow(Time).to receive(:now).and_return(acked_at)
+
+      signed_post(body: body, now: acked_at)
+
+      expect(last_response.status).to eq(200)
+      expect(latency_observations(event.fetch("brand"))).to eq(1.0)
+      expect(latency_sum(event.fetch("brand"))).to be_within(0.0005).of(0.25)
+      expect(webhooks_count(200)).to eq(1.0)
+    end
+
+    it "conta 401, 422 e 503 sem observar latência" do
+      signed_post(body: body, secret: "outro-segredo")
+      signed_post(body: "{nao e json")
+      allow(producer).to receive(:produce_sync).and_raise(WaterDrop::Errors::ProduceError, "msg_timed_out")
+      signed_post(body: body)
+
+      expect([ webhooks_count(401), webhooks_count(422), webhooks_count(503) ]).to eq([ 1.0, 1.0, 1.0 ])
+      expect(webhooks_count(200)).to eq(0.0)
+      expect(latency_observations(event.fetch("brand"))).to eq(0.0)
+    end
+
+    it "GET /metrics responde 200 no formato de texto do Prometheus" do
+      signed_post(body: body)
+
+      get "/metrics"
+
+      expect(last_response.status).to eq(200)
+      expect(last_response.headers["content-type"]).to eq("text/plain; version=0.0.4")
+      expect(last_response.body).to include(
+        "# TYPE cloudesk_broker_inbound_latency_seconds histogram",
+        %(cloudesk_broker_inbound_latency_seconds_bucket{brand="#{event.fetch('brand')}",le="0.3"}),
+        %(cloudesk_broker_webhooks_total{status="200"} 1.0)
+      )
     end
   end
 

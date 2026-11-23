@@ -479,3 +479,72 @@ async def test_drop_do_marcador_no_log(capsys):
 
     line = [line for line in process_lines(capsys) if line.get("result")][-1]
     assert (line["result"], line["failure"], line["failure_source"]) == (logs.FAILURE_DROP, "drop", "marker")
+
+
+def artificial_latency(published_action):
+    return published_action["model"]["parameters"]["artificial_latency_ms"]
+
+
+async def test_acao_leva_o_model_com_a_latencia_artificial(action_validator):
+    import importlib.metadata
+
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(latency_ms=250))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert outcome.action["model"] == {"name": "agent-mock", "version": importlib.metadata.version("agent-mock"),
+                                       "parameters": {"artificial_latency_ms": 250}}
+    assert action_validator.is_valid(outcome.action)
+
+
+async def test_model_sem_latencia_artificial_leva_zero():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert artificial_latency(outcome.action) == 0
+
+
+async def test_model_soma_o_atraso_do_modo_delay_da_configuracao(action_validator):
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(latency_ms=250, failure_mode="delay", failure_delay_ms=1000))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert artificial_latency(outcome.action) == 1250
+    assert action_validator.is_valid(outcome.action)
+
+
+async def test_model_soma_o_atraso_do_marcador_delay():
+    with_value = event_body(text=f"{GREETING} [falha:delay=50000]")
+    without_value = event_body(text=f"{GREETING} [falha:delay]")
+    settings = Settings(latency_ms=250, failure_delay_ms=1000)
+
+    by_value = await Harness(context_for(with_value), settings=settings).processor.handle(record(with_value))
+    by_config = await Harness(context_for(without_value), settings=settings).processor.handle(record(without_value))
+
+    assert artificial_latency(by_value.action) == 50250
+    assert artificial_latency(by_config.action) == 1250
+
+
+async def test_model_do_evento_fora_do_modo_delay_nao_soma_o_atraso():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(latency_ms=250, failure_mode="delay", failure_delay_ms=1000,
+                                                           failure_rate=0))
+
+    outcome = await harness.processor.handle(record(body))
+
+    assert artificial_latency(outcome.action) == 250
+
+
+async def test_acao_duplicada_leva_o_mesmo_model():
+    body = event_body(text=TEXT)
+    harness = Harness(context_for(body), settings=Settings(latency_ms=250, failure_mode="duplicate"))
+
+    await harness.processor.handle(record(body))
+
+    first, second = (value for _, value, _ in harness.published)
+    assert first["model"] == second["model"]
+    assert artificial_latency(first) == 250

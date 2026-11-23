@@ -1,0 +1,11 @@
+# Dashboards do Cloudesk, lidos de /var/lib/grafana/dashboards, na pasta Cloudesk.
+apiVersion: 1
+
+providers:
+  - name: cloudesk
+    folder: Cloudesk
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

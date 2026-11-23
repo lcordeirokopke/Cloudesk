@@ -1,0 +1,4 @@
+# Provisionamento de plugins do Grafana: nenhum plugin de app. O Grafana lê esta pasta na subida.
+apiVersion: 1
+
+apps: []

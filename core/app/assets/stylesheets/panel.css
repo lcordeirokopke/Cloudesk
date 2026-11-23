@@ -149,3 +149,12 @@
 .panel-previous { border-top: 1px solid var(--cw-border); padding: 0.75rem 0; }
 .panel-previous summary { cursor: pointer; font-variant-numeric: tabular-nums; }
 .panel-previous .panel-message { margin-top: 0.5rem; }
+
+/* Linha do tempo da mensagem: horários e durações em fonte mono com números tabulares. */
+
+.panel-message__timeline { color: var(--cw-text-muted); }
+.panel-timeline__time, .panel-timeline__duration {
+  font: 400 0.875rem/1.4 var(--cw-font-mono);
+  white-space: nowrap;
+}
+.panel-timeline__duration { text-align: right; }

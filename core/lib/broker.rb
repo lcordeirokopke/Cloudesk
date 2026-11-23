@@ -1,7 +1,7 @@
 # Carregador do Broker: o broker-web (core/broker.ru) e o broker-consumer (core/karafka.rb) entram
 # por aqui. O Broker roda sem Rails e sem banco: carrega só o contrato (lib/contract/), o contexto de
 # trace (lib/trace_context.rb), a serialização JSON do Active Support usada por Contract::Schemas,
-# o Karafka e o WaterDrop. Fala com o Core somente por HTTP.
+# o Karafka, o WaterDrop e o cliente do Prometheus. Fala com o Core somente por HTTP.
 # Este arquivo e a pasta lib/broker/ ficam fora do autoload do Core (config/application.rb).
 
 # Sem esta chave, o require "karafka" faz require "rails", e o CLI do Karafka carrega
@@ -17,6 +17,8 @@ require "active_support"
 require "active_support/core_ext/object/json"
 require "rack"
 require "karafka"
+require "prometheus/client"
+require "prometheus/client/formats/text"
 
 require_relative "trace_context"
 require_relative "contract/schemas"
@@ -25,6 +27,7 @@ require_relative "contract/idempotency_key"
 
 require_relative "broker/settings"
 require_relative "broker/producer"
+require_relative "broker/metrics"
 require_relative "broker/webhook_app"
 require_relative "broker/core_client"
 require_relative "broker/dead_letter"

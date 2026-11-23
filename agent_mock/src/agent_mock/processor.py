@@ -11,7 +11,8 @@
    AGENT_MEMORY_WINDOW_DAYS (decision).
 7. Espera AGENT_LATENCY_MS, carimba agent_published_at e publica no tópico de saída com a chave
    conversation_id e os headers brand e traceparent, aguardando a confirmação do Kafka. Falha na
-   publicação: nova tentativa com a mesma pausa do contexto, com novo agent_published_at.
+   publicação: nova tentativa com a mesma pausa do contexto, com novo agent_published_at. A ação
+   leva em model.parameters.artificial_latency_ms a latência artificial aplicada (action.model).
 
 Modo de falha, depois da decisão: com marcador no texto, o modo do marcador, sempre; sem marcador,
 AGENT_FAILURE_MODE, só no evento afetado (failure.affected, pelo event_id e por
@@ -106,7 +107,8 @@ class Processor:
             else:
                 result = logs.FAILURE_STALE_SKIPPED
 
-        published = await self._publish(event, chosen, traceparent, consumed_at, fields, based_on_sequence)
+        published = await self._publish(event, chosen, traceparent, consumed_at, fields, based_on_sequence,
+                                        latency_ms)
         if mode == "duplicate":
             await self._send(event, published, fields)
         return self._finish(result, published, action=published["type"], failure=mode,
@@ -122,10 +124,12 @@ class Processor:
             return None, None, 0
         return mode, "config", self.settings.failure_delay_ms
 
-    async def _publish(self, event, chosen, traceparent, consumed_at, fields, based_on_sequence) -> dict:
+    async def _publish(self, event, chosen, traceparent, consumed_at, fields, based_on_sequence, latency_ms) -> dict:
+        model = action.model(latency_ms)
+
         def build() -> dict:
             built = action.build(event, chosen, traceparent=traceparent, consumed_at=consumed_at,
-                                 published_at=self.stamp())
+                                 published_at=self.stamp(), model=model)
             built["based_on_sequence"] = based_on_sequence
             return built
 

@@ -23,10 +23,18 @@ def find_date(status):
     raise AssertionError(f"nenhuma data com {status}")
 
 
+STAMP = "2026-11-15T10:00:00.000Z"
+
+
+def fixed_stamp():
+    """Horário fixo das ferramentas, para comparar decisões inteiras."""
+    return STAMP
+
+
 def decide(text, brand="infinitepay", locale="pt-BR"):
     body = event_body(text=text, brand=brand)
     event = events.parse(record(body))
-    return decision.decide(event, context_for(body), locale)
+    return decision.decide(event, context_for(body), locale, stamp=fixed_stamp)
 
 
 def br_date(iso):
@@ -219,7 +227,8 @@ MEMORY_CASES = [
 def decide_with_memory(text, brand, locale, *entries, window=30):
     body = event_body(text=text, brand=brand)
     event = events.parse(record(body))
-    return decision.decide(event, with_memory(context_for(body), *entries), locale, memory_window_days=window)
+    return decision.decide(event, with_memory(context_for(body), *entries), locale, stamp=fixed_stamp,
+                           memory_window_days=window)
 
 
 @pytest.mark.parametrize("locale, brand, text, category, topic", MEMORY_CASES)

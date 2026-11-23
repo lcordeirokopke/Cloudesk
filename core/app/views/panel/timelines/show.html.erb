@@ -1,0 +1,63 @@
+<% content_for :title, "Linha do tempo · mensagem ##{@timeline.message.sequence}" %>
+<% milliseconds = ->(from, to) { from && to ? "#{((to - from) * 1000).round} ms" : "-" } %>
+<% stamp = ->(time) { time ? "#{format_time(time)}.#{time.strftime('%L')}" : "-" } %>
+
+<section class="panel-toolbar">
+  <div>
+    <p><%= link_to "← Conversa", panel_conversation_path(@conversation.id) %></p>
+    <h1>Linha do tempo da mensagem #<%= @timeline.message.sequence %></h1>
+    <p class="panel-muted">
+      <%= @conversation.contact.name %> · <%= @timeline.message.channel %>
+      · trace_id <code id="timeline-trace-id"><%= @timeline.trace_id %></code>
+    </p>
+  </div>
+</section>
+
+<section class="panel-card">
+  <h2>Mensagem</h2>
+  <p class="panel-message__body"><%= @timeline.message.body %></p>
+</section>
+
+<section class="panel-card" id="timeline-steps">
+  <h2>Saltos</h2>
+  <table class="panel-table panel-timeline">
+    <thead>
+      <tr><th>Passo</th><th>Horário</th><th>Desde o anterior</th><th>Desde a entrada</th><th>Detalhe</th></tr>
+    </thead>
+    <tbody>
+      <% first_at = @timeline.steps.first.at %>
+      <% @timeline.steps.each_with_index do |step, index| %>
+        <% previous_at = index.zero? ? nil : @timeline.steps[index - 1].at %>
+        <tr class="panel-timeline__step">
+          <td><%= step.label %></td>
+          <td class="panel-timeline__time"><%= stamp.call(step.at) %></td>
+          <td class="panel-timeline__duration"><%= index.zero? ? "-" : milliseconds.call(previous_at, step.at) %></td>
+          <td class="panel-timeline__duration"><%= index.zero? ? "0 ms" : milliseconds.call(first_at, step.at) %></td>
+          <td><%= step.detail.is_a?(Time) ? "terminou em #{stamp.call(step.detail)}" : step.detail.to_s %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+  <% if @timeline.without_action? %>
+    <p class="panel-muted" id="timeline-without-action">Sem ação do agente para esta mensagem.</p>
+  <% end %>
+</section>
+
+<section class="panel-card" id="timeline-events">
+  <h2>Eventos do trace</h2>
+  <table class="panel-table panel-timeline">
+    <thead>
+      <tr><th>Horário</th><th>Ação</th><th>Ator</th><th>Motivo</th></tr>
+    </thead>
+    <tbody>
+      <% @timeline.events.each do |event| %>
+        <tr>
+          <td class="panel-timeline__time"><%= stamp.call(event.created_at) %></td>
+          <td><code><%= event.action %></code></td>
+          <td><%= event.actor_type %></td>
+          <td><%= event.reason || "" %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>

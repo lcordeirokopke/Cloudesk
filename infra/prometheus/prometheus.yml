@@ -1,0 +1,34 @@
+# Coleta do Prometheus do Cloudesk (http://localhost:9090), a cada 5 s.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Serviço metrics: latência por salto e ponta a ponta, Solid Queue e indicadores do cockpit.
+  - job_name: metrics
+    static_configs:
+      - targets: ["metrics:9394"]
+
+  # broker-web: latência entrada → Kafka e respostas do webhook. A descoberta por DNS encontra cada
+  # réplica do serviço.
+  - job_name: broker-web
+    dns_sd_configs:
+      - names: ["broker-web"]
+        type: A
+        port: 3000
+
+  # Redpanda: lag dos grupos de consumo, calculado a cada 15 s (consumer_group_lag_collection_interval_sec).
+  - job_name: redpanda
+    metrics_path: /public_metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["redpanda:9644"]
+
+  # Postgres: TPS e conexões, pelo postgres_exporter com o papel de monitoração.
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

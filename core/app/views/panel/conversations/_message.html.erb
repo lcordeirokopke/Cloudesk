@@ -2,6 +2,9 @@
   <span class="panel-message__meta">
     #<%= message.sequence %> · <%= message.author %><%= " (#{message.attendant.name})" if message.attendant %>
     · <%= message.channel %> · <%= format_time(message.created_at) %>
+    <% if message.author == "customer" %>
+      · <%= link_to "Linha do tempo", panel_message_timeline_path(message.conversation_id, message.id), class: "panel-message__timeline" %>
+    <% end %>
   </span>
   <p class="panel-message__body"><%= message.body %></p>
 <% end %>

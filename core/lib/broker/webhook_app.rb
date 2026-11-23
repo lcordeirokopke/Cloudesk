@@ -8,20 +8,27 @@ module Broker
   #     422 invalid_payload                  JSON inválido ou fora do schema webhook.message-created
   #     503 kafka_unavailable                sem confirmação do Kafka; o Core reenvia
   #   GET /up                                healthcheck
+  #   GET /metrics                           métricas no formato de texto do Prometheus (Broker::Metrics)
   #
   # A mensagem Kafka leva o corpo recebido byte a byte, a chave conversation_id e os headers brand,
   # traceparent (mesmo trace_id, parent_id do Broker) e broker_received_at (horário de chegada do
   # webhook, carimbado antes de qualquer conferência).
+  #
+  # Cada resposta do POST conta em cloudesk_broker_webhooks_total{status}. Na resposta 200, depois da
+  # confirmação do Kafka, o tempo desde o received_at do corpo (recebimento HTTP no Core) é observado
+  # em cloudesk_broker_inbound_latency_seconds{brand}: a latência entrada → Kafka.
   class WebhookApp
     WEBHOOK_PATH = "/webhooks/message-created".freeze
     HEALTH_PATH = "/up".freeze
+    METRICS_PATH = "/metrics".freeze
     WEBHOOK_SCHEMA = "webhook.message-created".freeze
     HEADERS_SCHEMA = "kafka.inbound-headers".freeze
     JSON_HEADERS = { "content-type" => "application/json" }.freeze
 
-    def initialize(producer:, logger: Logger.new($stdout))
+    def initialize(producer:, logger: Logger.new($stdout), metrics: Metrics.default)
       @producer = producer
       @logger = logger
+      @metrics = metrics
     end
 
     def call(env)
@@ -31,11 +38,15 @@ module Broker
       when WEBHOOK_PATH
         return method_not_allowed("POST") unless request.post?
 
-        message_created(request, received_at: Time.now.utc)
+        message_created(request, received_at: Time.now.utc).tap { |status, _| @metrics.count_webhook(status) }
       when HEALTH_PATH
         return method_not_allowed("GET") unless request.get?
 
         [ 200, { "content-type" => "text/plain" }, [ "ok" ] ]
+      when METRICS_PATH
+        return method_not_allowed("GET") unless request.get?
+
+        [ 200, { "content-type" => Prometheus::Client::Formats::Text::CONTENT_TYPE }, [ @metrics.render ] ]
       else
         error(404, "not_found", "rota não encontrada")
       end
@@ -88,8 +99,16 @@ module Broker
         @logger.error("agent.inbound sem confirmação do Kafka: #{failure.class}: #{failure.message}")
         return error(503, "kafka_unavailable", "Kafka não confirmou a publicação")
       end
+      observe_inbound_latency(event)
 
       json(200, { "topic" => INBOUND_TOPIC, "partition" => report.partition, "offset" => report.offset })
+    end
+
+    # Latência entrada → Kafka: agora, logo depois da confirmação do Kafka, menos o received_at do
+    # corpo. Um valor negativo (relógios) é observado como 0.
+    def observe_inbound_latency(event)
+      seconds = Time.now.utc - Time.iso8601(event.fetch("received_at"))
+      @metrics.observe_inbound_latency(brand: event.fetch("brand"), seconds: [ seconds, 0 ].max)
     end
 
     def method_not_allowed(allowed)

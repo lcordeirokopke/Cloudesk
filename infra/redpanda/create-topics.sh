@@ -22,3 +22,9 @@ rpk topic create conformance.outbound -p 6 -r 1 --if-not-exists -X brokers="$BRO
 rpk topic alter-config conformance.inbound --set message.timestamp.type=LogAppendTime -X brokers="$BROKERS"
 
 rpk topic list -X brokers="$BROKERS"
+
+# Lag dos grupos de consumo nas métricas nativas do Redpanda (redpanda_kafka_consumer_group_lag_sum
+# e _max, label redpanda_group, em redpanda:9644/public_metrics), calculado a cada 15 s, o mesmo
+# intervalo da coleta do Prometheus nesse alvo. O set grava o mesmo valor a cada subida.
+rpk cluster config set enable_consumer_group_metrics '["group","partition","consumer_lag"]' -X admin.hosts=redpanda:9644
+rpk cluster config set consumer_group_lag_collection_interval_sec 15 -X admin.hosts=redpanda:9644

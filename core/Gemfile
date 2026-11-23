@@ -42,6 +42,10 @@ gem "regexp_parser", "< 2.13"
 # fora do boot do Rails [https://github.com/karafka/karafka]
 gem "karafka", "~> 2.6.1", require: false
 
+# Métricas no formato do Prometheus: /metrics do broker-web (lib/broker.rb) e do serviço metrics
+# (app/modules/observability/) [https://github.com/prometheus/client_ruby]
+gem "prometheus-client", "5.0.0", require: false
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 

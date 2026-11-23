@@ -101,6 +101,17 @@ RSpec.describe Agents::BrokerClient do
         expect { deliver }.to raise_error(Agents::WebhookError::Permanent, /#{status}: recusado/)
       end
     end
+
+    it "leva à mensagem do erro permanente o corpo binário com acento em UTF-8, serializável em JSON" do
+      stub_request(:post, broker_webhook_url).to_return(status: 404, body: %({"message":"rota não encontrada"}Ã).b)
+
+      expect { deliver }.to raise_error(Agents::WebhookError::Permanent) { |error|
+        expect(error.message.encoding).to eq(Encoding::UTF_8)
+        expect(error.message).to be_valid_encoding
+        expect(error.message).to include("rota não encontrada")
+        expect { JSON.generate(error.message) }.not_to raise_error
+      }
+    end
   end
 
   describe "erro de rede" do

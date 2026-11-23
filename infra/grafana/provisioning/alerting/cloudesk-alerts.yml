@@ -1,0 +1,278 @@
+# Regras de alerta do Cloudesk, provisionadas no Grafana na pasta Cloudesk, com o datasource prometheus.
+# Os alertas aparecem só na interface do Grafana (Alerting e a lista do cockpit), sem notificação externa.
+# Sem dado, o alerta fica normal (noDataState: OK): o ambiente parado não dispara alerta. A redução
+# descarta valores não numéricos (dropNN): o p95 sem tráfego (NaN) conta como sem dado.
+#
+# Limites (o valor fica no params da expressão C de cada regra):
+#   FAILED_JOB_AGE_SECONDS = 120: idade do job mais antigo na fila de falhas, em segundos
+#   KAFKA_LAG_MESSAGES = 1000: mensagens de lag de cloudesk-agent ou cloudesk-broker
+#   SOLID_QUEUE_READY_JOBS = 1000: jobs prontos nas filas webhooks ou channels
+#   INBOUND_P95_SECONDS = 0.3: meta da H2, em segundos
+#   END_TO_END_P95_SECONDS = 1: meta da H4, em segundos
+#   SLA_CASES = 0: conversas em risco (at_risk) ou vencidas (breached)
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: cloudesk
+    folder: Cloudesk
+    interval: 10s
+    rules:
+      - uid: cloudesk-failed-job
+        title: "Job na fila de falhas há mais de 2 min"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'max(cloudesk_solid_queue_failed_oldest_age_seconds)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [120]  # FAILED_JOB_AGE_SECONDS
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "Um job está na fila de falhas do Solid Queue há mais de 2 min. Reprocesse ou descarte em /jobs."
+        labels:
+          service: cloudesk
+        isPaused: false
+      - uid: cloudesk-kafka-lag
+        title: "Lag do Kafka alto"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'max(redpanda_kafka_consumer_group_lag_sum{redpanda_group=~"cloudesk-agent|cloudesk-broker"})'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1000]  # KAFKA_LAG_MESSAGES
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "O lag de consumo do agente ou do broker-consumer passou do limite por 2 min."
+        labels:
+          service: cloudesk
+        isPaused: false
+      - uid: cloudesk-solid-queue-backlog
+        title: "Backlog do Solid Queue alto"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'max(cloudesk_solid_queue_jobs{state="ready", queue=~"webhooks|channels"})'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1000]  # SOLID_QUEUE_READY_JOBS
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "Os jobs prontos das filas webhooks ou channels passaram do limite por 2 min."
+        labels:
+          service: cloudesk
+        isPaused: false
+      - uid: cloudesk-inbound-p95
+        title: "p95 entrada → Kafka acima da meta"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'histogram_quantile(0.95, sum by (le) (rate(cloudesk_broker_inbound_latency_seconds_bucket[5m])))'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.3]  # INBOUND_P95_SECONDS
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "O p95 da latência entrada → Kafka passou de 300 ms por 5 min."
+        labels:
+          service: cloudesk
+        isPaused: false
+      - uid: cloudesk-end-to-end-p95
+        title: "p95 ponta a ponta acima da meta"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'histogram_quantile(0.95, sum by (le) (rate(cloudesk_end_to_end_latency_seconds_bucket[5m])))'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1]  # END_TO_END_P95_SECONDS
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "O p95 da latência ponta a ponta, descontada a latência artificial do agente, passou de 1 s por 5 min."
+        labels:
+          service: cloudesk
+        isPaused: false
+      - uid: cloudesk-sla-risk
+        title: "Casos em risco de SLA"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'sum(cloudesk_conversations_sla)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]  # SLA_CASES
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Há conversas com 50% ou mais do SLA consumido há pelo menos 1 min."
+        labels:
+          service: cloudesk
+        isPaused: false
