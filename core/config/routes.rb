@@ -41,7 +41,8 @@ Rails.application.routes.draw do
     post "handoffs/:handoff_id/rating", to: "handoff_ratings#create", as: :handoff_rating
   end
 
-  # Admin de filas e regras, com HTTP basic auth e a marca escolhida na sessão; sem exclusão.
+  # Admin de filas e regras, com HTTP basic auth e a marca escolhida na sessão; sem exclusão. A DLQ
+  # Kafka da marca é listada e reprocessada pelo broker-web.
   scope "admin", module: "admin", as: "admin" do
     root to: "sessions#index"
     post "session", to: "sessions#create", as: :session
@@ -53,6 +54,9 @@ Rails.application.routes.draw do
         post :deactivate
       end
     end
+    get "dlq", to: "dlq#index", as: :dlq
+    post "dlq/:partition/:offset/reprocess", to: "dlq#reprocess", as: :dlq_reprocess,
+                                             constraints: { partition: /\d+/, offset: /\d+/ }
   end
 
   # Painel dos jobs do Solid Queue (Mission Control - Jobs), com HTTP basic auth.

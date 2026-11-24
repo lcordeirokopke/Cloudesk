@@ -6,6 +6,8 @@ module Channels
   # A chamada é assinada com Contract::Signature e o segredo CHAT_SIGNING_SECRET, sobre método,
   # caminho e corpo bruto. Responde conversation_id, sequence e stream, o nome assinado do stream
   # Turbo do lojista. O reenvio do mesmo client_message_id devolve a mensagem existente.
+  # Antes de gravar, a mensagem conta no limite de taxa da marca (Channels::RateLimit); acima dele, a
+  # resposta é 429 com Retry-After: 1 e nada é gravado.
   class ChatMessagesController < ActionController::API
     def create
       return head(:unauthorized) unless signed?
@@ -18,6 +20,7 @@ module Channels
 
       inbound = build_inbound(brand, data)
       return render_error(inbound) if inbound.is_a?(String)
+      return rate_limited unless RateLimit.check({ brand => 1 }, channel: "chat").allowed
 
       result = Conversations::Intake.call(inbound).first
       render json: {
@@ -28,6 +31,11 @@ module Channels
     end
 
     private
+
+    def rate_limited
+      response.set_header("Retry-After", "1")
+      render json: { error: "rate_limited" }, status: :too_many_requests
+    end
 
     def signed?
       Contract::Signature.verify!(

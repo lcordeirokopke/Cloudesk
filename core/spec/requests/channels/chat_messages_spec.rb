@@ -85,4 +85,32 @@ RSpec.describe "Entrada JSON do chat", type: :request do
     post_signed(body_for(text: "", attachments: []))
     expect(response).to have_http_status(:unprocessable_content)
   end
+
+  describe "limite de taxa" do
+    let(:store) { ActiveSupport::Cache::MemoryStore.new }
+
+    before do
+      allow(Rails).to receive(:cache).and_return(store)
+      allow_any_instance_of(Brand).to receive(:inbound_rate_limit_per_second).and_return(2)
+    end
+
+    around { |example| travel_to(Time.zone.parse("2026-11-23 14:00:00")) { example.run } }
+
+    it "dentro do limite, grava e responde 200" do
+      2.times { |index| post_signed(body_for(client_message_id: "client-limite-#{index}")) }
+
+      expect(response).to have_http_status(:ok)
+      expect(Tenancy.with_brand(brand) { Message.where(channel: "chat", external_id: %w[client-limite-0 client-limite-1]).count }).to eq(2)
+    end
+
+    it "acima do limite, responde 429 com Retry-After: 1 e não grava" do
+      2.times { |index| post_signed(body_for(client_message_id: "client-limite-#{index}")) }
+
+      expect { post_signed(body_for(client_message_id: "client-limite-2")) }
+        .not_to(change { [ Tenancy.with_brand(brand) { [ Message.count, AuditEvent.count ] }, SolidQueue::Job.count ] })
+      expect(response).to have_http_status(:too_many_requests)
+      expect(response.headers["Retry-After"]).to eq("1")
+      expect(response.parsed_body).to eq("error" => "rate_limited")
+    end
+  end
 end

@@ -242,14 +242,14 @@ Na queda do processo, os registros sem offset confirmado são relidos; a ação 
 | - | - | - |
 | `agent-mock` | `agent-mock run` | `cloudesk-agent` em `agent.inbound` |
 
-O serviço sobe depois do `redpanda-init` e do `web`. A imagem `cloudesk-agent-mock:dev` instala o pacote em modo editável, com a pasta `agent_mock/` montada em `/app`.
+O serviço sobe depois do `redpanda-init` e do `web-lb`, pelo qual lê o contexto no Core. A imagem `cloudesk-agent-mock:dev` instala o pacote em modo editável, com a pasta `agent_mock/` montada em `/app`.
 
 ### Configuração
 
 | Variável | Uso | Padrão |
 | - | - | - |
 | `KAFKA_BROKERS` | Endereço do Kafka | `redpanda:9092` |
-| `CORE_URL` | Base da `context_url` | `http://web:3000` |
+| `CORE_URL` | Base da `context_url`; o Compose passa `http://web-lb:3000` | `http://web:3000` |
 | `AGENT_CONTEXT_SECRET` | Assinatura do `GET` do contexto, a mesma do Core | `.env` |
 | `AGENT_GROUP_ID` | Grupo de consumo | `cloudesk-agent` |
 | `AGENT_INBOUND_TOPIC` | Tópico de entrada; vazio é erro de configuração | `agent.inbound` |

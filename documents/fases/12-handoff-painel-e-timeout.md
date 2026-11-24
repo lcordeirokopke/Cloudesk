@@ -201,7 +201,7 @@ As versões de regra são imutáveis: a explicação continua válida depois que
 | Hipótese | Contribuição |
 | - | - |
 | H3 · nenhuma perda nem duplicação | O lojista sem resposta da IA recebe a espera e chega a um analista, o que o modo `drop` do agente mock demonstra |
-| H1 · sem backlog crescente | A varredura roda a cada 15 s no `jobs-default`; o custo dela sob carga é medido na F15 |
+| H1 · sem backlog crescente | A varredura roda a cada 15 s no `jobs-default`, pelos índices parciais `index_conversations_with_ai` e `index_messages_customer_by_sequence` |
 | H4 · latência ponta a ponta | O broadcast do painel roda na fila `channels`, a mesma das entregas, e entra na disputa por esse worker |
 
 ## Diferenciais
@@ -222,7 +222,7 @@ As versões de regra são imutáveis: a explicação continua válida depois que
 - **Refresh só na equipe do destino.** O stream da equipe recebe o `refresh` pela fila em que a conversa está depois da mudança. Se a fila de escalação for de outra equipe, a página da equipe de origem não é atualizada. Nas seeds, as duas filas são da mesma equipe.
 - **Granularidade de 15 s.** A espera e a escalação saem até 15 s depois do prazo, mais a duração da varredura.
 - **Prazo pela última mensagem do lojista.** Uma nova mensagem do lojista antes do prazo reinicia a contagem da espera e da escalação.
-- **Varredura sem índice próprio.** A consulta usa os índices existentes de `conversations` e `messages`; o custo com volume é medido na F15.
+- **Índices da varredura.** A consulta usa os índices parciais `index_conversations_with_ai` e `index_messages_customer_by_sequence`. Com poucas conversas e metade delas em `with_ai`, o planejador lê `conversations` inteira, que custa menos; o índice de `with_ai` entra quando as conversas em `with_ai` são uma fração pequena da tabela (`documents/fases/16-robustez-e-escala.md`).
 - **Handoff do timeout sem contexto.** O cartão de uma escalação por `ai_timeout` mostra só o motivo e o resumo do sistema.
 - **Avaliação definitiva.** O briefing é avaliado uma vez e não pode ser corrigido.
 - **Interface em pt-BR.** O painel não segue o locale da marca; as mensagens ao lojista seguem.
@@ -302,7 +302,7 @@ No Compose:
 | Memória (F12) | Preenche o `CustomerMemory` mostrado na tela da conversa |
 | Admin (F13) | Edição de filas, inclusive a fila de escalação |
 | Observabilidade (F14) | Pareto de motivos de escalação, avaliação e tempo até a primeira resposta; linha do tempo por mensagem |
-| Robustez e escala (F15) | Custo da varredura e índices sob carga |
+| Robustez e escala (F15) | Índices parciais da varredura e da capacidade do analista; heartbeat do Solid Queue e `recover_interrupted_webhooks` a cada 15 s |
 
 ## Fontes
 

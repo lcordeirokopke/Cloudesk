@@ -38,6 +38,14 @@ module Cloudesk
     # acontece na mesma transação (outbox implícito).
     config.active_job.queue_adapter = :solid_queue
 
+    # Heartbeat dos processos do Solid Queue a cada 5 s; sem heartbeat por 30 s, o processo é dado
+    # como morto. A manutenção dos supervisores roda a cada process_alive_threshold e manda os jobs
+    # do processo morto à fila de falhas (ProcessPrunedError), de onde o recover_interrupted_webhooks
+    # devolve os webhooks: o job de um worker morto volta à fila entre cerca de 30 e 75 s depois da
+    # morte.
+    config.solid_queue.process_heartbeat_interval = 5.seconds
+    config.solid_queue.process_alive_threshold = 30.seconds
+
     # Filas próprias do Action Mailbox; o load_defaults as deixa vazias, o que manda os jobs para a
     # fila default.
     config.action_mailbox.queues.routing = :action_mailbox_routing

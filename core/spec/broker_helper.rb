@@ -9,7 +9,8 @@ module BrokerHelpers
     "KAFKA_BROKERS" => "kafka.test:9092",
     "CORE_ACTIONS_URL" => "http://core.test/api/v1/agent/actions",
     "BROKER_WEBHOOK_SECRET" => "broker-webhook-secret-de-teste",
-    "AGENT_ACTIONS_SECRET" => "agent-actions-secret-de-teste"
+    "AGENT_ACTIONS_SECRET" => "agent-actions-secret-de-teste",
+    "BROKER_DLQ_SECRET" => "broker-dlq-secret-de-teste"
   }.freeze
 
   def broker_env(name)

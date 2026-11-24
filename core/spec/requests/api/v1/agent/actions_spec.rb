@@ -91,7 +91,9 @@ RSpec.describe "API de ações do agente", type: :request do
   end
 
   it "recusa o corpo inválido com 422" do
-    post_action("não é JSON", idempotency_key: "x:reply")
+    # Só ASCII: o Rails grava o corpo inválido no log como texto binário, e o Logger, depois de girar o
+    # test.log (100 MB), recusa binário fora do ASCII ("log writing failed").
+    post_action("texto sem JSON", idempotency_key: "x:reply")
     expect_contract(:unprocessable_content)
     expect(response.parsed_body["error"]).to eq("invalid_payload")
 

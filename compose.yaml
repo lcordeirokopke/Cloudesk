@@ -37,6 +37,11 @@ x-rails: &rails
     PANEL_PASSWORD: ${PANEL_PASSWORD}
     ADMIN_USER: ${ADMIN_USER}
     ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    # 1 desliga recarregamento de código, carrega o código no boot e reduz os logs (medidas e carga).
+    CLOUDESK_LOAD_PROFILE: ${CLOUDESK_LOAD_PROFILE:-}
+    # Endpoints da DLQ no broker-web, usados pela tela /admin/dlq.
+    BROKER_DLQ_URL: ${BROKER_DLQ_URL:-http://broker-web:3000}
+    BROKER_DLQ_SECRET: ${BROKER_DLQ_SECRET}
   volumes:
     - ./core:/rails
     - ./contracts:/contracts:ro
@@ -45,8 +50,11 @@ x-rails: &rails
       condition: service_healthy
 
 services:
+  # max_connections cobre a soma das conexões dos processos na configuração da carga, com margem
+  # (documents/fases/16-robustez-e-escala.md).
   postgres:
     image: postgres:18
+    command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}"]
     environment:
       POSTGRES_USER: ${POSTGRES_SUPERUSER}
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
@@ -102,17 +110,33 @@ services:
   mailpit:
     image: axllent/mailpit
     environment:
-      MP_WEBHOOK_URL: http://${MAILPIT_WEBHOOK_USER}:${MAILPIT_WEBHOOK_PASSWORD}@web:3000/channels/email/mailpit
+      MP_WEBHOOK_URL: http://${MAILPIT_WEBHOOK_USER}:${MAILPIT_WEBHOOK_PASSWORD}@web-lb:3000/channels/email/mailpit
       MP_WEBHOOK_LIMIT: "0"
     ports:
       - "1025:1025"
       - "8025:8025"
 
+  # Puma em modo single em cada réplica, com RAILS_MAX_THREADS threads e o mesmo número de conexões
+  # no pool. Sem porta no host: o acesso é pelo web-lb, e o serviço escala com --scale web=N. O pid
+  # fica em /tmp, no sistema de arquivos de cada contêiner, fora do volume do código compartilhado
+  # pelas réplicas.
   web:
     <<: *rails
-    command: ["bin/rails", "server", "-b", "0.0.0.0", "-p", "3000"]
+    command: ["bin/rails", "server", "-b", "0.0.0.0", "-p", "3000", "-P", "/tmp/server.pid"]
+    environment:
+      <<: *rails-environment
+      RAILS_MAX_THREADS: ${WEB_MAX_THREADS:-3}
+
+  # Balanceador (nginx) na porta 3000 do host e da rede do Compose: distribui HTTP e WebSocket entre
+  # as réplicas do web (infra/nginx/nginx.conf).
+  web-lb:
+    image: nginx:1.30.8-alpine
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
       - "3000:3000"
+    depends_on:
+      - web
 
   jobs-default:
     <<: *rails
@@ -127,6 +151,8 @@ services:
       RAILS_MAX_THREADS: "7"
 
   # Broker: mesma imagem do Core, sem Rails e sem banco (core/lib/broker.rb). O ambiente não leva DB_*.
+  # O broker-web não publica porta no host: o Core o alcança pelo DNS do Compose, e o serviço escala
+  # com --scale broker-web=N.
   broker-web:
     image: cloudesk-core:dev
     command: ["bundle", "exec", "puma", "-C", "config/puma_broker.rb", "broker.ru"]
@@ -136,12 +162,11 @@ services:
       KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
       BROKER_WEBHOOK_SECRET: ${BROKER_WEBHOOK_SECRET}
       AGENT_ACTIONS_SECRET: ${AGENT_ACTIONS_SECRET}
-      CORE_ACTIONS_URL: ${CORE_ACTIONS_URL:-http://web:3000/api/v1/agent/actions}
+      BROKER_DLQ_SECRET: ${BROKER_DLQ_SECRET}
+      CORE_ACTIONS_URL: ${CORE_ACTIONS_URL:-http://web-lb:3000/api/v1/agent/actions}
     volumes:
       - ./core:/rails
       - ./contracts:/contracts:ro
-    ports:
-      - "3001:3000"
     healthcheck:
       test: ["CMD-SHELL", "ruby -rnet/http -e 'exit Net::HTTP.get_response(URI(\"http://localhost:3000/up\")).is_a?(Net::HTTPSuccess)'"]
       interval: 5s
@@ -166,9 +191,9 @@ services:
     build: ./channel_simulator
     image: cloudesk-channel-simulator:dev
     environment:
-      CORE_URL: http://web:3000
-      CORE_CABLE_URL: ws://web:3000/cable
-      CORE_ORIGIN: http://web:3000
+      CORE_URL: http://web-lb:3000
+      CORE_CABLE_URL: ws://web-lb:3000/cable
+      CORE_ORIGIN: http://web-lb:3000
       MAILPIT_API_URL: http://mailpit:8025
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
@@ -188,7 +213,7 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - web
+      - web-lb
       - mailpit
 
   # Agente mock: consome agent.inbound no grupo cloudesk-agent e publica as ações em agent.outbound.
@@ -197,7 +222,7 @@ services:
     image: cloudesk-agent-mock:dev
     environment:
       KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
-      CORE_URL: http://web:3000
+      CORE_URL: http://web-lb:3000
       AGENT_CONTEXT_SECRET: ${AGENT_CONTEXT_SECRET}
       AGENT_LATENCY_MS: ${AGENT_LATENCY_MS:-0}
       AGENT_CONCURRENCY: ${AGENT_CONCURRENCY:-100}
@@ -212,7 +237,7 @@ services:
     depends_on:
       redpanda-init:
         condition: service_completed_successfully
-      web:
+      web-lb:
         condition: service_started
 
   # Observabilidade. O metrics lê audit_events por cursor e as tabelas do Solid Queue e serve

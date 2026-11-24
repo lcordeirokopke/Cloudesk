@@ -5,7 +5,8 @@
 #   default:                     ingestão e varredura do Mailpit, prazo de reabertura;
 #   action_mailbox_routing:      roteamento dos e-mails recebidos;
 #   action_mailbox_incineration: incineração dos e-mails processados.
-# Cada worker usa threads + 2 conexões do pool (RAILS_MAX_THREADS).
+# Cada worker usa threads + 2 conexões do pool (RAILS_MAX_THREADS). Um processo por worker: o
+# serviço escala pelo número de réplicas no Compose.
 default: &default
   dispatchers:
     - polling_interval: 1
@@ -13,11 +14,11 @@ default: &default
   workers:
     - queues: [ channels ]
       threads: 3
-      processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
+      processes: 1
       polling_interval: 0.1
     - queues: [ default, action_mailbox_routing, action_mailbox_incineration ]
       threads: 3
-      processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
+      processes: 1
       polling_interval: 1
 
 development:

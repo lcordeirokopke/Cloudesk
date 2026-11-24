@@ -178,8 +178,8 @@ Esta parte fecha o caminho de volta do agente à plataforma. Sem ela, o Core avi
 
 ## Limitações
 
-- **Uma conversa de cada vez.** A trava serializa tudo o que acontece em uma conversa: ações do agente e mensagens do lojista. Conversas diferentes seguem em paralelo, mas uma conversa muito ativa forma fila. O efeito na carga é medido na F15.
-- **Carga no `web`.** Cada mensagem do lojista gera duas chamadas a mais no processo `web`, a leitura do contexto e a ação; na meta de 250 msg/s, são cerca de 500 requisições por segundo. O contexto é montado do banco a cada leitura, e o cache fica para a F15, se a medida pedir.
+- **Uma conversa de cada vez.** A trava serializa tudo o que acontece em uma conversa: ações do agente e mensagens do lojista. Conversas diferentes seguem em paralelo, mas uma conversa muito ativa forma fila.
+- **Carga no `web`.** Cada mensagem do lojista gera duas chamadas a mais no processo `web`, a leitura do contexto e a ação; na meta de 250 msg/s, são cerca de 500 requisições por segundo. O contexto é montado do banco a cada leitura, sem cache.
 - **Histórico inteiro.** O contexto traz todas as mensagens da conversa, sem paginação. O tamanho é limitado pelo ciclo de vida da conversa, que fecha depois do prazo de reabertura.
 - **Escalação sem conferência de capacidade.** A conversa escalada vai para a fila de escalação da fila em que estava (`Conversations::Escalate`), com a prioridade que tinha e o SLA do destino, ou fica na mesma fila quando ela não tem fila de escalação. A capacidade do destino não é conferida; a contagem das conversas abertas e a capacidade ficam no `conversation.escalated`. O analista recebe o caso quando pede o próximo no painel (`Routing::Distributor.next_for`).
 - **Uma ação por tipo e evento.** A chave não distingue duas ações do mesmo tipo para o mesmo evento: a segunda é tratada como repetição da primeira.
@@ -231,7 +231,7 @@ No Compose, sem o Broker, uma mensagem de WhatsApp enviada pelo simulador recebe
 | Handoff e painel (F11) | `Conversations::Escalate`, chamado pelo `escalate`, leva a conversa à fila de escalação; painel do analista |
 | Memória (F12) | O `resolve` enfileira o recálculo da memória; o contexto entrega `customer_memory` |
 | Observabilidade (F14) | Monta a linha do tempo por mensagem a partir dos registros das ações |
-| Robustez e escala (F15) | Mede o efeito da trava e da leitura do contexto sem cache |
+| Robustez e escala (F15) | Réplicas do `web` atrás do `web-lb`, pelo qual o Broker chama a API de ações e o agente lê o contexto |
 
 ## Fontes
 

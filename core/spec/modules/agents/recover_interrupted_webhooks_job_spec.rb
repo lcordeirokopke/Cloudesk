@@ -64,11 +64,11 @@ RSpec.describe Agents::RecoverInterruptedWebhooksJob do
     expect(job.reload.failed_execution).to be_present
   end
 
-  it "roda a cada minuto pelo jobs-default" do
+  it "roda a cada 15 segundos pelo jobs-default" do
     tasks = YAML.load_file(Rails.root.join("config/recurring.yml"), aliases: true)
 
     expect(tasks.dig("development", "recover_interrupted_webhooks"))
-      .to include("class" => described_class.name, "queue" => "default", "schedule" => "every minute")
+      .to include("class" => described_class.name, "queue" => "default", "schedule" => "every 15 seconds")
     expect(tasks.dig("production", "recover_interrupted_webhooks")).to be_present
   end
 end

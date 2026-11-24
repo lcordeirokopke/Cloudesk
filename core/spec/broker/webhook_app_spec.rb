@@ -215,4 +215,26 @@ RSpec.describe Broker::WebhookApp, broker: true do
 
     expect(last_response.status).to eq(404)
   end
+
+  describe "rotas da DLQ" do
+    let(:dlq) { instance_double(Broker::DlqEndpoints, call: [ 200, { "content-type" => "application/json" }, [ "{}" ] ]) }
+    let(:app) { described_class.new(producer: producer, logger: Logger.new(IO::NULL), metrics: metrics, dlq: dlq) }
+
+    it "encaminha /dlq/messages e as rotas abaixo dele ao Broker::DlqEndpoints, sem contar como webhook" do
+      get "/dlq/messages?brand=infinitepay"
+      post "/dlq/messages/0/3/reprocess", "{}"
+
+      expect(dlq).to have_received(:call).twice
+      expect(last_response.status).to eq(200)
+      expect(webhooks_count(200)).to eq(0)
+    end
+
+    it "mantém as demais rotas fora da DLQ" do
+      get "/up"
+      get "/dlq/messagesx"
+
+      expect(dlq).not_to have_received(:call)
+      expect(last_response.status).to eq(404)
+    end
+  end
 end

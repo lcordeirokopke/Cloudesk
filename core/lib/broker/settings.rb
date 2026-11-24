@@ -17,6 +17,9 @@ module Broker
     # Segredo da assinatura HMAC das chamadas a POST /api/v1/agent/actions, o mesmo do Core.
     def agent_actions_secret = ENV.fetch("AGENT_ACTIONS_SECRET")
 
+    # Segredo da assinatura HMAC das chamadas do Core aos endpoints da DLQ, o mesmo do Core.
+    def broker_dlq_secret = ENV.fetch("BROKER_DLQ_SECRET")
+
     # URL da API de ações do Core. O caminho assinado é o caminho da URI, com a query string.
     def core_actions_url = ENV.fetch("CORE_ACTIONS_URL")
   end

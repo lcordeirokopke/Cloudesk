@@ -157,4 +157,66 @@ RSpec.describe "Webhook do WhatsApp", type: :request do
       expect(response).to have_http_status(:ok)
     end
   end
+
+  describe "limite de taxa" do
+    let(:store) { ActiveSupport::Cache::MemoryStore.new }
+    let(:jim_number) { brand_channel(jim, "whatsapp") }
+    let(:jim_wa_id) { identity_of(seed_contact(jim), "whatsapp").delete_prefix("+") }
+
+    before do
+      allow(Rails).to receive(:cache).and_return(store)
+      limits = { "infinitepay" => 2, "jim" => 500 }
+      allow_any_instance_of(Brand).to receive(:inbound_rate_limit_per_second) { |record| limits.fetch(record.slug) }
+    end
+
+    around { |example| travel_to(Time.zone.parse("2026-11-23 14:00:00")) { example.run } }
+
+    def payload_for(*ids)
+      whatsapp_payload(phone_number_id: number.value, messages: ids.map { |id| whatsapp_text(from: wa_id, text: "oi", id: id) })
+    end
+
+    def recorded_counts
+      [ Tenancy.with_brand(brand) { [ Message.count, AuditEvent.count ] }, Tenancy.with_brand(jim) { [ Message.count, AuditEvent.count ] },
+        SolidQueue::Job.count ]
+    end
+
+    it "dentro do limite, grava e responde 200" do
+      post_payload(payload_for("wamid.limite-1", "wamid.limite-2"))
+
+      expect(response).to have_http_status(:ok)
+      expect(messages_of(%w[wamid.limite-1 wamid.limite-2]).size).to eq(2)
+    end
+
+    it "acima do limite, responde 429 com Retry-After: 1, sem mensagem, audit_event nem job" do
+      post_payload(payload_for("wamid.limite-1", "wamid.limite-2"))
+
+      expect { post_payload(payload_for("wamid.limite-3")) }.not_to(change { recorded_counts })
+      expect(response).to have_http_status(:too_many_requests)
+      expect(response.headers["Retry-After"]).to eq("1")
+      expect(response.parsed_body).to eq("error" => "rate_limited")
+      expect(messages_of(%w[wamid.limite-3])).to be_empty
+    end
+
+    it "payload com duas marcas em que uma passa do limite não grava nada" do
+      payload = payload_for("wamid.ip-1", "wamid.ip-2", "wamid.ip-3")
+      jim_entry = whatsapp_payload(phone_number_id: jim_number.value,
+                                   messages: [ whatsapp_text(from: jim_wa_id, text: "hi", id: "wamid.jim-1") ])
+      payload["entry"].unshift(jim_entry["entry"].first)
+
+      expect { post_payload(payload) }.not_to(change { recorded_counts })
+      expect(response).to have_http_status(:too_many_requests)
+      expect(Tenancy.with_brand(jim) { Message.where(external_id: "wamid.jim-1").count }).to eq(0)
+    end
+
+    it "volta a aceitar no segundo seguinte" do
+      post_payload(payload_for("wamid.limite-1", "wamid.limite-2", "wamid.limite-3"))
+      expect(response).to have_http_status(:too_many_requests)
+
+      travel 1.second
+      post_payload(payload_for("wamid.limite-4"))
+
+      expect(response).to have_http_status(:ok)
+      expect(messages_of(%w[wamid.limite-4]).size).to eq(1)
+    end
+  end
 end

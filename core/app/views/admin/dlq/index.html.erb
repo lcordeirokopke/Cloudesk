@@ -1,0 +1,72 @@
+<% content_for :title, "DLQ" %>
+
+<div class="panel-toolbar">
+  <div>
+    <h1>DLQ · <%= current_brand.name %></h1>
+    <p class="panel-muted">
+      Ações do agente em <code>agent.dlq</code> com a marca <code><%= current_brand.slug %></code>: as últimas
+      <%= Admin::DlqController::LIMIT %> de cada partição, da falha mais recente para a mais antiga. Reprocessar
+      republica a ação em <code>agent.outbound</code>; o Core descarta a ação já aplicada pela Idempotency-Key.
+    </p>
+  </div>
+</div>
+
+<% if @error %>
+  <p class="panel-flash panel-flash--alert">Não foi possível ler a DLQ: <%= @error %></p>
+<% end %>
+
+<section class="panel-card">
+  <% if @messages.empty? %>
+    <p class="panel-muted">Nenhuma mensagem da marca na DLQ.</p>
+  <% else %>
+    <table class="panel-table">
+      <thead>
+        <tr>
+          <th>Posição</th><th>Motivo</th><th>Status</th><th>Falha</th><th>Chave</th><th>Ação</th>
+          <th>Reprocessamentos</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @messages.each do |message| %>
+          <% headers = message["headers"] || {} %>
+          <% position = [ message["partition"], message["offset"] ] %>
+          <% blocked = @blocked[position] %>
+          <tr>
+            <td><code><%= message["partition"] %>@<%= message["offset"] %></code></td>
+            <td><code><%= headers["dlq_reason"] %></code></td>
+            <td><%= headers["dlq_status"] || "-" %></td>
+            <td><%= headers["dlq_failed_at"] %></td>
+            <td><code><%= message["key"] %></code></td>
+            <td>
+              <%= message["type"] || "-" %>
+              <% if message["inbound_event_id"] %><br><span class="panel-muted">evento <code><%= message["inbound_event_id"] %></code></span><% end %>
+            </td>
+            <td>
+              <% events = @history.fetch(position, []) %>
+              <% if events.empty? %>
+                <span class="panel-muted">nenhum</span>
+              <% else %>
+                <ul class="admin-diff">
+                  <% events.each do |event| %>
+                    <% payload = event.payload.fetch("payload", {}) %>
+                    <% destination = payload["destination"] || {} %>
+                    <li>
+                      <%= format_time(event.created_at) %> · <%= payload["operator_name"].presence || event.actor_type %>
+                      → <code><%= destination["partition"] %>@<%= destination["offset"] %></code>
+                    </li>
+                  <% end %>
+                </ul>
+              <% end %>
+            </td>
+            <td>
+              <%= button_to "Reprocessar", admin_dlq_reprocess_path(partition: message["partition"], offset: message["offset"]),
+                            class: "panel-button panel-button--ghost", disabled: blocked.present?,
+                            title: blocked %>
+              <% if blocked %><span class="panel-late"><%= blocked %></span><% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+</section>

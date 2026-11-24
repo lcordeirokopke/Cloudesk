@@ -1,7 +1,9 @@
 # Tarefas recorrentes do Solid Queue, executadas pelo serviço jobs-default.
 #   close_expired_conversations:  fecha as conversas resolvidas com prazo de reabertura vencido;
 #   sweep_mailpit:                traz do Mailpit os e-mails que o webhook perdeu;
-#   recover_interrupted_webhooks: devolve à fila os jobs de webhook interrompidos pela morte do worker;
+#   recover_interrupted_webhooks: devolve à fila os jobs de webhook interrompidos pela morte do worker,
+#                                 a cada 15 s: com o limiar de 30 s do heartbeat, o webhook volta à
+#                                 fila em até cerca de 75 s depois da morte;
 #   ai_timeout_sweep:             envia a mensagem de espera ou escala as conversas da IA sem resposta.
 development: &channels
   close_expired_conversations:
@@ -15,7 +17,7 @@ development: &channels
   recover_interrupted_webhooks:
     class: Agents::RecoverInterruptedWebhooksJob
     queue: default
-    schedule: every minute
+    schedule: every 15 seconds
   ai_timeout_sweep:
     class: Conversations::AiTimeoutSweepJob
     queue: default

@@ -176,11 +176,11 @@ Além dos diferenciais listados no escopo, a recuperação automática dos webho
 
 ## Limitações
 
-- **Demora da recuperação.** Com o heartbeat padrão da gem (60 s, e processo morto depois de 5 min), o webhook de um contêiner `jobs-webhooks` morto volta à fila entre 4 e 11 minutos depois da morte. Na H3, essas mensagens chegam atrasadas, não perdidas. Os valores de `process_heartbeat_interval` e `process_alive_threshold` são ajustados por medida na F15.
+- **Demora da recuperação.** Com o heartbeat de 5 s, o limiar de 30 s e o `recover_interrupted_webhooks` a cada 15 s, o webhook de um contêiner `jobs-webhooks` morto volta à fila entre cerca de 30 e 75 s depois da morte. Na H3, essas mensagens chegam atrasadas, não perdidas. O tempo medido está em `documents/fases/16-robustez-e-escala.md`.
 - **Recuperação só dos webhooks.** A recuperação automática cobre só o `Agents::WebhookDeliveryJob`. Outros jobs interrompidos pela morte do processo ficam na fila de falhas para reprocessamento manual.
 - **Ordem dos avisos.** Webhooks da mesma conversa podem chegar ao Broker fora de ordem, porque as threads são paralelas e as novas tentativas têm esperas diferentes. O agente decide pelo contexto mais recente lido na `context_url`, e a API de ações recusa a ação desatualizada.
 - **Corrida com a mudança de estado.** A conferência do estado acontece antes do envio; a conversa pode sair da IA logo depois. A barreira é a recusa `409 rejected` na API de ações.
-- **Custo do polling.** O polling de 0,1 s gera 10 consultas por segundo por worker ocioso. Com várias réplicas, o custo cresce, e a F15 o mede junto com threads, processos e pool.
+- **Custo do polling.** O polling de 0,1 s gera 10 consultas por segundo por worker ocioso, e o custo cresce com as réplicas. A medida por réplica, com threads, processos e pool, está em `documents/fases/16-robustez-e-escala.md`.
 - **Timeout com o Broker ausente.** Com o `broker-web` fora do Compose ou parado, cada tentativa espera os 2 s do timeout de conexão, porque o DNS do Docker demora a negar o nome. Com o processo no ar recusando a conexão, a falha é imediata.
 - **Limite das tentativas.** Uma queda do Broker mais longa que cerca de 17 minutos deixa os avisos na fila de falhas, e eles só voltam por reprocessamento no painel.
 - **Credenciais do painel.** São lidas na inicialização do `web`; trocar a senha pede reinício do processo.
@@ -232,8 +232,8 @@ No Compose, sem o `broker-web`, as mensagens enviadas pelo simulador são aceita
 | API de ações (F8) | É a barreira final contra duplicação e contra ação sobre conversa fora da IA; recebe os carimbos de horário do Broker e do Kafka |
 | Broker (F9) | Recebe o `POST` em `/webhooks/message-created`, confere a assinatura com o mesmo segredo e responde 2xx só depois da confirmação do Kafka; 408, 429 e 5xx geram nova tentativa |
 | Observabilidade (F14) | Usa a profundidade da fila `webhooks` e as falhas como métricas |
-| Robustez e escala (F15) | Dimensiona threads, polling, pool, réplicas e heartbeat por medida |
-| Experimento (F18) | Mata o `jobs-webhooks` com `docker kill`; a reconciliação da H3 considera a demora de 4 a 11 minutos da recuperação |
+| Robustez e escala (F15) | Heartbeat de 5 s, limiar de 30 s e `recover_interrupted_webhooks` a cada 15 s; `jobs-webhooks` escalado por réplica, com threads, polling e pool medidos |
+| Experimento (F18) | Mata o `jobs-webhooks` com `docker kill`; a reconciliação da H3 considera a demora de cerca de 30 a 75 s da recuperação |
 
 ## Fontes
 

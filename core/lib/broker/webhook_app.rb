@@ -1,6 +1,7 @@
 module Broker
   # Endpoint Rack do broker-web. Recebe o webhook message.created do Core e publica o corpo em
-  # agent.inbound; responde 200 somente depois da confirmação do Kafka.
+  # agent.inbound; responde 200 somente depois da confirmação do Kafka. Encaminha também os
+  # endpoints da DLQ (Broker::DlqEndpoints), usados pela tela /admin/dlq do Core.
   #
   #   POST /webhooks/message-created
   #     200 {topic, partition, offset}       mensagem confirmada pelo Kafka
@@ -9,6 +10,8 @@ module Broker
   #     503 kafka_unavailable                sem confirmação do Kafka; o Core reenvia
   #   GET /up                                healthcheck
   #   GET /metrics                           métricas no formato de texto do Prometheus (Broker::Metrics)
+  #   GET /dlq/messages                      mensagens de agent.dlq da marca (Broker::DlqEndpoints)
+  #   POST /dlq/messages/<p>/<o>/reprocess   republica a mensagem da DLQ em agent.outbound
   #
   # A mensagem Kafka leva o corpo recebido byte a byte, a chave conversation_id e os headers brand,
   # traceparent (mesmo trace_id, parent_id do Broker) e broker_received_at (horário de chegada do
@@ -25,14 +28,17 @@ module Broker
     HEADERS_SCHEMA = "kafka.inbound-headers".freeze
     JSON_HEADERS = { "content-type" => "application/json" }.freeze
 
-    def initialize(producer:, logger: Logger.new($stdout), metrics: Metrics.default)
+    def initialize(producer:, logger: Logger.new($stdout), metrics: Metrics.default,
+                   dlq: DlqEndpoints.new(producer: producer, logger: logger))
       @producer = producer
       @logger = logger
       @metrics = metrics
+      @dlq = dlq
     end
 
     def call(env)
       request = Rack::Request.new(env)
+      return @dlq.call(request) if DlqEndpoints.handles?(request.path_info)
 
       case request.path_info
       when WEBHOOK_PATH

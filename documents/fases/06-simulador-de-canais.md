@@ -101,7 +101,7 @@ O `serve` é um app `aiohttp` na porta 8080 com três receptores.
 - sem `messaging_product: "whatsapp"`, `to` ou `text.body`, responde 400 com o erro no formato da Meta;
 - válido, registra a resposta e responde 200 no formato da Meta, com um `wamid` novo.
 
-**Chat.** O simulador se conecta ao Action Cable do Core (`ws://web:3000/cable`) como o widget de um navegador, com `Origin: http://web:3000`, e se inscreve no `Turbo::StreamsChannel` de cada stream registrado. Cada resposta chega como um `<turbo-stream action="append">` com o HTML da mensagem, do qual o simulador lê o id, a sequência, o canal, o autor e o texto; as mensagens com autor diferente do lojista são registradas.
+**Chat.** O simulador se conecta ao Action Cable do Core em `CORE_CABLE_URL` (`ws://web-lb:3000/cable` no Compose, pelo balanceador) como o widget de um navegador, com o header `Origin` igual a `CORE_ORIGIN` (`http://web-lb:3000`), e se inscreve no `Turbo::StreamsChannel` de cada stream registrado. Cada resposta chega como um `<turbo-stream action="append">` com o HTML da mensagem, do qual o simulador lê o id, a sequência, o canal, o autor e o texto; as mensagens com autor diferente do lojista são registradas.
 
 - A conexão que cai é refeita com backoff exponencial, de 0,5 s dobrando até 30 s, e todos os streams são inscritos de novo.
 - A conexão sem `welcome` ou sem nenhum frame por 6 s é dada como parada e refeita. O Core envia `ping` a cada 3 s, e o cliente JavaScript oficial do Action Cable usa o mesmo limite de 6 s.
@@ -214,7 +214,7 @@ Serviço `channel-simulator` no `compose.yaml`, imagem `cloudesk-channel-simulat
 
 | Variável | Uso |
 | - | - |
-| `CORE_URL` | Base das entradas do Core (`http://web:3000`) |
+| `CORE_URL` | Base das entradas do Core (`http://web-lb:3000` no Compose; padrão do código `http://web:3000`) |
 | `CORE_CABLE_URL`, `CORE_ORIGIN` | WebSocket do Action Cable e header `Origin` |
 | `MAILPIT_API_URL` | API do Mailpit, para o poller |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP do Mailpit, para o envio |

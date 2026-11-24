@@ -79,6 +79,7 @@ Cada processo tem um único produtor WaterDrop (`Broker::Producer`), compartilha
 | `acks` | `all` | A confirmação só chega com a mensagem gravada |
 | `enable.idempotence` | `true` | O reenvio interno do produtor não grava a mensagem duas vezes |
 | `message.timeout.ms` | `3000` | O padrão do WaterDrop é 150 s; com 3 s, o `broker-web` responde `503` antes dos 5 s de leitura do Core (`Agents::BrokerClient`) |
+| `partitioner` | `murmur2_random` | A partição é o murmur2 da chave, a mesma fórmula do `aiokafka` do agente e do `rpk`; o padrão do librdkafka (`consistent_random`, CRC32) escolhe outra partição para a mesma chave. Com o murmur2, a ação republicada da DLQ cai na partição de `agent.outbound` das ações do agente para a conversa |
 
 O produtor do `broker-web` é fechado quando o Puma para; o do `broker-consumer`, quando o Karafka para.
 
@@ -131,7 +132,7 @@ O `broker-consumer` publica em `agent.dlq` com o próprio produtor (`Broker::Dea
 | `dlq_source_topic`, `dlq_source_partition`, `dlq_source_offset` | Posição da ação em `agent.outbound` |
 | `dlq_failed_at` | Horário da publicação na DLQ, em UTC com milissegundos |
 
-Se a publicação na DLQ não é confirmada, o consumidor lança e a ação entra no mesmo retry: a ação só é marcada depois de gravada na DLQ. O reprocessamento da DLQ pelo painel é da F15.
+Se a publicação na DLQ não é confirmada, o consumidor lança e a ação entra no mesmo retry: a ação só é marcada depois de gravada na DLQ. As ações da DLQ são reprocessadas pela tela `/admin/dlq` do Core, pelos endpoints da DLQ no `broker-web` (`documents/fases/16-robustez-e-escala.md`).
 
 ### Sem Rails no processo
 
@@ -179,7 +180,7 @@ O Karafka carrega o Rails sozinho quando o encontra: no `require "karafka"`, faz
 - **Pausa por partição.** Uma ação com falha transitória segura as ações seguintes da mesma partição, inclusive as de outras conversas que caem nela, até o fim do retry ou a DLQ.
 - **Leitura de 5 s.** Uma chamada ao Core que demora mais de 5 s é tratada como falha transitória, mesmo que o Core termine de processá-la. A repetição é inofensiva, porque a chave é a mesma, mas conta uma tentativa.
 - **Um produtor por processo.** O `broker-web` não tem fila própria: com o Kafka fora do ar, cada webhook espera até 3 s e recebe `503`, e o volume fica retido no Solid Queue do Core.
-- **DLQ sem reprocessamento.** As ações em `agent.dlq` ficam gravadas com o diagnóstico; o reprocessamento pelo painel é da F15.
+- **DLQ reprocessada uma mensagem por vez.** As ações em `agent.dlq` ficam gravadas com o diagnóstico e voltam a `agent.outbound` uma por vez, pela tela `/admin/dlq`.
 - **Um nó Redpanda.** O `acks=all` confirma a gravação no único nó do ambiente local, sem réplica.
 
 ## Operação
@@ -188,7 +189,7 @@ O Karafka carrega o Rails sozinho quando o encontra: no `require "karafka"`, faz
 
 | Serviço | Comando | Porta no host |
 | - | - | - |
-| `broker-web` | `bundle exec puma -C config/puma_broker.rb broker.ru` | `3001` |
+| `broker-web` | `bundle exec puma -C config/puma_broker.rb broker.ru` | nenhuma: alcançado pelo DNS do Compose, na porta 3000 |
 | `broker-consumer` | `bundle exec karafka server` | nenhuma |
 
 Os dois sobem depois do `redpanda-init`, que cria os tópicos.
@@ -198,9 +199,10 @@ Os dois sobem depois do `redpanda-init`, que cria os tópicos.
 | Variável | Uso | Valor no Compose |
 | - | - | - |
 | `KAFKA_BROKERS` | Endereço do Kafka | `redpanda:9092` |
-| `CORE_ACTIONS_URL` | API de ações do Core | `http://web:3000/api/v1/agent/actions` |
+| `CORE_ACTIONS_URL` | API de ações do Core, pelo balanceador | `http://web-lb:3000/api/v1/agent/actions` |
 | `BROKER_WEBHOOK_SECRET` | Assinatura do webhook, a mesma do Core | `.env` |
 | `AGENT_ACTIONS_SECRET` | Assinatura das chamadas à API de ações, a mesma do Core | `.env` |
+| `BROKER_DLQ_SECRET` | Assinatura das chamadas do Core aos endpoints da DLQ no `broker-web`, a mesma do Core | `.env` |
 | `CONTRACTS_PATH` | Pasta do contrato | `/contracts` |
 | `KARAFKA_REQUIRE_RAILS` | Impede o Karafka de carregar o Rails | `false` |
 
@@ -228,7 +230,7 @@ Os testes do Broker usam `core/spec/broker_helper.rb`, sem `rails_helper`: o Kaf
 
 No Compose:
 
-- webhook com assinatura inválida e com timestamp vencido em `localhost:3001` recebem `401`;
+- webhook com assinatura inválida e com timestamp vencido no `broker-web` recebem `401`;
 - uma mensagem do simulador aparece em `agent.inbound` com a chave da conversa e os três headers, e o mesmo webhook publicado de novo cai na mesma partição;
 - com o Redpanda parado, o `broker-web` responde `503` em cerca de 3 s e o job do Core entra em retry; com o Redpanda de volta, o webhook é entregue;
 - uma ação válida publicada em `agent.outbound` grava `agent.reply` no Core, e a resposta chega ao simulador; a mesma ação de novo não produz efeito nem vai à DLQ;
@@ -246,7 +248,7 @@ No Compose:
 | API de ações (F8) | Recebe a ação do Broker e responde com os códigos que o consumidor classifica |
 | Agente mock (F10) | Consome `agent.inbound` e publica em `agent.outbound` com a chave da conversa e os headers `brand` e `traceparent` |
 | Observabilidade (F14) | Lag do grupo, volume da DLQ e carimbos do Broker na linha do tempo |
-| Robustez e escala (F15) | Réplicas do `broker-web` e do `broker-consumer` e reprocessamento da DLQ pelo painel |
+| Robustez e escala (F15) | Réplicas do `broker-web` e do `broker-consumer`; endpoints da DLQ no `broker-web` e reprocessamento pela tela `/admin/dlq` |
 
 ## Fontes
 

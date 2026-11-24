@@ -246,7 +246,7 @@ As métricas do Prometheus servem para acompanhar a execução. Os valores exato
 - **Relógios.** Os saltos comparam carimbos de processos diferentes. No ambiente local, todos usam o relógio da mesma máquina; um valor negativo é observado como 0.
 - **Lag sem partição.** O lag é lido por grupo, sem o detalhe por partição.
 - **Alertas só na interface.** Não há notificação por e-mail, Slack ou outro canal.
-- **`/metrics` sem autenticação.** Alcançável na rede do Compose; o do `broker-web` sai pela porta 3001 do host.
+- **`/metrics` sem autenticação.** Alcançável só na rede do Compose.
 - **Leituras recorrentes no banco.** A cada 5 s, o `metrics` lê `audit_events`, as tabelas do Solid Queue, as conversas abertas e os handoffs das últimas 24 h.
 
 ## Operação
@@ -278,7 +278,7 @@ O Grafana tem acesso anônimo com o papel `Viewer`.
 
 ```text
 curl -s localhost:9090/api/v1/query --data-urlencode 'query=cloudesk_hop_latency_seconds_count'
-curl -s localhost:3001/metrics
+docker compose exec broker-web ruby -rnet/http -e 'puts Net::HTTP.get(URI("http://localhost:3000/metrics"))'
 docker compose exec redpanda rpk cluster config get enable_consumer_group_metrics
 docker compose exec prometheus promtool check config /etc/prometheus/prometheus.yml
 ```

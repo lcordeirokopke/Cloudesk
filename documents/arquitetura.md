@@ -122,11 +122,13 @@ flowchart LR
         NAV["Navegador<br/>widget de chat e painel"]
     end
 
+    LB["web-lb<br/>nginx, porta 3000"]
+
     subgraph IMG["Imagem do Core Rails: um código, cinco papéis"]
-        WEB["web<br/>Puma"]
+        WEB["web<br/>Puma, N réplicas"]
         JW["jobs-webhooks<br/>Solid Queue, fila webhooks"]
         JD["jobs-default<br/>Solid Queue, demais filas<br/>e tarefas recorrentes"]
-        BW["broker-web<br/>Puma + Rack, porta 3001"]
+        BW["broker-web<br/>Puma + Rack"]
         BC["broker-consumer<br/>karafka server"]
     end
 
@@ -140,9 +142,10 @@ flowchart LR
 
     AG["agent-mock<br/>Python, aiokafka"]
 
-    SIM ==>|"POST WhatsApp e chat"| WEB
-    NAV ==>|"HTTP e WebSocket"| WEB
-    MP ==>|"webhook de e-mail"| WEB
+    SIM ==>|"POST WhatsApp e chat"| LB
+    NAV ==>|"HTTP e WebSocket"| LB
+    MP ==>|"webhook de e-mail"| LB
+    LB ==> WEB
 
     WEB ==> PG
     JW ==> PG
@@ -151,11 +154,13 @@ flowchart LR
     JW ==>|"webhook assinado"| BW
     BW ==>|"acks=all"| TIN
     TIN ==> AG
-    AG -.->|"GET context_url"| WEB
+    AG -.->|"GET context_url"| LB
     AG ==> TOUT
     TOUT ==> BC
-    BC ==>|"POST /api/v1/agent/actions"| WEB
+    BC ==>|"POST /api/v1/agent/actions"| LB
     BC -.->|"falha permanente"| TDLQ
+    WEB -.->|"tela /admin/dlq"| BW
+    BW -.->|"lê e republica"| TDLQ
 
     JD ==>|"WhatsApp: POST"| SIM
     JD ==>|"e-mail: SMTP"| MP
@@ -178,6 +183,8 @@ flowchart LR
 
 Os processos `broker-web` e `broker-consumer` não têm seta para o PostgreSQL: o Broker não acessa o banco e fala com o Core somente por HTTP. O chat chega ao lojista por Turbo Stream, pelo Solid Cable, no WebSocket que o `web` mantém com o navegador.
 
+O `web-lb` (nginx) é a única entrada HTTP do Core: publica a porta 3000 no host e na rede do Compose e distribui as requisições e o WebSocket do Action Cable entre as réplicas do `web`, que não publica porta. Navegador, simulador, Mailpit, agente e `broker-consumer` chamam o Core por ele. O nginx resolve o nome `web` pelo DNS do Docker a cada 5 s, e as réplicas novas entram no balanceamento sem reinício. O `broker-web` também não publica porta: o `jobs-webhooks`, a tela `/admin/dlq` e o Prometheus o alcançam pelo DNS do Compose.
+
 A observabilidade fica em cinco serviços. O `metrics` (mesma imagem do Core) lê `audit_events` e as tabelas do Solid Queue e expõe as métricas de latência e do cockpit em `/metrics`, só na rede do Compose. O `postgres-exporter` lê as estatísticas do Postgres com o papel `cloudesk_monitor`, criado pelo `postgres-monitor-init`, que roda e termina a cada subida. O Prometheus (`localhost:9090`) coleta o `metrics`, o `broker-web`, o Redpanda e o `postgres-exporter`, e o Grafana (`localhost:3002`) mostra os dashboards e avalia os alertas. O detalhamento está em "Observabilidade".
 
 Fora do ambiente padrão, o profile `conformance` do Compose sobe o kit de conformidade do agente: `agent-conformance` (o kit, com o Core falso) e `agent-mock-conformance` (o agente sob teste, mesma imagem do `agent-mock`), nos tópicos `conformance.inbound` e `conformance.outbound`. Os dois não aparecem no diagrama e não sobem com `docker compose up` sem o profile.
@@ -193,6 +200,7 @@ Fora do ambiente padrão, o profile `conformance` do Compose sobe o kit de confo
 | Cache | Solid Cache | Cache de contexto e de regras compiladas |
 | E-mail de entrada | Action Mailbox + Mailpit | Canal de e-mail simulado |
 | Broker | Karafka + endpoint Rack, no mesmo código e imagem do Core | Webhook → Kafka e Kafka → API de ações |
+| Balanceador | nginx `1.30.8` (`web-lb`) | Entrada HTTP e WebSocket do Core, distribuída entre as réplicas do `web` |
 | Mensageria | Redpanda (compatível com a API Kafka) | `agent.inbound` e `agent.outbound`, com 6 partições cada, e `agent.dlq` |
 | Agente mock | Python | Consome, lê contexto, chama ferramentas falsas, publica ação |
 | Simulador de canais | Python | Gera tráfego dos três canais e recebe as respostas |
@@ -277,7 +285,8 @@ O monólito é um único código que roda em processos distintos, cada um escala
 
 | Serviço | Comando | Escala conforme |
 | - | - | - |
-| `web` | Puma | requisições HTTP e conexões WebSocket |
+| `web-lb` | nginx `1.30.8`, porta 3000 no host e na rede do Compose | não escala: uma réplica, que distribui entre as réplicas do `web` |
+| `web` | Puma em modo single por réplica, sem porta no host | requisições HTTP e conexões WebSocket |
 | `jobs-webhooks` | Solid Queue, só a fila `webhooks` | volume de saída para o broker |
 | `jobs-default` | Solid Queue, demais filas: varredura do timeout do agente a cada 15 s, entregas aos canais, atualização do painel, memória e manutenção | backlog de tarefas internas |
 | `broker-web` | Puma com o endpoint Rack do Broker | volume de webhooks vindos do Core |
@@ -285,7 +294,9 @@ O monólito é um único código que roda em processos distintos, cada um escala
 | `agent-mock` | `agent-mock run`, consumidor Python no grupo `cloudesk-agent` | número de partições de `agent.inbound` |
 | `metrics` | Puma com o app Rack de métricas (`bundle exec puma -C config/puma_metrics.rb metrics.ru`), porta 9394 só na rede do Compose | não escala: uma réplica, porque o cursor das latências fica na memória do processo |
 
-Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web`, `jobs-webhooks`, `jobs-default`, `broker-web`, `broker-consumer`, `agent-mock`, simulador de canais, `metrics`, `postgres-exporter`, Prometheus e Grafana, mais os que rodam e terminam a cada subida: `redpanda-init` e `postgres-monitor-init`. O k6 roda só durante o experimento.
+Cada papel escala pelo número de réplicas, com `docker compose up -d --scale <serviço>=<N>`; o Compose sobe uma réplica de cada. Uma réplica tem um processo: o Puma do `web` roda em modo single, com `RAILS_MAX_THREADS` threads (`WEB_MAX_THREADS` no Compose), e cada worker do Solid Queue tem `processes: 1`. O pool de conexões de cada processo é o `RAILS_MAX_THREADS` dele, e o `max_connections` do Postgres (`POSTGRES_MAX_CONNECTIONS`) cobre a soma dos processos na configuração da carga; a conta está em `documents/fases/16-robustez-e-escala.md`. Com `CLOUDESK_LOAD_PROFILE=1`, os processos Rails rodam sem recarregamento de código, com o código carregado no boot e sem os logs de desenvolvimento, para as medidas e a carga.
+
+Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web-lb`, `web`, `jobs-webhooks`, `jobs-default`, `broker-web`, `broker-consumer`, `agent-mock`, simulador de canais, `metrics`, `postgres-exporter`, Prometheus e Grafana, mais os que rodam e terminam a cada subida: `redpanda-init` e `postgres-monitor-init`. O k6 roda só durante o experimento.
 
 #### Filas de jobs e tarefas recorrentes
 
@@ -311,7 +322,9 @@ flowchart LR
 | `ai_timeout_sweep` | `Conversations::AiTimeoutSweepJob` | a cada 15 s | Mensagem de espera ou escalação das conversas da IA sem resposta |
 | `close_expired_conversations` | `Conversations::CloseExpiredJob` | a cada minuto | Fecha as conversas `resolved` com prazo de reabertura vencido |
 | `sweep_mailpit` | `Channels::Email::SweepJob` | a cada minuto | Traz do Mailpit os e-mails que o webhook perdeu |
-| `recover_interrupted_webhooks` | `Agents::RecoverInterruptedWebhooksJob` | a cada minuto | Devolve à fila os jobs de webhook interrompidos pela morte do worker |
+| `recover_interrupted_webhooks` | `Agents::RecoverInterruptedWebhooksJob` | a cada 15 s | Devolve à fila os jobs de webhook interrompidos pela morte do worker |
+
+Os processos do Solid Queue mandam heartbeat a cada 5 s (`process_heartbeat_interval`) e são dados como mortos depois de 30 s sem heartbeat (`process_alive_threshold`). A manutenção dos supervisores roda a cada 30 s e manda os jobs do processo morto à fila de falhas com `ProcessPrunedError`; o `recover_interrupted_webhooks` devolve os webhooks à fila. O job de um worker morto volta entre cerca de 30 e 75 s depois da morte.
 
 ### Fluxo de uma mensagem
 
@@ -550,7 +563,7 @@ O que cada ação faz quando é aceita:
 
 #### Ordem das mensagens
 
-A chave da partição Kafka é o `conversation_id`, o que preserva a ordem em que os eventos chegam ao Kafka. Antes do Kafka, cada evento é um job do Solid Queue, e workers paralelos com retry podem entregar eventos da mesma conversa fora de ordem. Por isso a ordem não depende do transporte:
+A chave da partição Kafka é o `conversation_id`, o que preserva a ordem em que os eventos chegam ao Kafka. Todos os produtores escolhem a partição pelo murmur2 da chave: o Broker (WaterDrop com o particionador `murmur2_random`), o agente (`aiokafka`) e o `rpk`, de modo que a mesma conversa cai na mesma partição qualquer que seja o produtor, inclusive na ação republicada da DLQ. Antes do Kafka, cada evento é um job do Solid Queue, e workers paralelos com retry podem entregar eventos da mesma conversa fora de ordem. Por isso a ordem não depende do transporte:
 
 - o agente sempre decide sobre o estado mais recente da conversa, lido na `context_url`;
 - se o contexto traz uma mensagem do lojista com sequência maior que a do evento recebido, o agente descarta o evento, pois o evento da mensagem mais nova produz a resposta;
@@ -791,6 +804,7 @@ O job só avisa que algo mudou; ele não lê o domínio. Cada tela busca de novo
 - `UPDATE` e `DELETE` bloqueados por permissão de banco e trigger.
 - `traceparent` (W3C) propagado em headers HTTP e Kafka, ligando cada salto da mensagem.
 - **Linha do tempo por mensagem:** cada salto carimba seu horário e o repassa adiante. O Broker registra o recebimento do webhook no header da mensagem, e o timestamp do registro Kafka marca a gravação no tópico; o agente devolve esses dois carimbos e os seus próprios (consumo, ferramentas, publicação) na ação. O Core grava tudo no `audit_event` da ação.
+- **Reprocessamento da DLQ:** cada republicação pela tela `/admin/dlq` grava `dlq.reprocessed`, ator `operator`, na conversa da chave Kafka, com origem e destino (tópico, partição e offset), `dlq_reason`, `dlq_status`, `dlq_failed_at` e `operator_name`.
 - **Evento próprio de cada ação:** cada ação aceita grava `agent.reply`, `agent.escalate`, `agent.categorize` ou `agent.resolve`, com o corpo completo da ação (ferramentas, `model`, carimbos), a `Idempotency-Key` e o `received_at` do Core; os eventos de domínio da ação são gravados à parte, na mesma transação. As recusas gravam `agent.action.stale` e `agent.action.rejected`. O painel monta a linha do tempo canal → Core → Broker → Kafka → agente → Broker → cliente a partir de `audit_events` e `trace_id`, sem serviço de tracing externo.
 - **Página da linha do tempo:** cada mensagem do lojista no histórico da conversa tem o link "Linha do tempo" (`/panel/conversations/:conversation_id/messages/:message_id/timeline`). A página (`Conversations::MessageTimeline`, só leitura) mostra os saltos com o horário em milissegundos, a duração desde o anterior e o total desde a entrada; uma linha por ferramenta do agente; a latência artificial informada pelo agente; cada ação sobre a mensagem, aceita ou recusada; a entrega da resposta da IA; e todos os eventos do mesmo `trace_id`. Sem ação do agente, a página para no recebimento e mostra os eventos do trace, como a escalação ou o `webhook.skipped`.
 
@@ -876,7 +890,7 @@ A ponta a ponta bruta vai do `received_at` da mensagem do lojista ao `delivered_
 
 Os gauges são substituídos inteiros a cada coleta: a série que some volta a 0.
 
-**Dashboards e alertas.** O Grafana tem a pasta "Cloudesk", provisionada por arquivo, com dois dashboards: "Cloudesk - Saltos e experimento" (H2, H4, p95 por salto, taxas, Solid Queue, lag, Postgres e saúde da coleta) e "Cloudesk - Cockpit operacional" (diferencial 2), que é a página inicial. Os seis alertas aparecem só na interface do Grafana, sem notificação externa, e não disparam sem dado; a lista está em "Diferenciais". O acesso anônimo é só de leitura; o administrador usa `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD`. O `/metrics` não tem autenticação e só é alcançável na rede do Compose, exceto o do `broker-web`, que sai pela porta 3001 do host.
+**Dashboards e alertas.** O Grafana tem a pasta "Cloudesk", provisionada por arquivo, com dois dashboards: "Cloudesk - Saltos e experimento" (H2, H4, p95 por salto, taxas, Solid Queue, lag, Postgres e saúde da coleta) e "Cloudesk - Cockpit operacional" (diferencial 2), que é a página inicial. Os seis alertas aparecem só na interface do Grafana, sem notificação externa, e não disparam sem dado; a lista está em "Diferenciais". O acesso anônimo é só de leitura; o administrador usa `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD`. O `/metrics` não tem autenticação e só é alcançável na rede do Compose; o Prometheus encontra cada réplica do `broker-web` pela descoberta por DNS.
 
 O detalhamento está em `documents/fases/15-observabilidade.md`.
 
@@ -976,8 +990,10 @@ flowchart TB
 
 **Dimensionamento do Postgres.** Por mensagem de entrada, o banco recebe: a mensagem do lojista, a resposta do atendente, os `audit_events` de cada decisão, as linhas do job de webhook nas tabelas do Solid Queue (enfileiramento, reserva e conclusão), o registro de idempotência e os broadcasts do Solid Cable. O total de transações por segundo na meta de 250 msg/s é uma das medidas do experimento, não uma premissa.
 
-- Índices parciais nas filas e nas conversas abertas.
-- Aplicação conectada diretamente ao Postgres, com pool dimensionado por processo.
+- Índices parciais nas filas e nas conversas abertas: fila humana por prioridade, abertas por fila, `with_ai` por marca (varredura do timeout e cockpit), `with_human` por analista (capacidade do `Routing::Distributor`) e a última mensagem do lojista por conversa (`messages` com `author = 'customer'`, por `sequence` decrescente).
+- Aplicação conectada diretamente ao Postgres, com pool dimensionado por processo: o pool de cada processo é o `RAILS_MAX_THREADS` dele, e o `max_connections` do Postgres cobre a soma dos processos com margem.
+
+**Dimensionamento por réplica.** Cada réplica tem um processo: Puma em modo single no `web` e `processes: 1` em cada worker do Solid Queue. Escalar é aumentar réplicas, e a conta de conexões é a soma dos processos. O custo do polling de 0,1 s dos workers `webhooks` e `channels`, as conexões por processo e o tempo de recuperação do worker morto foram medidos; os números estão em `documents/fases/16-robustez-e-escala.md`.
 
 ### Robustez
 
@@ -986,7 +1002,9 @@ flowchart TB
 - **Broker ou Kafka fora do ar:** o Solid Queue reenvia com backoff; ao esgotar, o job vai para a fila de falhas com botão de reprocessar no painel.
 - **Processo cai no meio da operação:** nada se perde, porque mensagem e job foram gravados na mesma transação e o Broker só confirma após o ack do Kafka.
 - **Agente sem resposta:** a varredura do timeout envia a mensagem de espera na metade do SLA e escala para humano no SLA inteiro.
-- **Picos:** `web` e `jobs-webhooks` escalam horizontalmente; webhooks em fila dedicada; limite de taxa por marca.
+- **Picos:** `web`, `jobs-webhooks`, `broker-web`, `broker-consumer` e `agent-mock` escalam horizontalmente; webhooks em fila dedicada; limite de taxa por marca.
+- **Limite de taxa por marca:** WhatsApp e chat contam as mensagens de cada marca por segundo no Solid Cache (`Channels::RateLimit`, janela fixa de 1 s). Acima de `brands.inbound_rate_limit_per_second` (padrão 500), a entrada responde `429` com `Retry-After: 1`, sem gravar nada. No WhatsApp, a recusa vale para o payload inteiro quando alguma marca dele passa do limite. A recusa vai só ao log, sem `audit_event`, e o contador indisponível deixa a mensagem passar. O e-mail fica fora do limite.
+- **Ação na DLQ:** a tela `/admin/dlq` lista as mensagens de `agent.dlq` da marca e reprocessa uma por vez. O Core chama os endpoints assinados do `broker-web`, que republica a ação em `agent.outbound` com a mesma chave e o mesmo valor, sem os headers de diagnóstico. Com o `200`, o Core grava `dlq.reprocessed`. A ação republicada segue o fluxo normal, e o Core descarta a ação já aplicada pela `Idempotency-Key`.
 
 Onde cada falha é absorvida, salto a salto:
 
@@ -994,11 +1012,12 @@ Onde cada falha é absorvida, salto a salto:
 | - | - | - | - |
 | `web` cai antes do commit | Em lugar nenhum: a transação não acontece | O canal recebe erro ou fica sem resposta | Nada foi gravado |
 | `web` cai depois do commit | Mensagem e job no PostgreSQL | O worker de `jobs-webhooks` encontra o job | O job é um só |
-| Worker de `jobs-webhooks` morre no envio | Job no PostgreSQL | `recover_interrupted_webhooks` devolve o job à fila | O mesmo `event_id` gera a mesma `Idempotency-Key` |
+| Worker de `jobs-webhooks` morre no envio | Job no PostgreSQL | `recover_interrupted_webhooks` devolve o job à fila, entre cerca de 30 e 75 s depois da morte | O mesmo `event_id` gera a mesma `Idempotency-Key` |
 | `broker-web` cai ou o Kafka não confirma | Job no PostgreSQL | Solid Queue, com backoff exponencial e jitter | Idem |
 | `agent-mock` reinicia | Evento em `agent.inbound`, offset não confirmado | O agente lê de novo a partir do offset | Idem |
 | `broker-consumer` reinicia | Ação em `agent.outbound`, offset não marcado | O Karafka lê de novo a partir do offset | `processed_events` devolve o resultado guardado |
 | Core fora do ar para o Broker | Ação em `agent.outbound` | Pausa do Karafka, 2 s a 60 s, até 10 tentativas, depois DLQ | Idem |
+| Ação na DLQ | Ação em `agent.dlq` | O operador reprocessa pela tela `/admin/dlq`, e a ação volta a `agent.outbound` | `processed_events` devolve o resultado guardado da ação já aplicada |
 | Agente não responde | Conversa em `with_ai` | `ai_timeout_sweep` envia a espera e escala | A escalação confere o estado com a conversa travada |
 
 ### Limites conhecidos
@@ -1008,6 +1027,10 @@ Onde cada falha é absorvida, salto a salto:
 - `messages` e `audit_events` são tabelas únicas, sem particionamento; o crescimento contínuo exige particionar (ver Evolução).
 - Não há pooler de conexões; o número de processos é limitado pelas conexões do Postgres.
 - A linha do tempo depende dos relógios dos contêineres, que no ambiente local são o mesmo relógio da máquina.
+- O `web-lb` é um salto a mais entre os clientes e o Core, fora da medida: o nginx não registra acesso, e o `received_at` é carimbado pelo `web` depois do balanceador.
+- O contador do limite de taxa fica no Solid Cache, no mesmo Postgres: cada requisição de WhatsApp ou chat grava um incremento a mais no banco.
+- A tela da DLQ lê as últimas 50 mensagens de cada partição de `agent.dlq` e filtra pela marca; com mensagens de outra marca entre as últimas, a listagem traz menos que 50, e mensagens mais antigas não aparecem.
+- Se a gravação do `dlq.reprocessed` falhar depois do `200` do Broker, a ação já está em `agent.outbound` sem o evento; o erro vai ao log com origem e destino.
 
 ## Experimento técnico: carga + falhas
 

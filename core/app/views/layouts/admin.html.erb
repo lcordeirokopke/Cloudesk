@@ -22,7 +22,8 @@
       <% if current_brand %>
         <nav class="admin-nav" aria-label="Seções do admin">
           <% { "Filas" => [ admin_queues_path, "queues" ], "Equipes" => [ admin_teams_path, "teams" ],
-               "Atendentes" => [ admin_attendants_path, "attendants" ], "Regras" => [ admin_rules_path, "rules" ] }.each do |label, (path, section)| %>
+               "Atendentes" => [ admin_attendants_path, "attendants" ], "Regras" => [ admin_rules_path, "rules" ],
+               "DLQ" => [ admin_dlq_path, "dlq" ] }.each do |label, (path, section)| %>
             <%= link_to label, path, aria: { current: ("page" if controller_name == section) } %>
           <% end %>
         </nav>

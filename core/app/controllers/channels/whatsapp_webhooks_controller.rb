@@ -4,7 +4,9 @@ module Channels
   #         confere.
   #   POST: confere X-Hub-Signature-256 sobre o corpo bruto e grava as mensagens do payload, uma
   #         transação por marca. O 200 sai depois do commit. phone_number_id desconhecido e reenvio
-  #         também recebem 200: a Meta reenviaria uma resposta de erro sem fim.
+  #         também recebem 200: a Meta reenviaria uma resposta de erro sem fim. Antes de gravar, o
+  #         limite de taxa conta as mensagens do payload por marca (Channels::RateLimit): se alguma
+  #         marca passa do limite, o payload inteiro recebe 429 com Retry-After: 1 e nada é gravado.
   class WhatsappWebhooksController < ActionController::API
     def verify
       token = params["hub.verify_token"].to_s
@@ -23,6 +25,9 @@ module Channels
       return head(:bad_request) if data.nil?
 
       inbound_messages = Whatsapp::Payload.new(data, received_at: Current.received_at).inbound_messages
+      counts = inbound_messages.group_by(&:brand).transform_values(&:size)
+      return rate_limited unless RateLimit.check(counts, channel: "whatsapp").allowed
+
       inbound_messages.group_by { |inbound| inbound.brand.id }.each_value do |messages|
         Conversations::Intake.call(messages)
       end
@@ -31,6 +36,11 @@ module Channels
     end
 
     private
+
+    def rate_limited
+      response.set_header("Retry-After", "1")
+      render json: { error: "rate_limited" }, status: :too_many_requests
+    end
 
     def parse(body)
       data = JSON.parse(body)

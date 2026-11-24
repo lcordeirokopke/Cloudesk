@@ -260,6 +260,8 @@ CREATE TABLE public.brands (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     reopen_window_minutes integer DEFAULT 1440 NOT NULL,
+    inbound_rate_limit_per_second integer DEFAULT 500 NOT NULL,
+    CONSTRAINT brands_inbound_rate_limit_per_second_check CHECK ((inbound_rate_limit_per_second > 0)),
     CONSTRAINT brands_reopen_window_minutes_check CHECK ((reopen_window_minutes > 0))
 );
 
@@ -1584,6 +1586,20 @@ CREATE INDEX index_conversations_resolved ON public.conversations USING btree (b
 
 
 --
+-- Name: index_conversations_with_ai; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversations_with_ai ON public.conversations USING btree (brand_id) WHERE (state = 'with_ai'::public.conversation_state);
+
+
+--
+-- Name: index_conversations_with_human_by_attendant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversations_with_human_by_attendant ON public.conversations USING btree (brand_id, attendant_id) WHERE (state = 'with_human'::public.conversation_state);
+
+
+--
 -- Name: index_customer_memories_on_brand_id_and_contact_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1616,6 +1632,13 @@ CREATE UNIQUE INDEX index_handoffs_on_brand_id_and_id ON public.handoffs USING b
 --
 
 CREATE INDEX index_handoffs_on_brand_id_and_rated_by_id ON public.handoffs USING btree (brand_id, rated_by_id);
+
+
+--
+-- Name: index_messages_customer_by_sequence; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_messages_customer_by_sequence ON public.messages USING btree (brand_id, conversation_id, sequence DESC) WHERE ((author)::text = 'customer'::text);
 
 
 --
@@ -2478,6 +2501,8 @@ ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261123120100'),
+('20261123120000'),
 ('20261122120000'),
 ('20261121120000'),
 ('20261120120000'),
