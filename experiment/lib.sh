@@ -14,6 +14,8 @@ RESULTS=experiment/results
 PROMETHEUS=http://localhost:9090
 MEMORY_LIMIT_KB=512000
 ERROR_LIMIT_PERCENT=20
+# Guarda de erros: desligada só por experiment/run.sh meta sem-guarda-de-erros; fica em conditions.json.
+ERROR_GUARD=true
 SETTLE_SECONDS=25
 H1_CHECK_SECONDS=300
 
@@ -211,7 +213,7 @@ sampler() {
 }
 
 # Motivo da parada pela guarda, ou vazio: duas amostras seguidas com menos de 500 MB, ou mais de 20%
-# de respostas diferentes de 200 no último minuto.
+# de respostas diferentes de 200 no último minuto (só com a guarda de erros ligada).
 guard_reason() {
   local since
   if [ "$(grep ',_memavailable,' "$STAGE_DIR/raw/docker-stats.csv" 2>/dev/null | tail -2 |
@@ -219,6 +221,7 @@ guard_reason() {
     echo "memória disponível abaixo de 500 MB em duas amostras seguidas"
     return 0
   fi
+  [ "$ERROR_GUARD" = "true" ] || return 0
   since="$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%S.%3NZ)"
   tail -n 40000 "$STAGE_DIR/raw/sent.jsonl" 2>/dev/null | awk -v since="$since" -v limit="$ERROR_LIMIT_PERCENT" '
     match($0, /"sent_at":"[^"]+"/) {
@@ -296,6 +299,7 @@ write_conditions() {
   "captured_until": $(json "${CAPTURED_UNTIL:-}"),
   "dlq_before": ${DLQ_BEFORE:-0},
   "dlq_after": ${DLQ_AFTER:-0},
+  "error_guard": $ERROR_GUARD,
   "replicas": $(replicas_json),
   "host_standby": ${HOST_STANDBY:-null},
   $ENVIRONMENT_JSON

@@ -4,6 +4,9 @@ module Conversations
   # fica desligado. Na marca do job, chama Conversations::MemoryRefresh com a conversa que disparou o
   # recálculo. O cálculo lê o estado atual: a repetição do job, ou um job que roda depois de uma
   # reabertura, chega ao mesmo resultado e não grava nada.
+  #
+  # A conversa é travada antes do lojista, a mesma ordem do Conversations::Intake: o audit_event do
+  # recálculo referencia a conversa, e a ordem inversa fecharia um ciclo com a reabertura.
   class MemoryRefreshJob < ApplicationJob
     queue_as :default
 
@@ -12,7 +15,7 @@ module Conversations
     def perform(brand_id:, contact_id:, conversation_id:)
       brand = Brand.find(brand_id)
       Tenancy.with_brand(brand) do
-        conversation = Conversation.find_by(id: conversation_id)
+        conversation = Conversation.lock.find_by(id: conversation_id)
         MemoryRefresh.call(brand: brand, contact_id: contact_id, conversation: conversation)
       end
     end

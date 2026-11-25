@@ -37,6 +37,7 @@ Da raiz do repositório, nesta ordem:
 | `experiment/run.sh h3` | 8 min à taxa do piloto, com as falhas e a `robustness:check` | 20 min |
 | `experiment/run.sh escada` | 8 e 24 msg/s por 3 min e 80 por 5 min | 20 a 25 min |
 | `experiment/run.sh meta` | 250 msg/s por até 15 min, no ambiente da escada; a partir do minuto 5, para se a H1 já falhou | 10 a 20 min |
+| `experiment/run.sh meta sem-guarda-de-erros` | O mesmo degrau, em ambiente novo com 500 lojistas aquecidos e sem a guarda de erros | 15 a 25 min |
 | `experiment/run.sh extra` | Só se 250 não foi sustentado: 160 por 5 min se 80 passou, 40 se não | 10 min |
 | `experiment/run.sh email [semente]` | 10 e-mails a 1 por segundo, no último ambiente | 5 min |
 | `experiment/run.sh relatorio` | Resumo e figuras da sessão | 2 min |
@@ -46,7 +47,7 @@ Cada etapa recria o ambiente quando o plano dela pede ambiente novo: apaga os vo
 
 **Ajuste do piloto.** A rodada que não sustenta é repetida com um papel a mais por vez, por exemplo `experiment/run.sh piloto 80 jobs-default=3`: fila `webhooks` crescendo, `jobs-webhooks`; fila `channels`, `jobs-default`; lag de `cloudesk-agent`, `agent-mock` ou `web`, conforme o salto `kafka_to_agent` ou `agent`; lag de `cloudesk-broker`, `broker-consumer`; CPU total acima de 90% sem fila isolada, menos réplicas do papel mais ocioso. Depois de dois ajustes, a taxa cai para 40 e 24 msg/s com a configuração escolhida. Teto: `web=6`, `jobs-webhooks=4`, `jobs-default=4` e 3 nos demais. As réplicas e a taxa da H3 ficam em `replicas.env`.
 
-**Guardas.** A etapa é interrompida com menos de 500 MB disponíveis no Docker em duas amostras seguidas, ou com mais de 20% de respostas diferentes de 200 no último minuto. A etapa interrompida mantém os dados e não conta como medida.
+**Guardas.** A etapa é interrompida com menos de 500 MB disponíveis no Docker em duas amostras seguidas, ou com mais de 20% de respostas diferentes de 200 no último minuto. O `meta sem-guarda-de-erros` desliga só a guarda de respostas, para o degrau de 250 chegar à conferência do minuto 5; a de memória vale, e `error_guard` fica em `conditions.json`. A etapa interrompida mantém os dados e não conta como medida.
 
 **Espera do host.** No Windows, `conditions.json` registra as entradas e saídas da espera moderna (eventos 506 e 507 do Kernel-Power), e a etapa com a máquina em espera durante a carga é inválida. A suspensão e o desligamento da tela por inatividade ficam desligados durante as etapas.
 

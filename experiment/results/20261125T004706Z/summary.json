@@ -1,0 +1,1208 @@
+{
+  "session": "20261125T004706Z",
+  "target_rate": 250,
+  "hypotheses": {
+    "H1": {
+      "verdict": "refutada",
+      "run": "meta-2",
+      "criteria": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 58.776332989336076,
+          "upper_95": 61.37158762772775,
+          "limit": 2.5,
+          "samples": 18
+        },
+        "b_acceptance": {
+          "ok": false,
+          "planned": 81478.0000448227,
+          "sent": 18907,
+          "accepted": 13853,
+          "accepted_share": 0.17002135536438284,
+          "dropped_iterations": 62286,
+          "dropped_share": 0.764451753427124,
+          "failed_share": 0.26730840429470565
+        },
+        "c_zero_backlog": {
+          "ok": false,
+          "seconds": null,
+          "limit_seconds": 60
+        },
+        "backlog_max": 15218.0,
+        "backlog_end": 15218.0
+      }
+    },
+    "H2": {
+      "verdict": "refutada",
+      "run": "meta-2",
+      "fraction_within_300ms": 0.008994557433400172,
+      "p95_seconds": 67.322,
+      "goal_met_at": [
+        5,
+        8
+      ],
+      "goal_not_met_at": [
+        24,
+        40,
+        80,
+        250
+      ]
+    },
+    "H3": {
+      "verdict": "confirmada",
+      "runs": [
+        {
+          "run": "h3-1",
+          "rate": 24,
+          "measured": true,
+          "faults": [
+            {
+              "at": "2026-11-25T02:18:06.986Z",
+              "label": "restart broker-web",
+              "command": "docker restart c3f6260bd13dd66fd325c19e2e76d62ad38eecf57de1cbb9032740b688c21d92 073d88c9261b041ee60cbb2744444cef62edcf65d746006206d7336bb998f679",
+              "finished_at": "2026-11-25T02:18:10.552Z"
+            },
+            {
+              "at": "2026-11-25T02:20:08.013Z",
+              "label": "restart broker-consumer",
+              "command": "docker restart 1f72b6c378d9b0395c9837518af4bdd64f901eff4edef9792cf1e730908bdf46 70c5da68a585774cd9a1ebc8404fdbb4f174e58358727a95dbaeb836c1eccd6c",
+              "finished_at": "2026-11-25T02:20:19.440Z"
+            },
+            {
+              "at": "2026-11-25T02:21:36.779Z",
+              "label": "kill jobs-webhooks",
+              "command": "docker kill cloudesk-experiment-jobs-webhooks-1",
+              "finished_at": "2026-11-25T02:21:39.379Z"
+            },
+            {
+              "at": "2026-11-25T02:23:06.755Z",
+              "label": "start jobs-webhooks",
+              "command": "docker start cloudesk-experiment-jobs-webhooks-1",
+              "finished_at": "2026-11-25T02:23:08.719Z"
+            }
+          ],
+          "reconciliation": {
+            "sent": 11499,
+            "categories": {
+              "atendida": 11495,
+              "recusada": 4,
+              "indefinida": 0,
+              "aceita_sem_message": 0,
+              "sem_acao": 0,
+              "ai_timeout": 0,
+              "fila_humana": 0
+            },
+            "status_0_with_message": 0,
+            "lost": 0,
+            "duplicated": 0,
+            "duplicated_core_message_ids": [],
+            "deliveries_without_record": {},
+            "stale_actions": 3289,
+            "rejected_actions": 0,
+            "ok": true
+          },
+          "robustness_exit_code": 0
+        },
+        {
+          "run": "h3-2",
+          "rate": 24,
+          "measured": true,
+          "faults": [
+            {
+              "at": "2026-11-25T08:49:19.349Z",
+              "label": "restart broker-web",
+              "command": "docker restart 4b8e03a4262fab3434180fd40d8c497d9dbf0556bce8e5004cab3caa0a571022 4946f63fe03677f2d3dc776654a845930b74bd0a8c34b2ff66509ea9ff135f4f",
+              "finished_at": "2026-11-25T08:49:22.685Z"
+            },
+            {
+              "at": "2026-11-25T08:51:19.834Z",
+              "label": "restart broker-consumer",
+              "command": "docker restart 4cc562325c28c3f3a55f2ef693cd0f9ab8480618cbf578af8dfb6877d4f51a43 ac45d833921b3c9b3a681840806c246d1f67013f7db639dff649e96754835f48",
+              "finished_at": "2026-11-25T08:51:25.709Z"
+            },
+            {
+              "at": "2026-11-25T08:52:49.077Z",
+              "label": "kill jobs-webhooks",
+              "command": "docker kill cloudesk-experiment-jobs-webhooks-1",
+              "finished_at": "2026-11-25T08:52:50.891Z"
+            },
+            {
+              "at": "2026-11-25T08:54:18.221Z",
+              "label": "start jobs-webhooks",
+              "command": "docker start cloudesk-experiment-jobs-webhooks-1",
+              "finished_at": "2026-11-25T08:54:19.880Z"
+            }
+          ],
+          "reconciliation": {
+            "sent": 11515,
+            "categories": {
+              "atendida": 11515,
+              "recusada": 0,
+              "indefinida": 0,
+              "aceita_sem_message": 0,
+              "sem_acao": 0,
+              "ai_timeout": 0,
+              "fila_humana": 0
+            },
+            "status_0_with_message": 0,
+            "lost": 0,
+            "duplicated": 0,
+            "duplicated_core_message_ids": [],
+            "deliveries_without_record": {},
+            "stale_actions": 0,
+            "rejected_actions": 0,
+            "ok": true
+          },
+          "robustness_exit_code": 0
+        }
+      ],
+      "run": "h3-2"
+    },
+    "H4": {
+      "verdict": "refutada",
+      "run": "meta-2",
+      "p95_seconds": "inf",
+      "goal_met_at": [
+        5,
+        8
+      ],
+      "goal_not_met_at": [
+        24,
+        40,
+        80,
+        250
+      ]
+    },
+    "H5": {
+      "verdict": "refutada",
+      "run": "escada-8-2",
+      "rate": 8,
+      "criteria": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": -0.0044444444444444444,
+          "upper_95": 0.16048539341361517,
+          "limit": 0.08,
+          "samples": 9
+        },
+        "b_acceptance": {
+          "ok": true,
+          "planned": 1440.0,
+          "sent": 1440,
+          "accepted": 1440,
+          "accepted_share": 1.0,
+          "dropped_iterations": 0,
+          "dropped_share": 0.0,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": true,
+          "seconds": 30.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 20.0,
+        "backlog_end": 1.0
+      }
+    },
+    "H6": {
+      "verdict": "confirmada",
+      "run": "escada-8-2",
+      "rate": 8,
+      "fraction_within_300ms": 0.9951388888888889,
+      "p95_seconds": 0.192
+    },
+    "H7": {
+      "verdict": "confirmada",
+      "run": "escada-8-2",
+      "rate": 8,
+      "p95_seconds": 0.425
+    }
+  },
+  "capacity": {
+    "sustained_up_to": null,
+    "not_sustained_from": 8
+  },
+  "target_runs": [
+    {
+      "run": "meta-1",
+      "rate": 250,
+      "status": "interrompida",
+      "reason": "130 de 536 respostas diferentes de 200 no último minuto",
+      "measured": false,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 13.490000009536743,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "error": "0 amostra(s) de backlog depois do primeiro minuto; são necessárias 3"
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.019027484143763214,
+      "h2_p95": 0.969,
+      "h4_confirmed": false,
+      "h4_p95": 23.5,
+      "h4_covered_by_newer": 0,
+      "h4_universe": 378,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.9776315789473683,
+        "broker_to_kafka": 0.017855263157894728,
+        "kafka_to_agent": 21.5111111111111,
+        "agent": 25.038961038961034,
+        "agent_to_core": 23.054545454545448,
+        "core_to_channel": 0.473644859813084
+      },
+      "cpu_total_mean": 882.7699999999999
+    },
+    {
+      "run": "meta-2",
+      "rate": 250,
+      "status": "parada_h1",
+      "reason": "h1-check no minuto 5 reprovado (h1-check.json)",
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 325.91200017929077,
+      "drained": false,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 58.776332989336076,
+          "upper_95": 61.37158762772775,
+          "limit": 2.5,
+          "samples": 18
+        },
+        "b_acceptance": {
+          "ok": false,
+          "planned": 81478.0000448227,
+          "sent": 18907,
+          "accepted": 13853,
+          "accepted_share": 0.17002135536438284,
+          "dropped_iterations": 62286,
+          "dropped_share": 0.764451753427124,
+          "failed_share": 0.26730840429470565
+        },
+        "c_zero_backlog": {
+          "ok": false,
+          "seconds": null,
+          "limit_seconds": 60
+        },
+        "backlog_max": 15218.0,
+        "backlog_end": 15218.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.008994557433400172,
+      "h2_p95": 67.322,
+      "h4_confirmed": false,
+      "h4_p95": "inf",
+      "h4_covered_by_newer": 7700,
+      "h4_universe": 6247,
+      "lost": 3612,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 60.0,
+        "broker_to_kafka": 0.018025345622119812,
+        "kafka_to_agent": 60.0,
+        "agent": 2.1281021897810217,
+        "agent_to_core": 60.0,
+        "core_to_channel": 0.19801397205588822
+      },
+      "cpu_total_mean": 854.1269999999998
+    }
+  ],
+  "runs": [
+    {
+      "run": "ensaio-1",
+      "rate": 5,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 4,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 60.0,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "error": "1 amostra(s) de backlog depois do primeiro minuto; são necessárias 3"
+      },
+      "h2_confirmed": true,
+      "h2_fraction_within_300ms": 0.9966777408637874,
+      "h2_p95": 0.194,
+      "h4_confirmed": true,
+      "h4_p95": 0.407,
+      "h4_covered_by_newer": 0,
+      "h4_universe": 241,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.19752032520325202,
+        "broker_to_kafka": 0.009708937198067633,
+        "kafka_to_agent": 0.004769791666666666,
+        "agent": 0.295,
+        "agent_to_core": 0.11392857142857135,
+        "core_to_channel": 0.1904736842105263
+      },
+      "cpu_total_mean": 71.14999999999999
+    },
+    {
+      "run": "piloto-1",
+      "rate": 80,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 4,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 180.0,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 38.68222222222222,
+          "upper_95": 44.5362501238993,
+          "limit": 0.8,
+          "samples": 9
+        },
+        "b_acceptance": {
+          "ok": false,
+          "planned": 14400.0,
+          "sent": 8838,
+          "accepted": 8838,
+          "accepted_share": 0.61375,
+          "dropped_iterations": 5562,
+          "dropped_share": 0.38625,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": false,
+          "seconds": 135.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 6228.0,
+        "backlog_end": 6228.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.7494908350305499,
+      "h2_p95": 0.443,
+      "h4_confirmed": false,
+      "h4_p95": 129.792,
+      "h4_covered_by_newer": 5763,
+      "h4_universe": 1310,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.4693333333333333,
+        "broker_to_kafka": 0.009829498767460969,
+        "kafka_to_agent": 57.635379061371836,
+        "agent": 2.104895104895105,
+        "agent_to_core": 60.0,
+        "core_to_channel": 0.18997797356828194
+      },
+      "cpu_total_mean": 710.3341176470589
+    },
+    {
+      "run": "piloto-2",
+      "rate": 40,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 4,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 180.0,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 30.555555555555557,
+          "upper_95": 32.80312149143508,
+          "limit": 0.4,
+          "samples": 9
+        },
+        "b_acceptance": {
+          "ok": false,
+          "planned": 7200.0,
+          "sent": 7033,
+          "accepted": 7033,
+          "accepted_share": 0.9768055555555556,
+          "dropped_iterations": 168,
+          "dropped_share": 0.023333333333333334,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": false,
+          "seconds": 90.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 4816.0,
+        "backlog_end": 4816.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.8016493672685909,
+      "h2_p95": 0.405,
+      "h4_confirmed": false,
+      "h4_p95": 69.323,
+      "h4_covered_by_newer": 4935,
+      "h4_universe": 687,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.4666326530612244,
+        "broker_to_kafka": 0.00984929906542056,
+        "kafka_to_agent": 0.007282407407407406,
+        "agent": 2.2825949367088607,
+        "agent_to_core": 60.0,
+        "core_to_channel": 1.8866071428571425
+      },
+      "cpu_total_mean": 677.87
+    },
+    {
+      "run": "piloto-3",
+      "rate": 40,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 180.0,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 2.451111111111111,
+          "upper_95": 4.581180587173215,
+          "limit": 0.4,
+          "samples": 9
+        },
+        "b_acceptance": {
+          "ok": true,
+          "planned": 7200.0,
+          "sent": 7180,
+          "accepted": 7180,
+          "accepted_share": 0.9972222222222222,
+          "dropped_iterations": 21,
+          "dropped_share": 0.002916666666666667,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": true,
+          "seconds": 45.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 1102.0,
+        "backlog_end": 1102.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.6466573816155989,
+      "h2_p95": 0.514,
+      "h4_confirmed": false,
+      "h4_p95": 28.805,
+      "h4_covered_by_newer": 4827,
+      "h4_universe": 914,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.6515060240963855,
+        "broker_to_kafka": 0.014992537313432827,
+        "kafka_to_agent": 0.009390624999999998,
+        "agent": 1.285802469135802,
+        "agent_to_core": 28.950631458094144,
+        "core_to_channel": 4.428749999999999
+      },
+      "cpu_total_mean": 840.2547058823529
+    },
+    {
+      "run": "piloto-4",
+      "rate": 24,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 180.0,
+      "drained": true,
+      "h1_sustained": true,
+      "h1": {
+        "sustained": true,
+        "a_backlog_slope": {
+          "ok": true,
+          "slope_per_second": 0.012222222222222221,
+          "upper_95": 0.09679088986731921,
+          "limit": 0.24,
+          "samples": 9
+        },
+        "b_acceptance": {
+          "ok": true,
+          "planned": 4320.0,
+          "sent": 4320,
+          "accepted": 4320,
+          "accepted_share": 1.0,
+          "dropped_iterations": 0,
+          "dropped_share": 0.0,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": true,
+          "seconds": 15.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 65.0,
+        "backlog_end": 7.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.8284722222222223,
+      "h2_p95": 0.467,
+      "h4_confirmed": false,
+      "h4_p95": 5.043,
+      "h4_covered_by_newer": 0,
+      "h4_universe": 3456,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.4819068736141906,
+        "broker_to_kafka": 0.009961346633416458,
+        "kafka_to_agent": 0.007720164609053495,
+        "agent": 0.4324812030075187,
+        "agent_to_core": 4.090395480225988,
+        "core_to_channel": 0.3791228070175437
+      },
+      "cpu_total_mean": 698.8576470588234
+    },
+    {
+      "run": "h3-1",
+      "rate": 24,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 480.0,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 1.8462068965517242,
+          "upper_95": 2.7385607171320685,
+          "limit": 0.24,
+          "samples": 29
+        },
+        "b_acceptance": {
+          "ok": true,
+          "planned": 11520.0,
+          "sent": 11499,
+          "accepted": 11495,
+          "accepted_share": 0.9978298611111112,
+          "dropped_iterations": 21,
+          "dropped_share": 0.0018229166666666667,
+          "failed_share": 0.0003478563353335073
+        },
+        "c_zero_backlog": {
+          "ok": true,
+          "seconds": 45.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 1278.0,
+        "backlog_end": 350.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.5708568943018704,
+      "h2_p95": 17.721,
+      "h4_confirmed": false,
+      "h4_p95": 19.491,
+      "h4_covered_by_newer": 3461,
+      "h4_universe": 5734,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 4,
+      "hop_p95": {
+        "core_to_broker": 3.2281250000000057,
+        "broker_to_kafka": 0.014088390501319268,
+        "kafka_to_agent": 0.008993859649122807,
+        "agent": 0.4828694404591105,
+        "agent_to_core": 23.854233654876744,
+        "core_to_channel": 0.721902654867257
+      },
+      "cpu_total_mean": 699.1341860465116
+    },
+    {
+      "run": "escada-8-1",
+      "rate": 8,
+      "status": "interrompida",
+      "reason": "o k6 terminou com código 105",
+      "measured": false,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 41.924999952316284,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "error": "0 amostra(s) de backlog depois do primeiro minuto; são necessárias 3"
+      },
+      "h2_confirmed": true,
+      "h2_fraction_within_300ms": 0.9820359281437125,
+      "h2_p95": 0.24,
+      "h4_confirmed": true,
+      "h4_p95": 0.502,
+      "h4_covered_by_newer": 0,
+      "h4_universe": 271,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.26946428571428566,
+        "broker_to_kafka": 0.009770833333333333,
+        "kafka_to_agent": 0.004767592592592592,
+        "agent": 0.295,
+        "agent_to_core": 0.17054347826086957,
+        "core_to_channel": 0.19467479674796748
+      },
+      "cpu_total_mean": 135.025
+    },
+    {
+      "run": "escada-8-2",
+      "rate": 8,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 180.0,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": -0.0044444444444444444,
+          "upper_95": 0.16048539341361517,
+          "limit": 0.08,
+          "samples": 9
+        },
+        "b_acceptance": {
+          "ok": true,
+          "planned": 1440.0,
+          "sent": 1440,
+          "accepted": 1440,
+          "accepted_share": 1.0,
+          "dropped_iterations": 0,
+          "dropped_share": 0.0,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": true,
+          "seconds": 30.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 20.0,
+        "backlog_end": 1.0
+      },
+      "h2_confirmed": true,
+      "h2_fraction_within_300ms": 0.9951388888888889,
+      "h2_p95": 0.192,
+      "h4_confirmed": true,
+      "h4_p95": 0.425,
+      "h4_covered_by_newer": 0,
+      "h4_universe": 1151,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.19619649805447473,
+        "broker_to_kafka": 0.009720854271356785,
+        "kafka_to_agent": 0.004762412891986063,
+        "agent": 0.295,
+        "agent_to_core": 0.16789017341040466,
+        "core_to_channel": 0.18974074074074077
+      },
+      "cpu_total_mean": 140.77666666666667
+    },
+    {
+      "run": "escada-24-2",
+      "rate": 24,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 180.0,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 0.024444444444444442,
+          "upper_95": 0.5381198568038944,
+          "limit": 0.24,
+          "samples": 9
+        },
+        "b_acceptance": {
+          "ok": true,
+          "planned": 4320.0,
+          "sent": 4317,
+          "accepted": 4317,
+          "accepted_share": 0.9993055555555556,
+          "dropped_iterations": 3,
+          "dropped_share": 0.0006944444444444445,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": true,
+          "seconds": 15.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 143.0,
+        "backlog_end": 54.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.8174658327542275,
+      "h2_p95": 0.479,
+      "h4_confirmed": false,
+      "h4_p95": 4.774,
+      "h4_covered_by_newer": 0,
+      "h4_universe": 3454,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.48818930041152253,
+        "broker_to_kafka": 0.00994285269386484,
+        "kafka_to_agent": 0.008362499999999995,
+        "agent": 0.44788530465949805,
+        "agent_to_core": 4.10158501440922,
+        "core_to_channel": 0.40238244514106564
+      },
+      "cpu_total_mean": 723.2276470588235
+    },
+    {
+      "run": "escada-80-1",
+      "rate": 80,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 300.0,
+      "drained": false,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 35.47434640522876,
+          "upper_95": 37.98780396707515,
+          "limit": 0.8,
+          "samples": 17
+        },
+        "b_acceptance": {
+          "ok": false,
+          "planned": 24000.0,
+          "sent": 16186,
+          "accepted": 16185,
+          "accepted_share": 0.674375,
+          "dropped_iterations": 7814,
+          "dropped_share": 0.32558333333333334,
+          "failed_share": 6.17817867292722e-05
+        },
+        "c_zero_backlog": {
+          "ok": false,
+          "seconds": 210.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 10103.0,
+        "backlog_end": 10103.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.01007105344454742,
+      "h2_p95": 38.944,
+      "h4_confirmed": false,
+      "h4_p95": 180.98700000000002,
+      "h4_covered_by_newer": 11630,
+      "h4_universe": 1321,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 58.47106481481481,
+        "broker_to_kafka": 0.012490384615384625,
+        "kafka_to_agent": 28.279947916666668,
+        "agent": 2.3045731707317074,
+        "agent_to_core": 60.0,
+        "core_to_channel": 0.19580279232111697
+      },
+      "cpu_total_mean": 856.8607407407407
+    },
+    {
+      "run": "meta-1",
+      "rate": 250,
+      "status": "interrompida",
+      "reason": "130 de 536 respostas diferentes de 200 no último minuto",
+      "measured": false,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 13.490000009536743,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "error": "0 amostra(s) de backlog depois do primeiro minuto; são necessárias 3"
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.019027484143763214,
+      "h2_p95": 0.969,
+      "h4_confirmed": false,
+      "h4_p95": 23.5,
+      "h4_covered_by_newer": 0,
+      "h4_universe": 378,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.9776315789473683,
+        "broker_to_kafka": 0.017855263157894728,
+        "kafka_to_agent": 21.5111111111111,
+        "agent": 25.038961038961034,
+        "agent_to_core": 23.054545454545448,
+        "core_to_channel": 0.473644859813084
+      },
+      "cpu_total_mean": 882.7699999999999
+    },
+    {
+      "run": "meta-2",
+      "rate": 250,
+      "status": "parada_h1",
+      "reason": "h1-check no minuto 5 reprovado (h1-check.json)",
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 325.91200017929077,
+      "drained": false,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 58.776332989336076,
+          "upper_95": 61.37158762772775,
+          "limit": 2.5,
+          "samples": 18
+        },
+        "b_acceptance": {
+          "ok": false,
+          "planned": 81478.0000448227,
+          "sent": 18907,
+          "accepted": 13853,
+          "accepted_share": 0.17002135536438284,
+          "dropped_iterations": 62286,
+          "dropped_share": 0.764451753427124,
+          "failed_share": 0.26730840429470565
+        },
+        "c_zero_backlog": {
+          "ok": false,
+          "seconds": null,
+          "limit_seconds": 60
+        },
+        "backlog_max": 15218.0,
+        "backlog_end": 15218.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.008994557433400172,
+      "h2_p95": 67.322,
+      "h4_confirmed": false,
+      "h4_p95": "inf",
+      "h4_covered_by_newer": 7700,
+      "h4_universe": 6247,
+      "lost": 3612,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 60.0,
+        "broker_to_kafka": 0.018025345622119812,
+        "kafka_to_agent": 60.0,
+        "agent": 2.1281021897810217,
+        "agent_to_core": 60.0,
+        "core_to_channel": 0.19801397205588822
+      },
+      "cpu_total_mean": 854.1269999999998
+    },
+    {
+      "run": "extra-1",
+      "rate": 40,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 300.0,
+      "drained": true,
+      "h1_sustained": false,
+      "h1": {
+        "sustained": false,
+        "a_backlog_slope": {
+          "ok": false,
+          "slope_per_second": 24.05686274509804,
+          "upper_95": 24.990712406010683,
+          "limit": 0.4,
+          "samples": 17
+        },
+        "b_acceptance": {
+          "ok": true,
+          "planned": 12000.0,
+          "sent": 11914,
+          "accepted": 11914,
+          "accepted_share": 0.9928333333333333,
+          "dropped_iterations": 87,
+          "dropped_share": 0.00725,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": false,
+          "seconds": 105.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 6671.0,
+        "backlog_end": 6671.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.405489340271949,
+      "h2_p95": 0.735,
+      "h4_confirmed": false,
+      "h4_p95": 89.035,
+      "h4_covered_by_newer": 8826,
+      "h4_universe": 707,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.7326650943396226,
+        "broker_to_kafka": 0.01926524390243902,
+        "kafka_to_agent": 0.01617727272727272,
+        "agent": 1.1778409090909088,
+        "agent_to_core": 60.0,
+        "core_to_channel": 4.693142361111111
+      },
+      "cpu_total_mean": 846.0996296296297
+    },
+    {
+      "run": "h3-2",
+      "rate": 24,
+      "status": "concluida",
+      "reason": null,
+      "measured": true,
+      "valid": true,
+      "replicas": {
+        "web": 6,
+        "jobs-webhooks": 2,
+        "jobs-default": 2,
+        "broker-web": 2,
+        "broker-consumer": 2,
+        "agent-mock": 1
+      },
+      "duration_seconds": 480.0,
+      "drained": true,
+      "h1_sustained": true,
+      "h1": {
+        "sustained": true,
+        "a_backlog_slope": {
+          "ok": true,
+          "slope_per_second": 0.04400656814449919,
+          "upper_95": 0.1252311826966551,
+          "limit": 0.24,
+          "samples": 29
+        },
+        "b_acceptance": {
+          "ok": true,
+          "planned": 11520.0,
+          "sent": 11515,
+          "accepted": 11515,
+          "accepted_share": 0.9995659722222222,
+          "dropped_iterations": 5,
+          "dropped_share": 0.00043402777777777775,
+          "failed_share": 0.0
+        },
+        "c_zero_backlog": {
+          "ok": true,
+          "seconds": 15.0,
+          "limit_seconds": 60
+        },
+        "backlog_max": 170.0,
+        "backlog_end": 11.0
+      },
+      "h2_confirmed": false,
+      "h2_fraction_within_300ms": 0.7148067737733391,
+      "h2_p95": 0.69,
+      "h4_confirmed": false,
+      "h4_p95": 7.294,
+      "h4_covered_by_newer": 3,
+      "h4_universe": 9209,
+      "lost": 0,
+      "duplicated": 0,
+      "refused": 0,
+      "hop_p95": {
+        "core_to_broker": 0.714924242424242,
+        "broker_to_kafka": 0.014065855704697969,
+        "kafka_to_agent": 0.008927236693091728,
+        "agent": 0.45605997931747655,
+        "agent_to_core": 6.606316725978641,
+        "core_to_channel": 0.4601277740416946
+      },
+      "cpu_total_mean": 756.9248888888887
+    }
+  ],
+  "email": [
+    {
+      "run": "email-1",
+      "messages_in_core": 10,
+      "sent_to_agent": 10,
+      "deliveries": 9,
+      "reconciliation": {
+        "sent": 10,
+        "categories": {
+          "atendida": 10,
+          "recusada": 0,
+          "indefinida": 0,
+          "aceita_sem_message": 0,
+          "sem_acao": 0,
+          "ai_timeout": 0,
+          "fila_humana": 0
+        },
+        "status_0_with_message": 0,
+        "lost": 0,
+        "duplicated": 0,
+        "duplicated_core_message_ids": [],
+        "deliveries_without_record": {},
+        "stale_actions": 0,
+        "rejected_actions": 0,
+        "ok": true
+      },
+      "robustness_exit_code": 0
+    }
+  ]
+}

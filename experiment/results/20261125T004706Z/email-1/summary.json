@@ -1,0 +1,38 @@
+{
+  "kind": "email",
+  "run": "email-1",
+  "stage": "email",
+  "session": "20261125T004706Z",
+  "status": "concluida",
+  "reason": null,
+  "load_started_at": "2026-11-25T08:43:20.141Z",
+  "messages_in_core": 10,
+  "sent_to_agent": 10,
+  "reconciliation": {
+    "sent": 10,
+    "categories": {
+      "atendida": 10,
+      "recusada": 0,
+      "indefinida": 0,
+      "aceita_sem_message": 0,
+      "sem_acao": 0,
+      "ai_timeout": 0,
+      "fila_humana": 0
+    },
+    "status_0_with_message": 0,
+    "lost": 0,
+    "duplicated": 0,
+    "duplicated_core_message_ids": [],
+    "deliveries_without_record": {},
+    "stale_actions": 0,
+    "rejected_actions": 0,
+    "ok": true
+  },
+  "deliveries": 9,
+  "measured": true,
+  "robustness_check": {
+    "since": "2026-11-25T08:43:19Z",
+    "exit_code": 0,
+    "output": "ok      nenhuma resposta ai duplicada: 0\nok      nenhuma entrega duplicada: 0\nok      nenhuma idempotência repetida: 0\nok      mensagens sem ação: 0"
+  }
+}

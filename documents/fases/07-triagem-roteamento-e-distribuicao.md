@@ -327,7 +327,7 @@ No Compose, mensagens do simulador nos três canais das duas marcas chegam rotea
 | Handoff e painel (F11) | Fila de escalação, painel que chama `Distributor.next_for` e tela "Por que caiu aqui?" |
 | Admin (F13) | Edita regras pelo `Routing::RulePublisher` e filas, equipes e analistas por `Admin::QueueEditor`, `Admin::TeamEditor` e `Admin::AttendantEditor`; as opções do formulário de regra vêm de `Routing::Dimensions` |
 | Observabilidade (F14) | Profundidade por fila, risco de SLA e linha do tempo a partir dos eventos de roteamento |
-| Experimento (F18) | A capacidade das filas de IA é revista antes da carga |
+| Experimento (F18) | A carga usa lojistas sem segmento, que não chegam às filas com transbordo |
 
 ## Fontes
 

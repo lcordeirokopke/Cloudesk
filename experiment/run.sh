@@ -8,6 +8,7 @@
 #   experiment/run.sh h3                            8 min à taxa do piloto, com as falhas
 #   experiment/run.sh escada                        8 e 24 msg/s por 3 min e 80 por 5 min
 #   experiment/run.sh meta                          250 msg/s por até 15 min, no ambiente da escada
+#   experiment/run.sh meta sem-guarda-de-erros      o mesmo, em ambiente novo e sem a guarda de erros
 #   experiment/run.sh extra                         160 ou 40 msg/s por 5 min, se 250 não foi sustentado
 #   experiment/run.sh email [semente]               10 e-mails, fora da carga
 #   experiment/run.sh analisar <execução>           refaz a análise de uma execução, sem carga
@@ -139,7 +140,15 @@ escada() {
 
 meta() {
   load_session
-  running web || die "o ambiente da escada não está de pé"
+  case "${1:-}" in
+    sem-guarda-de-erros)
+      ERROR_GUARD=false
+      recreate
+      warmup 500
+      ;;
+    "") running web || die "o ambiente da escada não está de pé" ;;
+    *) die "argumento desconhecido: $1" ;;
+  esac
   run_load meta 250 900 180 parada-h1
 }
 
@@ -188,7 +197,7 @@ case "$command" in
     "$command" "$@"
     ;;
   *)
-    sed -n '2,20p' "${BASH_SOURCE[0]}"
+    sed -n '2,21p' "${BASH_SOURCE[0]}"
     exit 1
     ;;
 esac

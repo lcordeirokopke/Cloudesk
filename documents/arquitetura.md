@@ -296,7 +296,7 @@ O monólito é um único código que roda em processos distintos, cada um escala
 
 Cada papel escala pelo número de réplicas, com `docker compose up -d --scale <serviço>=<N>`; o Compose sobe uma réplica de cada. Uma réplica tem um processo: o Puma do `web` roda em modo single, com `RAILS_MAX_THREADS` threads (`WEB_MAX_THREADS` no Compose), e cada worker do Solid Queue tem `processes: 1`. O pool de conexões de cada processo é o `RAILS_MAX_THREADS` dele, e o `max_connections` do Postgres (`POSTGRES_MAX_CONNECTIONS`) cobre a soma dos processos na configuração da carga; a conta está em `documents/fases/16-robustez-e-escala.md`. Com `CLOUDESK_LOAD_PROFILE=1`, os processos Rails rodam sem recarregamento de código, com o código carregado no boot e sem os logs de desenvolvimento, para as medidas e a carga.
 
-Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web-lb`, `web`, `jobs-webhooks`, `jobs-default`, `broker-web`, `broker-consumer`, `agent-mock`, simulador de canais, `metrics`, `postgres-exporter`, Prometheus e Grafana, mais os que rodam e terminam a cada subida: `redpanda-init` e `postgres-monitor-init`. O k6 roda só durante o experimento.
+Contêineres do ambiente completo: PostgreSQL, Redpanda, Mailpit, `web-lb`, `web`, `jobs-webhooks`, `jobs-default`, `broker-web`, `broker-consumer`, `agent-mock`, simulador de canais, `metrics`, `postgres-exporter`, Prometheus e Grafana, mais os que rodam e terminam a cada subida: `redpanda-init` e `postgres-monitor-init`. O k6 roda só durante o experimento, no projeto Compose `cloudesk-experiment`.
 
 #### Filas de jobs e tarefas recorrentes
 
@@ -1047,11 +1047,24 @@ Cada hipótese é avaliada separadamente, para que o resultado de uma não escon
 
 A H4 mede a latência que o lojista percebe; a H2 mede só o trecho interno até o Kafka.
 
+H5 a H7 aplicam os critérios de H1, H2 e H4 à média em horário comercial do volume de referência, 8 msg/s por 3 min. Elas são definidas depois dos pilotos e antes da primeira execução a 8 msg/s, e por isso são informadas pelos pilotos:
+
+| # | Hipótese | Critério |
+| - | - | - |
+| H5 | A 8 msg/s por 3 min, a plataforma sustenta a carga | O mesmo da H1 |
+| H6 | Nessa carga, p95 entrada → Kafka < 300 ms | O mesmo da H2 |
+| H7 | Nessa carga, p95 ponta a ponta < 1 s | O mesmo da H4 |
+
+Os vereditos e os números estão em `documents/fases/18-experimento-tecnico.md`.
+
 ### Método
 
-- **Carga:** k6 chama diretamente os endpoints de entrada de WhatsApp e chat, em degraus de 1×, 3×, 10× e 30× a média. O e-mail é coberto por teste funcional, fora da carga.
-- **Falhas:** `docker restart` no `broker-web` e no `broker-consumer` e `docker kill` em um worker `jobs-webhooks` em instantes definidos do teste.
-- **Reconciliação:** cada mensagem enviada tem identificador único; o simulador de canais recebe as respostas de saída e as registra. Perdida é a mensagem do lojista sem ação aceita que a cubra (ver "Ação sobre contexto desatualizado"); duplicada é a resposta entregue mais de uma vez ao canal.
+- **Carga:** k6 chama diretamente os endpoints de entrada de WhatsApp e chat, em degraus de 8 e 24 msg/s por 3 min, 80 por 5 min e 250 por até 15 min (1×, 3×, 10× e 30× a média). A 250, a etapa para no minuto 5 quando a H1 já falhou. Sem 250 sustentado, há um degrau extra de 5 min. O e-mail é coberto por teste funcional, fora da carga.
+- **Conversas:** 5 mensagens do lojista, 20 s entre elas: 4 perguntas respondidas pela IA e um agradecimento. 90% WhatsApp e 10% chat; lojistas sem segmento, sempre roteados à IA; `AGENT_LATENCY_MS=200`.
+- **H1:** sustentada com (a) descartado o primeiro minuto, limite superior do IC 95% da inclinação do backlog abaixo de 1% da taxa; (b) pelo menos 99% da taxa aceita; (c) backlog zerado em até 60 s depois do degrau.
+- **H2 e H4:** a H2 decide pela fração até 0,3 s no histograma do `broker-web`, e a H4, pelo valor exato de `audit_events`.
+- **Falhas (H3):** 8 min à maior taxa sustentada no piloto, com `docker restart` no `broker-web` (minuto 2) e no `broker-consumer` (minuto 4) e `docker kill` em um worker `jobs-webhooks` (minuto 5,5, religado no 7).
+- **Reconciliação:** cada mensagem enviada tem identificador único; o simulador de canais recebe as respostas de saída e as registra. Perdida é a mensagem do lojista aceita sem `Message` no Core ou sem ação aceita que a cubra até o fim da drenagem, e a escalada por `ai_timeout` sem cobertura (ver "Ação sobre contexto desatualizado"); duplicada é a resposta entregue mais de uma vez ao canal.
 - **Métricas:** Prometheus coleta latência por salto, profundidade do Solid Queue, TPS e conexões do Postgres e lag de consumo do Kafka. Cada hipótese tem a sua leitura, no dashboard "Cloudesk - Saltos e experimento":
   - H1: `cloudesk_solid_queue_jobs` e `cloudesk_solid_queue_oldest_ready_age_seconds` por fila e `redpanda_kafka_consumer_group_lag_sum` dos grupos `cloudesk-agent` e `cloudesk-broker`, que não podem crescer ao longo do degrau;
   - H2: p95 de `cloudesk_broker_inbound_latency_seconds`, do `received_at` no Core à confirmação do Kafka no `broker-web`;
@@ -1086,6 +1099,14 @@ flowchart LR
 - A distribuição de mensagens é sintética.
 - Um único Postgres e um único nó Redpanda.
 - O canal de e-mail não participa da carga.
+- Uma execução por etapa, sem medida de variação; a 24 msg/s, execuções iguais divergem no critério da H1.
+- Degraus de 3 min dão 9 amostras de backlog, e o intervalo da regressão, com amostras autocorrelacionadas, não é exato.
+- A 250 msg/s, o k6 não consegue oferecer a taxa inteira, e a guarda de erros fica desligada nessa etapa.
+- A H3 é medida a 24 msg/s, não a 250.
+- A H4 descreve as mensagens respondidas: as cobertas por ação mais nova saem do universo e são contadas à parte.
+- A drenagem é limitada, o `received_at` é carimbado depois do nginx e da fila do Puma, e o lag é amostrado a cada 15 s.
+- `RAILS_ENV=development` com o perfil de carga e YJIT desligado.
+- O chat é 10% do tráfego, com lojistas reutilizados, e não há handoff na carga.
 
 ## Cobertura dos requisitos
 
@@ -1101,7 +1122,7 @@ flowchart LR
 | Rastreabilidade e auditoria | `audit_events` imutável, linha do tempo por mensagem e `traceparent` em HTTP e Kafka |
 | Memória e contexto | Histórico da conversa, resumo do lojista e identidade unificada entre canais |
 | Agente simulado | Mock determinístico com ferramentas falsas |
-| Experimento técnico | Quatro hipóteses, método e limitações descritos acima |
+| Experimento técnico | Quatro hipóteses, mais três na média, método e limitações descritos acima; resultados em `documents/fases/18-experimento-tecnico.md` |
 | Empacotamento self-hosted | Docker Compose com todos os serviços |
 
 ## Diferenciais

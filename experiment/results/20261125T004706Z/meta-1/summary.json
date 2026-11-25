@@ -1,0 +1,223 @@
+{
+  "kind": "carga",
+  "run": "meta-1",
+  "stage": "meta",
+  "session": "20261125T004706Z",
+  "rate": 250,
+  "duration_seconds": 13.490000009536743,
+  "planned_duration_seconds": 900,
+  "status": "interrompida",
+  "reason": "130 de 536 respostas diferentes de 200 no último minuto",
+  "measured": false,
+  "drained": true,
+  "replicas": {
+    "web": 6,
+    "jobs-webhooks": 2,
+    "jobs-default": 2,
+    "broker-web": 2,
+    "broker-consumer": 2,
+    "agent-mock": 1
+  },
+  "load_started_at": "2026-11-25T02:59:01.081Z",
+  "validity": {
+    "valid": true,
+    "conversations": 468,
+    "routed": 468,
+    "routed_to_ai": 468,
+    "without_route": 0,
+    "agent_escalate": 0,
+    "metrics_collect_errors": 0.0,
+    "host_standby_seconds": 0.0,
+    "dlq_messages": 0,
+    "failed_jobs_at_end": {}
+  },
+  "h1": {
+    "sustained": false,
+    "error": "0 amostra(s) de backlog depois do primeiro minuto; são necessárias 3"
+  },
+  "h1_sustained": false,
+  "h2": {
+    "histogram": {
+      "confirmed": false,
+      "fraction_within_limit": 0.019027484143763214,
+      "limit_seconds": 0.3,
+      "observed": 473.0,
+      "core_messages": 468,
+      "p95_histogram": 0.9811666666666665
+    },
+    "exact": {
+      "count": 468,
+      "p50": 0.569,
+      "p95": 0.969,
+      "p99": 1.103
+    }
+  },
+  "h4": {
+    "exact": {
+      "confirmed": false,
+      "limit_seconds": 1.0,
+      "universe": 378,
+      "answered": 378,
+      "covered_by_newer": 0,
+      "unanswered": 0,
+      "p50": 15.163,
+      "p95": 23.5,
+      "p99": 25.029,
+      "raw_p95": 23.7
+    },
+    "histogram": {
+      "observed": 382.0,
+      "fraction_within_limit": 0.0,
+      "p95_histogram": 28.95054945054945
+    }
+  },
+  "reconciliation": {
+    "sent": 793,
+    "categories": {
+      "atendida": 468,
+      "recusada": 0,
+      "indefinida": 325,
+      "aceita_sem_message": 0,
+      "sem_acao": 0,
+      "ai_timeout": 0,
+      "fila_humana": 0
+    },
+    "status_0_with_message": 62,
+    "lost": 0,
+    "duplicated": 0,
+    "duplicated_core_message_ids": [],
+    "deliveries_without_record": {},
+    "stale_actions": 0,
+    "rejected_actions": 0,
+    "ok": true
+  },
+  "http_req_duration_ms": {
+    "p50": 5594.7,
+    "p95": 9608.9,
+    "p99": 9849.9
+  },
+  "bottleneck": {
+    "cpu_total_mean": 882.7699999999999,
+    "cpu_total_max": 882.7699999999999,
+    "services": {
+      "agent-mock": {
+        "cpu_mean": 1.76,
+        "cpu_max": 1.76,
+        "mem_mib_max": 32.73
+      },
+      "broker-consumer": {
+        "cpu_mean": 0.9099999999999999,
+        "cpu_max": 0.9099999999999999,
+        "mem_mib_max": 109.75999999999999
+      },
+      "broker-web": {
+        "cpu_mean": 59.49,
+        "cpu_max": 59.49,
+        "mem_mib_max": 132.1
+      },
+      "channel-simulator": {
+        "cpu_mean": 0.22,
+        "cpu_max": 0.22,
+        "mem_mib_max": 29.68
+      },
+      "jobs-default": {
+        "cpu_mean": 12.719999999999999,
+        "cpu_max": 12.719999999999999,
+        "mem_mib_max": 772.0999999999999
+      },
+      "jobs-webhooks": {
+        "cpu_mean": 120.58,
+        "cpu_max": 120.58,
+        "mem_mib_max": 521.0
+      },
+      "k6": {
+        "cpu_mean": 18.48,
+        "cpu_max": 18.48,
+        "mem_mib_max": 146.3
+      },
+      "mailpit": {
+        "cpu_mean": 0.61,
+        "cpu_max": 0.61,
+        "mem_mib_max": 11.21
+      },
+      "metrics": {
+        "cpu_mean": 0.03,
+        "cpu_max": 0.03,
+        "mem_mib_max": 148.8
+      },
+      "outros projetos": {
+        "cpu_mean": 0.19,
+        "cpu_max": 0.19,
+        "mem_mib_max": 2.078
+      },
+      "postgres": {
+        "cpu_mean": 161.47,
+        "cpu_max": 161.47,
+        "mem_mib_max": 296.6
+      },
+      "postgres-exporter": {
+        "cpu_mean": 5.37,
+        "cpu_max": 5.37,
+        "mem_mib_max": 10.94
+      },
+      "prometheus": {
+        "cpu_mean": 1.54,
+        "cpu_max": 1.54,
+        "mem_mib_max": 64.88
+      },
+      "redpanda": {
+        "cpu_mean": 4.15,
+        "cpu_max": 4.15,
+        "mem_mib_max": 582.8
+      },
+      "web": {
+        "cpu_mean": 491.82,
+        "cpu_max": 491.82,
+        "mem_mib_max": 924.4
+      },
+      "web-lb": {
+        "cpu_mean": 3.43,
+        "cpu_max": 3.43,
+        "mem_mib_max": 15.43
+      }
+    },
+    "hop_p95": {
+      "core_to_broker": 0.9776315789473683,
+      "broker_to_kafka": 0.017855263157894728,
+      "kafka_to_agent": 21.5111111111111,
+      "agent": 25.038961038961034,
+      "agent_to_core": 23.054545454545448,
+      "core_to_channel": 0.473644859813084
+    },
+    "queues": {
+      "webhooks": {
+        "mean": 0.0,
+        "max": 0.0
+      },
+      "channels": {
+        "mean": 0.0,
+        "max": 0.0
+      },
+      "default": {
+        "mean": 0.0,
+        "max": 0.0
+      },
+      "cloudesk-agent": {
+        "mean": 0.0,
+        "max": 0.0
+      },
+      "cloudesk-broker": {
+        "mean": 0.0,
+        "max": 0.0
+      }
+    },
+    "postgres_tps": {
+      "mean": 146.98357779174452,
+      "max": 175.75296988120476
+    },
+    "postgres_connections": {
+      "mean": 64.0,
+      "max": 64.0
+    }
+  }
+}

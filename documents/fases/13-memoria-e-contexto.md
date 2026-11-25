@@ -104,7 +104,7 @@ Na reabertura, `conversation.reopened` e `customer_memory.updated` (ou `.deleted
 
 ### Concorrência
 
-O `MemoryRefresh` trava só a linha do `Contact`. O job trava o lojista e lê as conversas sem trava; o Intake já tem a conversa travada e trava o lojista depois. As resoluções travam a conversa e só enfileiram o job, sem travar o lojista. Nenhum caminho trava o lojista antes da conversa, então não há ciclo. Um job que roda depois de uma reabertura lê o estado atual e chega ao mesmo resultado que a reabertura gravou.
+O `MemoryRefresh` trava só a linha do `Contact`. O job trava a conversa que disparou o recálculo e depois o lojista; o Intake já tem a conversa travada e trava o lojista depois. O `audit_event` do recálculo referencia a conversa, então a inserção dele também pede a trava dela. As demais conversas são lidas sem trava. As resoluções travam a conversa e só enfileiram o job, sem travar o lojista. Nenhum caminho trava o lojista antes da conversa, então não há ciclo. Um job que roda depois de uma reabertura lê o estado atual e chega ao mesmo resultado que a reabertura gravou.
 
 ### Contexto do agente
 

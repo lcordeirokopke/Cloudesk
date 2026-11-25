@@ -1,0 +1,14 @@
+{
+  "passed": false,
+  "a_backlog_slope": {
+    "ok": false,
+    "slope_per_second": 58.34264705882353,
+    "upper_95": 61.21733502393993,
+    "limit": 2.5
+  },
+  "b_accepted_share": {
+    "ok": false,
+    "value": 0.17613333333333334
+  },
+  "until_seconds": 300.0
+}

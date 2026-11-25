@@ -2,7 +2,7 @@ module Conversations
   # Recalcula do zero a memória do lojista (CustomerMemory) a partir das conversas encerradas dele.
   # Roda dentro do Tenancy.with_brand de quem chama (o Intake na reabertura, o MemoryRefreshJob na
   # resolução):
-  #   1. trava o lojista (FOR UPDATE), o que serializa os recálculos do mesmo lojista e evita a
+  #   1. trava o lojista (FOR UPDATE), depois da conversa, que quem chama já tem travada: serializa os recálculos do mesmo lojista e evita a
   #      corrida no índice único (brand_id, contact_id);
   #   2. lê as até CustomerMemory::MAX_ENTRIES conversas resolved ou closed do lojista, por
   #      resolved_at decrescente, e monta entries e summary (uma linha por conversa, no locale do

@@ -65,7 +65,7 @@ Cloudwalk/
 ├── agent_mock/           Python: pyproject.toml, src/, tests/
 ├── agent_conformance/    Python: pyproject.toml, src/, tests/; kit de conformidade do agente
 ├── channel_simulator/    Python: pyproject.toml, src/, tests/
-├── experiment/           pasta do experimento, só com .gitkeep
+├── experiment/           roteiro, k6, análise e resultados do experimento
 ├── infra/
 │   ├── postgres/init/    criação dos papéis e dos bancos
 │   ├── postgres/monitor/ criação ou atualização do papel de monitoração

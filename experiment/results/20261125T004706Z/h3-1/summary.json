@@ -1,0 +1,277 @@
+{
+  "kind": "carga",
+  "run": "h3-1",
+  "stage": "h3",
+  "session": "20261125T004706Z",
+  "rate": 24,
+  "duration_seconds": 480.0,
+  "planned_duration_seconds": 480,
+  "status": "concluida",
+  "reason": null,
+  "measured": true,
+  "drained": true,
+  "replicas": {
+    "web": 6,
+    "jobs-webhooks": 2,
+    "jobs-default": 2,
+    "broker-web": 2,
+    "broker-consumer": 2,
+    "agent-mock": 1
+  },
+  "load_started_at": "2026-11-25T02:16:06.982Z",
+  "validity": {
+    "valid": true,
+    "conversations": 2457,
+    "routed": 2592,
+    "routed_to_ai": 2592,
+    "without_route": 0,
+    "agent_escalate": 0,
+    "metrics_collect_errors": 0.0,
+    "host_standby_seconds": 0.0,
+    "dlq_messages": 0,
+    "failed_jobs_at_end": {}
+  },
+  "h1": {
+    "sustained": false,
+    "a_backlog_slope": {
+      "ok": false,
+      "slope_per_second": 1.8462068965517242,
+      "upper_95": 2.7385607171320685,
+      "limit": 0.24,
+      "samples": 29
+    },
+    "b_acceptance": {
+      "ok": true,
+      "planned": 11520.0,
+      "sent": 11499,
+      "accepted": 11495,
+      "accepted_share": 0.9978298611111112,
+      "dropped_iterations": 21,
+      "dropped_share": 0.0018229166666666667,
+      "failed_share": 0.0003478563353335073
+    },
+    "c_zero_backlog": {
+      "ok": true,
+      "seconds": 45.0,
+      "limit_seconds": 60
+    },
+    "backlog_max": 1278.0,
+    "backlog_end": 350.0
+  },
+  "h1_sustained": false,
+  "h2": {
+    "histogram": {
+      "confirmed": false,
+      "fraction_within_limit": 0.5708568943018704,
+      "limit_seconds": 0.3,
+      "observed": 11420.0,
+      "core_messages": 11495,
+      "p95_histogram": 23.145258103241297
+    },
+    "exact": {
+      "count": 11237,
+      "p50": 0.235,
+      "p95": 17.721,
+      "p99": 19.745
+    }
+  },
+  "h4": {
+    "exact": {
+      "confirmed": false,
+      "limit_seconds": 1.0,
+      "universe": 5734,
+      "answered": 5734,
+      "covered_by_newer": 3461,
+      "unanswered": 0,
+      "p50": 1.026,
+      "p95": 19.491,
+      "p99": 20.059,
+      "raw_p95": 19.691
+    },
+    "histogram": {
+      "observed": 5734.0,
+      "fraction_within_limit": 0.49145448203697245,
+      "p95_histogram": 24.94356261022928
+    }
+  },
+  "reconciliation": {
+    "sent": 11499,
+    "categories": {
+      "atendida": 11495,
+      "recusada": 4,
+      "indefinida": 0,
+      "aceita_sem_message": 0,
+      "sem_acao": 0,
+      "ai_timeout": 0,
+      "fila_humana": 0
+    },
+    "status_0_with_message": 0,
+    "lost": 0,
+    "duplicated": 0,
+    "duplicated_core_message_ids": [],
+    "deliveries_without_record": {},
+    "stale_actions": 3289,
+    "rejected_actions": 0,
+    "ok": true
+  },
+  "http_req_duration_ms": {
+    "p50": 138.6,
+    "p95": 876.7,
+    "p99": 1536.1
+  },
+  "bottleneck": {
+    "cpu_total_mean": 699.1341860465116,
+    "cpu_total_max": 914.7400000000001,
+    "services": {
+      "agent-mock": {
+        "cpu_mean": 17.92906976744186,
+        "cpu_max": 34.82,
+        "mem_mib_max": 32.62
+      },
+      "broker-consumer": {
+        "cpu_mean": 13.995116279069766,
+        "cpu_max": 90.21,
+        "mem_mib_max": 122.32
+      },
+      "broker-web": {
+        "cpu_mean": 15.356279069767442,
+        "cpu_max": 70.39,
+        "mem_mib_max": 136.79
+      },
+      "channel-simulator": {
+        "cpu_mean": 2.9590697674418607,
+        "cpu_max": 6.93,
+        "mem_mib_max": 29.15
+      },
+      "jobs-default": {
+        "cpu_mean": 91.75488372093024,
+        "cpu_max": 166.19,
+        "mem_mib_max": 819.9000000000001
+      },
+      "jobs-webhooks": {
+        "cpu_mean": 78.95744186046512,
+        "cpu_max": 150.76,
+        "mem_mib_max": 516.8
+      },
+      "k6": {
+        "cpu_mean": 7.947209302325581,
+        "cpu_max": 13.7,
+        "mem_mib_max": 34.49
+      },
+      "mailpit": {
+        "cpu_mean": 0.7746511627906977,
+        "cpu_max": 7.11,
+        "mem_mib_max": 14.78
+      },
+      "metrics": {
+        "cpu_mean": 2.4616279069767444,
+        "cpu_max": 23.64,
+        "mem_mib_max": 153.6
+      },
+      "outros projetos": {
+        "cpu_mean": 0.7518604651162789,
+        "cpu_max": 6.37,
+        "mem_mib_max": 2.168
+      },
+      "postgres": {
+        "cpu_mean": 118.16232558139534,
+        "cpu_max": 205.06,
+        "mem_mib_max": 429.6
+      },
+      "postgres-exporter": {
+        "cpu_mean": 1.107906976744186,
+        "cpu_max": 7.75,
+        "mem_mib_max": 13.45
+      },
+      "prometheus": {
+        "cpu_mean": 1.4900000000000002,
+        "cpu_max": 8.46,
+        "mem_mib_max": 68.3
+      },
+      "redpanda": {
+        "cpu_mean": 10.316279069767443,
+        "cpu_max": 42.67,
+        "mem_mib_max": 607.2
+      },
+      "web": {
+        "cpu_mean": 330.6241860465116,
+        "cpu_max": 481.77,
+        "mem_mib_max": 941.0
+      },
+      "web-lb": {
+        "cpu_mean": 4.546279069767442,
+        "cpu_max": 6.72,
+        "mem_mib_max": 6.086
+      }
+    },
+    "hop_p95": {
+      "core_to_broker": 3.2281250000000057,
+      "broker_to_kafka": 0.014088390501319268,
+      "kafka_to_agent": 0.008993859649122807,
+      "agent": 0.4828694404591105,
+      "agent_to_core": 23.854233654876744,
+      "core_to_channel": 0.721902654867257
+    },
+    "queues": {
+      "webhooks": {
+        "mean": 68.9090909090909,
+        "max": 501.0
+      },
+      "channels": {
+        "mean": 1.6666666666666667,
+        "max": 10.0
+      },
+      "default": {
+        "mean": 2.303030303030303,
+        "max": 8.0
+      },
+      "cloudesk-agent": {
+        "mean": 0.030303030303030304,
+        "max": 1.0
+      },
+      "cloudesk-broker": {
+        "mean": 222.03030303030303,
+        "max": 1270.0
+      }
+    },
+    "postgres_tps": {
+      "mean": 486.1634222183652,
+      "max": 593.0074405952475
+    },
+    "postgres_connections": {
+      "mean": 64.69791666666667,
+      "max": 69.0
+    }
+  },
+  "faults": [
+    {
+      "at": "2026-11-25T02:18:06.986Z",
+      "label": "restart broker-web",
+      "command": "docker restart c3f6260bd13dd66fd325c19e2e76d62ad38eecf57de1cbb9032740b688c21d92 073d88c9261b041ee60cbb2744444cef62edcf65d746006206d7336bb998f679",
+      "finished_at": "2026-11-25T02:18:10.552Z"
+    },
+    {
+      "at": "2026-11-25T02:20:08.013Z",
+      "label": "restart broker-consumer",
+      "command": "docker restart 1f72b6c378d9b0395c9837518af4bdd64f901eff4edef9792cf1e730908bdf46 70c5da68a585774cd9a1ebc8404fdbb4f174e58358727a95dbaeb836c1eccd6c",
+      "finished_at": "2026-11-25T02:20:19.440Z"
+    },
+    {
+      "at": "2026-11-25T02:21:36.779Z",
+      "label": "kill jobs-webhooks",
+      "command": "docker kill cloudesk-experiment-jobs-webhooks-1",
+      "finished_at": "2026-11-25T02:21:39.379Z"
+    },
+    {
+      "at": "2026-11-25T02:23:06.755Z",
+      "label": "start jobs-webhooks",
+      "command": "docker start cloudesk-experiment-jobs-webhooks-1",
+      "finished_at": "2026-11-25T02:23:08.719Z"
+    }
+  ],
+  "robustness_check": {
+    "since": "2026-11-25T02:16:06Z",
+    "exit_code": 0,
+    "output": "ok      nenhuma resposta ai duplicada: 0\nok      nenhuma entrega duplicada: 0\nok      nenhuma idempotência repetida: 0\nok      mensagens sem ação: 0"
+  }
+}
