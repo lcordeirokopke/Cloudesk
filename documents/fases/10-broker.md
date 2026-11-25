@@ -85,7 +85,7 @@ O produtor do `broker-web` é fechado quando o Puma para; o do `broker-consumer`
 
 ### Volta: Kafka para a API de ações
 
-`Broker::ActionsConsumer` roda no `karafka server` do `broker-consumer` (`core/karafka.rb`), no grupo de consumidores `cloudesk-broker`, a partir do início do tópico quando o grupo ainda não tem posição gravada. Os offsets são marcados pelo próprio consumidor (`manual_offset_management`), mensagem a mensagem, só depois do resultado final.
+`Broker::ActionsConsumer` roda no `karafka server` do `broker-consumer` (`core/karafka.rb`), no grupo de consumidores `cloudesk-broker`, a partir do início do tópico quando o grupo ainda não tem posição gravada. Os offsets são marcados pelo próprio consumidor (`manual_offset_management`), mensagem a mensagem, só depois do resultado final. O lote é formado em até 100 ms (`max_wait_time`): a ação que chega sozinha espera até esse tempo antes de ser processada, e ele entra na latência ponta a ponta.
 
 Para cada ação:
 

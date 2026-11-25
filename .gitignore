@@ -5,3 +5,6 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 channel_simulator/data/
+experiment/results/**/raw/
+experiment/results/personas.json
+experiment/results/.session

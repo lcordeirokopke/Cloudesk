@@ -1,0 +1,140 @@
+# Override do compose.yaml para o experimento de carga, no projeto cloudesk-experiment:
+#   docker compose -p cloudesk-experiment -f compose.yaml -f experiment/compose.yaml ...
+# Roda da raiz do repositório; os caminhos relativos são resolvidos a partir dela. O projeto tem rede
+# e volumes próprios. Os serviços da imagem cloudesk-core:dev rodam o código copiado na imagem, sem a
+# pasta do código montada do host: o Rails consulta arquivos a cada requisição, e o acesso a uma pasta
+# do Windows pelo WSL2 domina o tempo da requisição. O log do Rails, os arquivos do Active Storage
+# e a pasta tmp, que guarda o secret_key_base do ambiente development, são comuns às réplicas e ficam em
+# volumes. Os logs dos contêineres são limitados.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: 50m
+      max-file: "2"
+
+services:
+  postgres:
+    <<: *logging
+
+  redpanda:
+    <<: *logging
+
+  redpanda-init:
+    <<: *logging
+
+  mailpit:
+    <<: *logging
+
+  web:
+    <<: *logging
+    environment:
+      RUBY_YJIT_ENABLE: ${EXPERIMENT_YJIT:-0}
+    volumes: !override
+      - experiment-logs:/rails/log
+      - experiment-storage:/rails/storage
+      - experiment-tmp:/rails/tmp
+      - ./experiment/results:/results
+      - ./contracts:/contracts:ro
+
+  web-lb:
+    <<: *logging
+
+  jobs-default:
+    <<: *logging
+    environment:
+      RUBY_YJIT_ENABLE: ${EXPERIMENT_YJIT:-0}
+    volumes: !override
+      - experiment-logs:/rails/log
+      - experiment-storage:/rails/storage
+      - experiment-tmp:/rails/tmp
+      - ./contracts:/contracts:ro
+
+  jobs-webhooks:
+    <<: *logging
+    environment:
+      RUBY_YJIT_ENABLE: ${EXPERIMENT_YJIT:-0}
+    volumes: !override
+      - experiment-logs:/rails/log
+      - experiment-storage:/rails/storage
+      - experiment-tmp:/rails/tmp
+      - ./contracts:/contracts:ro
+
+  broker-web:
+    <<: *logging
+    environment:
+      RUBY_YJIT_ENABLE: ${EXPERIMENT_YJIT:-0}
+    volumes: !override
+      - ./contracts:/contracts:ro
+
+  broker-consumer:
+    <<: *logging
+    environment:
+      RUBY_YJIT_ENABLE: ${EXPERIMENT_YJIT:-0}
+    volumes: !override
+      - ./contracts:/contracts:ro
+
+  channel-simulator:
+    <<: *logging
+    environment:
+      PERSONAS_PATH: /results/personas.json
+    volumes:
+      - experiment-simulator-data:/app/data
+      - ./experiment/results:/results:ro
+
+  agent-mock:
+    <<: *logging
+
+  metrics:
+    <<: *logging
+    environment:
+      RUBY_YJIT_ENABLE: ${EXPERIMENT_YJIT:-0}
+    volumes: !override
+      - experiment-logs:/rails/log
+      - experiment-storage:/rails/storage
+      - experiment-tmp:/rails/tmp
+      - ./contracts:/contracts:ro
+
+  postgres-monitor-init:
+    <<: *logging
+
+  postgres-exporter:
+    <<: *logging
+
+  prometheus:
+    <<: *logging
+
+  grafana:
+    <<: *logging
+
+  # Gerador de carga. O usuário root grava na pasta de resultados montada do host.
+  k6:
+    <<: *logging
+    image: grafana/k6:2.4.0
+    profiles: [experiment]
+    user: root
+    environment:
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      CHAT_SIGNING_SECRET: ${CHAT_SIGNING_SECRET}
+      CORE_URL: http://web-lb:3000
+      SIMULATOR_URL: http://channel-simulator:8080
+    volumes:
+      - ./experiment/k6:/scripts:ro
+      - ./experiment/results:/results
+
+  # Captura do Prometheus, análise e relatório (experiment/src).
+  analysis:
+    <<: *logging
+    build: ./experiment
+    image: cloudesk-experiment:dev
+    profiles: [experiment]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./experiment:/app
+
+volumes:
+  experiment-logs:
+  experiment-storage:
+  experiment-tmp:
+  experiment-simulator-data:

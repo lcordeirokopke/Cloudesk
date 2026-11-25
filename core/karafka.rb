@@ -14,6 +14,9 @@ class KarafkaApp < Karafka::App
     config.client_id = "cloudesk-broker-consumer"
     config.kafka = { "bootstrap.servers": Broker::Settings.kafka_brokers }
     config.initial_offset = "earliest"
+    # Espera máxima pela formação de um lote, em milissegundos. A ação que chega sozinha espera até esse
+    # tempo antes de ser processada, e ele entra na latência ponta a ponta.
+    config.max_wait_time = 100
     config.logger = Logger.new($stdout, level: Logger::INFO)
     config.pause.timeout = 2_000
     config.pause.max_timeout = 60_000

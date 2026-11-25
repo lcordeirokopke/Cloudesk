@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloudesk-experiment"
+version = "0.1.0"
+description = "Captura, análise e relatório do experimento de carga do Cloudesk"
+requires-python = ">=3.13"
+dependencies = [
+    "pandas==3.1.1",
+    "plotly==7.1.0",
+    "numpy==2.5.5",
+    "scipy==1.18.1",
+    "kaleido==1.5.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.2.0"]
+
+[project.scripts]
+cloudesk-experiment = "cloudesk_experiment.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+markers = ["png: gera os arquivos PNG com o kaleido"]

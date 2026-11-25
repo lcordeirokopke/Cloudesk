@@ -1,0 +1,16 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "matrix",
+    "result": [
+      {
+        "metric": {"__name__": "cloudesk_solid_queue_jobs", "instance": "metrics:9394", "job": "metrics", "queue": "webhooks", "state": "ready"},
+        "values": [[1796119200, "3"], [1796119205, "7"]]
+      },
+      {
+        "metric": {"__name__": "cloudesk_solid_queue_jobs", "instance": "metrics:9394", "job": "metrics", "queue": "channels", "state": "claimed"},
+        "values": [[1796119200, "2"]]
+      }
+    ]
+  }
+}
