@@ -15,12 +15,13 @@ O repositório e a infraestrutura local são a base sobre a qual todo o Cloudesk
 ## Onde fica no fluxo
 
 ```text
-docker compose up
+docker compose up -d, depois da migração e das seeds
   ├─ postgres ──────────── infra/postgres/init: papéis cloudesk_owner e cloudesk_app, bancos de dev e teste
   ├─ postgres-monitor-init ─ infra/postgres/monitor: papel cloudesk_monitor
   ├─ redpanda ──────────── redpanda-init: agent.inbound, agent.outbound (6 partições), agent.dlq,
   │                         conformance.inbound e conformance.outbound; lag por grupo de consumo
   ├─ mailpit ───────────── SMTP 1025, API e interface 8025
+  ├─ web-lb ────────────── infra/nginx: porta 3000, distribui entre as réplicas do web
   ├─ web, jobs-default, jobs-webhooks, metrics ─┐
   ├─ broker-web, broker-consumer ───────────────┴─ mesma imagem cloudesk-core:dev, comandos diferentes
   ├─ channel-simulator
@@ -32,7 +33,7 @@ Os serviços `agent-conformance` e `agent-mock-conformance` ficam no profile `co
 
 ## Por que existe e que valor gera
 
-**Um comando sobe o sistema inteiro.** O Compose sobe toda a infraestrutura e todos os processos, sem nada instalado na máquina além do Docker. Quem avalia o projeto roda o mesmo ambiente de quem o desenvolveu, e o experimento roda sobre esse mesmo ambiente.
+**O Compose sobe o sistema inteiro.** Depois da migração e das seeds, `docker compose up -d` sobe toda a infraestrutura e todos os processos, sem nada instalado na máquina além do Docker. Quem avalia o projeto roda o mesmo ambiente de quem o desenvolveu, e o experimento roda sobre esse mesmo ambiente.
 
 **Um único sistema de estado.** Jobs, tempo real e cache ficam no PostgreSQL do app. A gravação da mensagem e do job de webhook cabe na mesma transação (outbox implícito), e não existe Redis nem dual-write para manter em sincronia.
 
@@ -69,11 +70,12 @@ Cloudwalk/
 ├── infra/
 │   ├── postgres/init/    criação dos papéis e dos bancos
 │   ├── postgres/monitor/ criação ou atualização do papel de monitoração
+│   ├── nginx/            balanceador das réplicas do web
 │   ├── redpanda/         criação dos tópicos e do lag por grupo de consumo
 │   ├── prometheus/       coleta
 │   └── grafana/          datasource, dashboards e alertas provisionados
 ├── documents/
-├── .env.example          nomes dos papéis, dos bancos e das variáveis; valores no .env
+├── .env.example          variáveis com valores de demonstração; copiado para o .env
 ├── .gitattributes        final de linha LF nos scripts e Dockerfiles
 ├── compose.yaml
 └── README.md
@@ -81,8 +83,8 @@ Cloudwalk/
 
 - **Módulos como namespaces.** O Rails acrescenta ao autoload os diretórios sob `app`, e os diretórios funcionam como namespaces: `core/app/modules/routing/` define constantes em `Routing`, sem configuração adicional. Os módulos são `Channels`, `Conversations`, `Routing`, `Agents`, `Audit`, `Admin` e `Observability`.
 - **Código fora do autoload.** O `config.autoload_lib` ignora `assets`, `tasks`, `middleware`, `broker` e `broker.rb`: o Broker é carregado por `core/lib/broker.rb`, sem Rails.
-- **Credenciais.** Ficam no `.env` da raiz, criado a partir do `.env.example`; o `.env` não é versionado.
-- **Final de linha.** O `.gitattributes` força LF nos `.sh`, nos Dockerfiles e em `core/bin/*`: com `core.autocrlf=true` no Windows, um script com CRLF falharia dentro do contêiner.
+- **Credenciais.** Ficam no `.env` da raiz, criado a partir do `.env.example`, que traz valores de demonstração, só para uso local com dados sintéticos; o `.env` não é versionado.
+- **Final de linha e modo de execução.** O `.gitattributes` força LF nos `.sh`, nos Dockerfiles e em `core/bin/*`: com `core.autocrlf=true` no Windows, um script com CRLF falharia dentro do contêiner. Os arquivos de `core/bin/*` têm modo `100755` no Git: em um clone Linux ou macOS, com `core/` montada, o contêiner executa `bin/rails` e `bin/jobs` com a permissão do arquivo do host.
 
 ### App Rails
 
@@ -136,10 +138,11 @@ Os dois papéis nascem sem superusuário, `BYPASSRLS`, `CREATEROLE` e `CREATEDB`
 | `redpanda` | `redpanda:v26.2.7` | Kafka de um nó, modo `dev-container`, 1 núcleo; listener interno na 9092 e externo na 19092 |
 | `redpanda-init` | `redpanda:v26.2.7` | Cria os tópicos, liga o lag por grupo de consumo e termina |
 | `mailpit` | `axllent/mailpit` | SMTP na 1025, API e interface na 8025, webhook para o Core |
-| `web` | `cloudesk-core:dev` | Rails (Puma) na 3000 |
+| `web-lb` | `nginx:1.30.8-alpine` | Balanceador na 3000, entrada HTTP e WebSocket do Core |
+| `web` | `cloudesk-core:dev` | Rails (Puma), na 3000 do contêiner, sem porta no host |
 | `jobs-default` | `cloudesk-core:dev` | Solid Queue: filas internas e tarefas recorrentes |
 | `jobs-webhooks` | `cloudesk-core:dev` | Solid Queue: só a fila `webhooks` |
-| `broker-web` | `cloudesk-core:dev` | Endpoint Rack do Broker (Puma), na 3000 do contêiner e 3001 do host |
+| `broker-web` | `cloudesk-core:dev` | Endpoint Rack do Broker (Puma), na 3000 do contêiner, sem porta no host |
 | `broker-consumer` | `cloudesk-core:dev` | `karafka server` |
 | `metrics` | `cloudesk-core:dev` | App Rack de métricas (Puma), na 9394, só na rede do Compose |
 | `channel-simulator` | `cloudesk-channel-simulator:dev` | Simulador de canais na 8080 |
@@ -152,7 +155,7 @@ Os dois papéis nascem sem superusuário, `BYPASSRLS`, `CREATEROLE` e `CREATEDB`
 
 - `web`, `jobs-default`, `jobs-webhooks` e `metrics` compartilham o bloco `x-rails` por âncora YAML, com o build, a imagem, o ambiente (`rails-environment`), os volumes e a espera pelo `postgres` saudável. Cada um define o próprio `command`; `jobs-webhooks` e `metrics` também mudam `RAILS_MAX_THREADS` (7 e 2).
 - `broker-web` e `broker-consumer` usam a imagem `cloudesk-core:dev`, construída pelos serviços do `x-rails`, sem `build` próprio. O ambiente deles vem da âncora `broker-environment`, com `KARAFKA_REQUIRE_RAILS=false` e sem `DB_*`, e os dois esperam o `redpanda-init` terminar com sucesso.
-- Portas publicadas no host: 3000 (`web`), 3001 (`broker-web`), 8080 (`channel-simulator`), 1025 e 8025 (`mailpit`), 19092 (`redpanda`), 9090 (`prometheus`) e 3002 (`grafana`). O Postgres e o `metrics` não ficam expostos.
+- Portas publicadas no host: 3000 (`web-lb`), 8080 (`channel-simulator`), 1025 e 8025 (`mailpit`), 19092 (`redpanda`), 9090 (`prometheus`) e 3002 (`grafana`). O `web`, o `broker-web`, o Postgres e o `metrics` não ficam expostos.
 - O PostgreSQL 18 usa o volume em `/var/lib/postgresql`, e não em `/var/lib/postgresql/data`: a partir da versão 18, a imagem oficial guarda os dados num diretório por versão (`PGDATA` em `/var/lib/postgresql/18/docker`).
 - Volumes nomeados: `postgres-data`, `redpanda-data`, `prometheus-data` e `grafana-data`.
 
@@ -192,7 +195,7 @@ Os dois papéis nascem sem superusuário, `BYPASSRLS`, `CREATEROLE` e `CREATEDB`
 | Plataforma self-hosted, empacotada em Docker Compose | O Compose com todos os serviços, as imagens e os scripts de inicialização |
 | Integração com o atendente por webhooks e broker | O Redpanda, os tópicos e os processos do Broker e do agente no Compose |
 | Recebimento multicanal simulado | O Mailpit e o serviço do simulador de canais |
-| Documentação: instalação e execução | O caminho único de execução: `.env` a partir do `.env.example` e `docker compose up` |
+| Documentação: instalação e execução | O caminho único de execução, na ordem do `README.md`: `.env` a partir do `.env.example`, build, migração e seeds, `docker compose up -d` e personas |
 
 ### No experimento técnico
 
@@ -220,12 +223,14 @@ Nenhum diferencial é implementado aqui. O Compose sobe o Prometheus e o Grafana
 
 **Ordem de uso:**
 
-1. `.env` a partir do `.env.example`, com os segredos preenchidos;
-2. `docker compose up -d`;
-3. migrações e seeds no contêiner `web`, com o papel dono:
-   `docker compose exec web sh -c 'DB_USERNAME="$DB_OWNER_USERNAME" DB_PASSWORD="$DB_OWNER_PASSWORD" bin/rails db:migrate db:seed'`
-4. banco de teste com o papel dono:
-   `docker compose exec web sh -c 'RAILS_ENV=test DB_USERNAME="$DB_OWNER_USERNAME" DB_PASSWORD="$DB_OWNER_PASSWORD" bin/rails db:migrate'`
+1. `.env` a partir do `.env.example`: `cp .env.example .env`
+2. imagens: `docker compose build`
+3. migrações e seeds com o papel dono, antes da subida, porque os workers precisam das tabelas:
+   `docker compose run --rm web sh -c 'DB_USERNAME=$DB_OWNER_USERNAME DB_PASSWORD=$DB_OWNER_PASSWORD bin/rails db:migrate db:seed'`
+4. demais serviços: `docker compose up -d`
+5. personas do simulador: `docker compose exec web bin/rails simulator:personas`
+6. banco de teste com o papel dono, para o RSpec:
+   `docker compose exec web sh -c 'RAILS_ENV=test DB_USERNAME=$DB_OWNER_USERNAME DB_PASSWORD=$DB_OWNER_PASSWORD bin/rails db:migrate'`
 
 ### Verificação
 

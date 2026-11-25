@@ -109,10 +109,10 @@ Quando o processo do `jobs-webhooks` morre, o Solid Queue grava os jobs que ele 
 | Situação | Quem percebe | Quando | Erro |
 | - | - | - | - |
 | O fork do worker termina com erro, com o supervisor vivo | o supervisor | na hora; o supervisor sobe outro fork | `ProcessExitError` |
-| O contêiner inteiro morre (`docker kill`) | a manutenção de qualquer supervisor | depois de 5 min sem heartbeat; com heartbeat a cada 60 s e manutenção a cada 5 min, entre 4 e 10 min depois da morte | `ProcessPrunedError` |
+| O contêiner inteiro morre (`docker kill`) | a manutenção de qualquer supervisor | depois de 30 s sem heartbeat; com heartbeat a cada 5 s e manutenção a cada 30 s, entre 30 e 60 s depois da morte | `ProcessPrunedError` |
 | O job está com um processo que não existe mais | o supervisor, na subida | na subida | `ProcessMissingError` |
 
-A tarefa recorrente `recover_interrupted_webhooks` (`Agents::RecoverInterruptedWebhooksJob`), no `jobs-default`, roda a cada minuto e reprocessa os jobs de webhook que estão na fila de falhas com um desses três erros. O reprocessamento é o mesmo do botão do painel. Falhas de outra natureza, como Broker recusando ou tentativas esgotadas, continuam na fila de falhas para análise.
+A tarefa recorrente `recover_interrupted_webhooks` (`Agents::RecoverInterruptedWebhooksJob`), no `jobs-default`, roda a cada 15 s e reprocessa os jobs de webhook que estão na fila de falhas com um desses três erros. O reprocessamento é o mesmo do botão do painel. Falhas de outra natureza, como Broker recusando ou tentativas esgotadas, continuam na fila de falhas para análise.
 
 Se o processo morreu depois do `POST`, o webhook sai de novo. A entrega é at-least-once: o agente gera a ação com a mesma `Idempotency-Key`, e o Core descarta a repetição. A saída pode repetir um aviso, mas nunca o perde; a deduplicação é responsabilidade da API de ações.
 
@@ -207,7 +207,7 @@ As variáveis ficam no `.env` e chegam aos serviços Rails pela âncora `rails-e
 | `core/app/modules/agents/recover_interrupted_webhooks_job.rb` | Reprocessamento dos jobs interrompidos pela morte do processo |
 | `core/app/jobs/application_job.rb` | `EXPONENTIAL_BACKOFF`, compartilhado pelos jobs com retry |
 | `core/config/queue.yml` e `core/config/queue_webhooks.yml` | Workers e dispatchers de `jobs-default` e `jobs-webhooks` |
-| `core/config/recurring.yml` | Tarefa `recover_interrupted_webhooks`, a cada minuto |
+| `core/config/recurring.yml` | Tarefa `recover_interrupted_webhooks`, a cada 15 s |
 | `core/config/initializers/mission_control.rb` e `core/config/routes.rb` | Credenciais e montagem do painel em `/jobs` |
 
 ### Verificação

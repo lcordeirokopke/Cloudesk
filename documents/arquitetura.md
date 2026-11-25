@@ -57,7 +57,7 @@ O agente de IA é um atendente da plataforma, como um analista: ele recebe conve
 | Estado | Um único PostgreSQL: dados, fila de jobs, tempo real e cache |
 | Mensageria | Redpanda (API Kafka) entre plataforma e agente |
 | Escala | Mesma imagem, processos separados por papel, escalados de forma independente |
-| Empacotamento | Docker Compose, self-hosted, sobe com um comando |
+| Empacotamento | Docker Compose, self-hosted; sobe depois da migração e das seeds, com os passos do [README](../README.md) |
 
 ### Princípios
 
@@ -124,7 +124,7 @@ flowchart LR
 
     LB["web-lb<br/>nginx, porta 3000"]
 
-    subgraph IMG["Imagem do Core Rails: um código, cinco papéis"]
+    subgraph IMG["Imagem do Core Rails: um código, seis papéis<br/>(o metrics está em Observabilidade)"]
         WEB["web<br/>Puma, N réplicas"]
         JW["jobs-webhooks<br/>Solid Queue, fila webhooks"]
         JD["jobs-default<br/>Solid Queue, demais filas<br/>e tarefas recorrentes"]
@@ -193,11 +193,11 @@ Fora do ambiente padrão, o profile `conformance` do Compose sobe o kit de confo
 
 | Componente | Tecnologia | Responsabilidade |
 | - | - | - |
-| Core Help Desk | Rails 8 (API + Hotwire), módulos Channels, Conversations, Routing, Agents, Audit, Admin | Regras de negócio, API, chat, painel e admin |
+| Core Help Desk | Rails 8.1 (API + Hotwire), módulos Channels, Conversations, Routing, Agents, Audit, Admin, Observability | Regras de negócio, API, chat, painel e admin |
 | Banco | PostgreSQL 18 | Atendimentos, mensagens, filas, regras, auditoria, jobs, tempo real e cache |
 | Jobs | Solid Queue, no mesmo banco do app | Entrega de webhooks, varredura do timeout do agente, atualização do painel, resumos de memória |
 | Tempo real | Action Cable / Turbo Streams sobre Solid Cable | Chat e painel do analista ao vivo |
-| Cache | Solid Cache | Cache de contexto e de regras compiladas |
+| Cache | Solid Cache | Regras compiladas (`Routing::CompiledRules`) e contador do limite de taxa (`Channels::RateLimit`) |
 | E-mail de entrada | Action Mailbox + Mailpit | Canal de e-mail simulado |
 | Broker | Karafka + endpoint Rack, no mesmo código e imagem do Core | Webhook → Kafka e Kafka → API de ações |
 | Balanceador | nginx `1.30.8` (`web-lb`) | Entrada HTTP e WebSocket do Core, distribuída entre as réplicas do `web` |
@@ -406,16 +406,17 @@ erDiagram
     BRANDS ||..o{ TEAMS : "tem"
     BRANDS ||..o{ CONTACTS : "tem"
     BRANDS ||..o{ ROUTING_RULES : "tem"
-    TEAMS ||..o{ QUEUES : "atende"
+    TEAMS |o..o{ QUEUES : "atende"
     TEAMS |o..o{ ATTENDANTS : "agrupa"
     QUEUES |o..o{ QUEUES : "escalation e overflow"
     CONTACTS ||..o{ CONTACT_IDENTITIES : "telefone, e-mail, id do app"
-    CONTACTS ||..o{ CUSTOMER_MEMORIES : "memória"
+    CONTACTS ||..o| CUSTOMER_MEMORIES : "memória"
     CONTACTS ||..o{ CONVERSATIONS : "abre"
     QUEUES |o..o{ CONVERSATIONS : "fila atual"
     ATTENDANTS |o..o{ CONVERSATIONS : "atendente atual"
     CONVERSATIONS ||..o{ MESSAGES : "contém"
     CONVERSATIONS ||..o{ HANDOFFS : "escalações"
+    ATTENDANTS |o..o{ HANDOFFS : "avalia o briefing"
     CONVERSATIONS |o..o{ AUDIT_EVENTS : "decisões"
     ROUTING_RULES |o..o{ AUDIT_EVENTS : "regra que casou"
     ATTENDANTS |o..o{ MESSAGES : "autor"
@@ -426,7 +427,7 @@ erDiagram
 
 ### Isolamento por marca
 
-Todas as tabelas de domínio têm `brand_id`, com **Row-Level Security** no Postgres; a marca corrente é definida por transação e também segue no header Kafka. As migrações rodam com o papel dono das tabelas; a aplicação usa um papel sem privilégio de dono, para que o RLS e o bloqueio de escrita em `audit_events` valham para ela. As tabelas de infraestrutura (Solid Queue, Solid Cable e Solid Cache) não têm `brand_id` nem RLS, porque os workers processam jobs de todas as marcas; a marca de cada job segue nos argumentos dele. A tabela `brands` também fica fora do RLS, pois é lida para resolver a marca antes de ela ser definida na transação. O RLS é forçado (`FORCE ROW LEVEL SECURITY`): o papel dono também obedece às políticas e não é superusuário.
+Todas as tabelas de domínio têm `brand_id`, com **Row-Level Security** no Postgres; a marca corrente é definida por transação e também segue no header Kafka. As migrações rodam com o papel dono das tabelas; a aplicação usa um papel sem privilégio de dono, para que o RLS e o bloqueio de escrita em `audit_events` valham para ela. As tabelas de infraestrutura (Solid Queue, Solid Cable e Solid Cache) não têm `brand_id` nem RLS, porque os workers processam jobs de todas as marcas; a marca de cada job segue nos argumentos dele. As tabelas do Active Storage e do Action Mailbox também não têm `brand_id` nem RLS. As tabelas `brands` e `brand_channels` ficam fora do RLS, só para leitura da aplicação, pois são lidas para resolver a marca antes de ela ser definida na transação. O RLS é forçado (`FORCE ROW LEVEL SECURITY`): o papel dono também obedece às políticas e não é superusuário.
 
 ```mermaid
 flowchart LR
@@ -536,7 +537,8 @@ O Core e o agente não se chamam diretamente para entregar eventos e ações: o 
 
 - **Assinatura na ida:** o webhook Core → Broker leva HMAC-SHA256 com timestamp no header; reenvios antigos são rejeitados (anti-replay).
 - **Assinatura na volta:** as chamadas do Broker à API de ações do Core (`POST /api/v1/agent/actions`) e a leitura da `context_url` pelo agente (`GET /api/v1/agent/brands/<brand>/conversations/<conversation_id>/context`) usam o mesmo esquema de HMAC-SHA256 com timestamp.
-- **Segredos:** cada chamada tem o seu: `BROKER_WEBHOOK_SECRET` no webhook, `AGENT_ACTIONS_SECRET` na API de ações e `AGENT_CONTEXT_SECRET` na leitura do contexto. A marca fica no caminho da `context_url` e entra na assinatura, porque o RLS exige a marca antes da leitura da conversa.
+- **Assinatura na DLQ:** as chamadas do Core aos endpoints da DLQ no `broker-web` (listagem e republicação) usam o mesmo esquema.
+- **Segredos:** cada tipo de chamada tem o seu: `BROKER_WEBHOOK_SECRET` no webhook, `AGENT_ACTIONS_SECRET` na API de ações, `AGENT_CONTEXT_SECRET` na leitura do contexto e `BROKER_DLQ_SECRET` nos endpoints da DLQ. A marca fica no caminho da `context_url` e entra na assinatura, porque o RLS exige a marca antes da leitura da conversa.
 - **Formato da assinatura:** HMAC-SHA256 de `<timestamp>.<MÉTODO>.<caminho>.<corpo>`, nos headers `X-Cloudesk-Timestamp` e `X-Cloudesk-Signature`, com janela de 300 segundos.
 - **Contrato versionado:** os schemas, exemplos e vetores ficam em `contracts/v1/`; o detalhamento está em `documents/fases/04-contrato-de-integracao.md`.
 - **Contexto:** o `GET` da `context_url` devolve a conversa, o histórico completo e `customer_memory`, com `summary`, `updated_at` e `conversations` (até 5 entradas estruturadas), ou nulo sem memória (schema `context`).
@@ -544,13 +546,14 @@ O Core e o agente não se chamam diretamente para entregar eventos e ações: o 
 - **Entrega:** at-least-once em todo o caminho + idempotência no Core = efeito exactly-once para o cliente.
 - **Falhas:** retries com backoff exponencial, com jitter no webhook de ida (Solid Queue) e pela pausa do Karafka, sem jitter, na volta; tópico DLQ para mensagens problemáticas, preservando chave, headers e payload originais, com headers de diagnóstico (schema `kafka.dlq-headers`), e reprocessamento pelo painel.
 
-As três chamadas assinadas:
+As chamadas assinadas:
 
 | Chamada | Quem assina | Quem confere | Segredo |
 | - | - | - | - |
 | Webhook `message.created` | `jobs-webhooks` | `broker-web` | `BROKER_WEBHOOK_SECRET` |
 | Ação do agente | `broker-consumer` | `web` (API de ações) | `AGENT_ACTIONS_SECRET` |
 | Leitura do contexto | `agent-mock` | `web` (API de contexto) | `AGENT_CONTEXT_SECRET` |
+| Listagem e republicação da DLQ | `web` (tela `/admin/dlq`) | `broker-web` | `BROKER_DLQ_SECRET` |
 
 O que cada ação faz quando é aceita:
 
@@ -801,7 +804,7 @@ O job só avisa que algo mudou; ele não lê o domínio. Cada tela busca de novo
 ### Auditoria e rastreabilidade
 
 - `audit_events` append-only: ator, ação, alvo, antes/depois, payload do evento, motivo, regra e versão que casou, `trace_id`.
-- `UPDATE` e `DELETE` bloqueados por permissão de banco e trigger.
+- `UPDATE`, `DELETE` e `TRUNCATE` bloqueados por permissão de banco e trigger.
 - `traceparent` (W3C) propagado em headers HTTP e Kafka, ligando cada salto da mensagem.
 - **Linha do tempo por mensagem:** cada salto carimba seu horário e o repassa adiante. O Broker registra o recebimento do webhook no header da mensagem, e o timestamp do registro Kafka marca a gravação no tópico; o agente devolve esses dois carimbos e os seus próprios (consumo, ferramentas, publicação) na ação. O Core grava tudo no `audit_event` da ação.
 - **Reprocessamento da DLQ:** cada republicação pela tela `/admin/dlq` grava `dlq.reprocessed`, ator `operator`, na conversa da chave Kafka, com origem e destino (tópico, partição e offset), `dlq_reason`, `dlq_status`, `dlq_failed_at` e `operator_name`.
@@ -844,7 +847,7 @@ A coleta é híbrida e nenhum caminho quente do Core é instrumentado:
 
 ```mermaid
 flowchart LR
-    BW["broker-web<br/>histograma entrada → Kafka"] --> PROM["Prometheus<br/>a cada 5 s"]
+    BW["broker-web<br/>histograma entrada → Kafka"] --> PROM["Prometheus<br/>a cada 5 s; Redpanda, 15 s"]
     AE[("audit_events<br/>solid_queue_*<br/>conversas e handoffs")] --> MET["metrics<br/>LatencyReader, QueueReader,<br/>CockpitReader"]
     MET --> PROM
     RP["Redpanda<br/>lag por grupo"] --> PROM
@@ -1003,7 +1006,7 @@ flowchart TB
 - **Processo cai no meio da operação:** nada se perde, porque mensagem e job foram gravados na mesma transação e o Broker só confirma após o ack do Kafka.
 - **Agente sem resposta:** a varredura do timeout envia a mensagem de espera na metade do SLA e escala para humano no SLA inteiro.
 - **Picos:** `web`, `jobs-webhooks`, `broker-web`, `broker-consumer` e `agent-mock` escalam horizontalmente; webhooks em fila dedicada; limite de taxa por marca.
-- **Limite de taxa por marca:** WhatsApp e chat contam as mensagens de cada marca por segundo no Solid Cache (`Channels::RateLimit`, janela fixa de 1 s). Acima de `brands.inbound_rate_limit_per_second` (padrão 500), a entrada responde `429` com `Retry-After: 1`, sem gravar nada. No WhatsApp, a recusa vale para o payload inteiro quando alguma marca dele passa do limite. A recusa vai só ao log, sem `audit_event`, e o contador indisponível deixa a mensagem passar. O e-mail fica fora do limite.
+- **Limite de taxa por marca:** o WhatsApp e a entrada JSON do chat contam as mensagens de cada marca por segundo no Solid Cache (`Channels::RateLimit`, janela fixa de 1 s). Acima de `brands.inbound_rate_limit_per_second` (padrão 500), a entrada responde `429` com `Retry-After: 1`, sem gravar nada. No WhatsApp, a recusa vale para o payload inteiro quando alguma marca dele passa do limite. A recusa vai só ao log, sem `audit_event`, e o contador indisponível deixa a mensagem passar. O e-mail e o formulário do widget de chat ficam fora do limite.
 - **Ação na DLQ:** a tela `/admin/dlq` lista as mensagens de `agent.dlq` da marca e reprocessa uma por vez. O Core chama os endpoints assinados do `broker-web`, que republica a ação em `agent.outbound` com a mesma chave e o mesmo valor, sem os headers de diagnóstico. Com o `200`, o Core grava `dlq.reprocessed`. A ação republicada segue o fluxo normal, e o Core descarta a ação já aplicada pela `Idempotency-Key`.
 
 Onde cada falha é absorvida, salto a salto:
@@ -1028,9 +1031,11 @@ Onde cada falha é absorvida, salto a salto:
 - Não há pooler de conexões; o número de processos é limitado pelas conexões do Postgres.
 - A linha do tempo depende dos relógios dos contêineres, que no ambiente local são o mesmo relógio da máquina.
 - O `web-lb` é um salto a mais entre os clientes e o Core, fora da medida: o nginx não registra acesso, e o `received_at` é carimbado pelo `web` depois do balanceador.
-- O contador do limite de taxa fica no Solid Cache, no mesmo Postgres: cada requisição de WhatsApp ou chat grava um incremento a mais no banco.
+- O contador do limite de taxa fica no Solid Cache, no mesmo Postgres: cada requisição de WhatsApp ou da entrada JSON do chat grava um incremento a mais no banco.
+- O formulário do widget de chat chega ao `Conversations::Intake` sem passar pelo limite de taxa da marca.
 - A tela da DLQ lê as últimas 50 mensagens de cada partição de `agent.dlq` e filtra pela marca; com mensagens de outra marca entre as últimas, a listagem traz menos que 50, e mensagens mais antigas não aparecem.
 - Se a gravação do `dlq.reprocessed` falhar depois do `200` do Broker, a ação já está em `agent.outbound` sem o evento; o erro vai ao log com origem e destino.
+- Na máquina do experimento, a plataforma não sustenta 250 msg/s; os números estão em `documents/fases/18-experimento-tecnico.md`.
 
 ## Experimento técnico: carga + falhas
 
@@ -1075,14 +1080,16 @@ Onde a carga entra, onde as falhas são injetadas e onde a reconciliação acont
 
 ```mermaid
 flowchart LR
-    K6["k6<br/>WhatsApp e chat"] ==> WEB["web"]
+    K6["k6<br/>WhatsApp e chat"] ==> LB["web-lb"]
+    LB ==> WEB["web"]
     WEB ==> JW["jobs-webhooks"]
     JW ==> BW["broker-web"]
     BW ==> TIN[["agent.inbound"]]
     TIN ==> AG["agent-mock"]
     AG ==> TOUT[["agent.outbound"]]
     TOUT ==> BC["broker-consumer"]
-    BC ==> WEB2["web<br/>API de ações"]
+    BC ==> LB2["web-lb"]
+    LB2 ==> WEB2["web<br/>API de ações"]
     WEB2 ==> JD["jobs-default<br/>entrega"]
     JD ==> SIM["simulador de canais<br/>registra as respostas"]
 

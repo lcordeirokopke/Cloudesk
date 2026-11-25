@@ -75,7 +75,7 @@ Falhas da H3, contadas do início do k6: minuto 2, `docker restart` de todas as 
 
 ### Guardas
 
-A etapa é interrompida com menos de 500 MB disponíveis no Docker em duas amostras, ou com mais de 20% de respostas diferentes de 200 no último minuto, e então não conta como medida. A 250 msg/s, a segunda guarda interrompe a `meta-1` em cerca de 20 s (130 de 536 respostas). Por isso a `meta-2` roda com `experiment/run.sh meta sem-guarda-de-erros`, que desliga só essa guarda e registra `error_guard` em `conditions.json`. Essa mudança de roteiro é posterior à `meta-1`, e os critérios das hipóteses são os mesmos.
+A etapa é interrompida com menos de 500 MB disponíveis no Docker em duas amostras, ou com mais de 20% de respostas diferentes de 200 no último minuto, e então não conta como medida. A 250 msg/s, a segunda guarda interrompe a `meta-1` depois de 13,5 s de carga (130 de 536 respostas). Por isso a `meta-2` roda com `experiment/run.sh meta sem-guarda-de-erros`, que desliga só essa guarda e registra `error_guard` em `conditions.json`. Essa mudança de roteiro é posterior à `meta-1`, e os critérios das hipóteses são os mesmos.
 
 ## Condições
 

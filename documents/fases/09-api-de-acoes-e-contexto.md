@@ -204,7 +204,7 @@ A ação nasce da última mensagem do lojista; `BASED_ON` e `INBOUND_EVENT_ID` p
 
 ### Configuração
 
-`AGENT_ACTIONS_SECRET` e `AGENT_CONTEXT_SECRET` ficam no `.env` e chegam aos serviços Rails pelo bloco `rails-environment` do `compose.yaml`. São textos aleatórios gerados para o projeto, por exemplo com `openssl rand -hex 32`.
+`AGENT_ACTIONS_SECRET` e `AGENT_CONTEXT_SECRET` ficam no `.env` e chegam aos serviços Rails pelo bloco `rails-environment` do `compose.yaml`. Têm valor de demonstração no `.env.example`, só para uso local com dados sintéticos, e são trocados fora dele, por exemplo com `openssl rand -hex 32`.
 
 ### Verificação
 

@@ -221,7 +221,7 @@ Nenhum diferencial é implementado aqui. Esta parte fornece o que eles usam: as 
 | `MAILPIT_API_URL` | API do Mailpit (`http://mailpit:8025`) |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP do Mailpit (`mailpit`, `1025`) |
 
-Os segredos são textos aleatórios gerados para o projeto, por exemplo com `openssl rand -hex 32`; não existe conta na Meta nem custo.
+Os segredos têm valor de demonstração no `.env.example`, só para uso local com dados sintéticos, e são trocados fora dele, por exemplo com `openssl rand -hex 32`; não existe conta na Meta nem custo.
 
 - O serviço `mailpit` do Compose recebe `MP_WEBHOOK_URL`, com o basic auth na URL, e `MP_WEBHOOK_LIMIT=0`, que desliga o limite padrão de uma chamada por segundo do webhook.
 - Em desenvolvimento, o Action Mailer envia por SMTP ao Mailpit, e `config.hosts` inclui `web`, porque o Mailpit chama o Core pelo nome do serviço.

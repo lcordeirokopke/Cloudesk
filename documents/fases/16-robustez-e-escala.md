@@ -7,7 +7,7 @@ Esta parte prepara a plataforma para a meta de volume e para falhas, sem trocar 
 - **Escala por réplica.** `web`, `jobs-webhooks`, `broker-web`, `broker-consumer` e `agent-mock` escalam pelo número de réplicas no Compose (`docker compose up -d --scale <serviço>=<N>`). O `web` fica atrás de um balanceador nginx, o `web-lb`.
 - **Dimensionamento.** Cada réplica tem um processo, o pool de conexões de cada processo é o `RAILS_MAX_THREADS` dele e o `max_connections` do Postgres cobre a soma dos processos. Os valores são medidos com um roteiro próprio.
 - **Heartbeat do Solid Queue.** O processo morto é detectado em 30 s, e o webhook interrompido volta à fila em cerca de 30 a 75 s.
-- **Limite de taxa por marca.** WhatsApp e chat recusam com `429` o que passa do limite por segundo de cada marca.
+- **Limite de taxa por marca.** O WhatsApp e a entrada JSON do chat recusam com `429` o que passa do limite por segundo de cada marca.
 - **Índices parciais.** Três índices para as consultas recorrentes sobre conversas abertas.
 - **Reprocessamento da DLQ.** A tela `/admin/dlq` lista as ações em `agent.dlq` e as devolve a `agent.outbound`, uma por vez, com auditoria.
 
@@ -114,7 +114,7 @@ Na medida, o `broker-web` ficou pausado por alguns segundos para que a réplica 
 
 O controller de WhatsApp conta as mensagens do payload por marca; se alguma marca passa do limite, o payload inteiro recebe `429` com `Retry-After: 1` e `{"error": "rate_limited"}`, e nada é gravado. Os incrementos das marcas já contadas no mesmo payload ficam: o contador mede tentativas na janela. O controller de chat conta uma mensagem da marca do corpo. A recusa não grava `audit_event`, porque sai antes do `Conversations::Intake`, sem escrita de domínio.
 
-Contador indisponível (`increment` nulo: null store, como no ambiente de teste, ou erro do cache) deixa a mensagem passar e grava um aviso no log. As chaves não expiram; as antigas saem pelo `max_size` do Solid Cache (256 MB). O e-mail fica fora do limite: não entra na carga do experimento, e o e-mail perdido pelo webhook é trazido pela `sweep_mailpit`.
+Contador indisponível (`increment` nulo: null store, como no ambiente de teste, ou erro do cache) deixa a mensagem passar e grava um aviso no log. As chaves não expiram; as antigas saem pelo `max_size` do Solid Cache (256 MB). O e-mail fica fora do limite: não entra na carga do experimento, e o e-mail perdido pelo webhook é trazido pela `sweep_mailpit`. O formulário do widget de chat também fica fora: chega ao `Conversations::Intake` sem passar pelo `Channels::RateLimit`.
 
 ### Índices parciais
 
@@ -181,7 +181,7 @@ Mensagem enviada ao agente é a que tem o `event_id` do `message.created` em um 
 
 - Com réplicas de `web`, `jobs-webhooks`, `broker-web`, `broker-consumer` e `agent-mock`, nenhuma resposta, entrega ou ação aceita é duplicada, e toda mensagem enviada ao agente tem ação ou escalação.
 - O webhook de um worker morto volta à fila em até cerca de 75 s, sem intervenção.
-- Uma requisição de WhatsApp ou chat acima do limite da marca não grava nada e recebe `429` com `Retry-After: 1`.
+- Uma requisição de WhatsApp ou da entrada JSON do chat acima do limite da marca não grava nada e recebe `429` com `Retry-After: 1`.
 - Uma ação da DLQ volta a `agent.outbound` com a mesma chave, o mesmo valor e na mesma partição das ações do agente para a conversa, e a republicação fica registrada em `dlq.reprocessed`; uma ação já aplicada não produz segundo efeito.
 - A mensagem da DLQ de outra marca não aparece na tela, e a ilegível ou sem conversa da marca não é republicada.
 - O Kafka continua só no Broker, e o Broker continua sem acesso ao banco.
@@ -214,7 +214,8 @@ Mensagem enviada ao agente é a que tem o `event_id` do `message.created` em um 
 
 - **Salto do balanceador fora da medida.** O nginx não registra acesso, e o `received_at` é carimbado pelo `web` depois dele; o tempo do `web-lb` não aparece na H2 nem na H4.
 - **Um balanceador.** O `web-lb` tem uma réplica; a queda dele interrompe a entrada HTTP até o Compose subi-lo de novo.
-- **Contador no mesmo Postgres.** O limite de taxa grava um incremento no Solid Cache por requisição de WhatsApp ou chat, no mesmo banco do domínio.
+- **Contador no mesmo Postgres.** O limite de taxa grava um incremento no Solid Cache por requisição de WhatsApp ou da entrada JSON do chat, no mesmo banco do domínio.
+- **Widget fora do limite.** O formulário do widget de chat não passa pelo limite de taxa da marca.
 - **Janela fixa.** O limite conta por segundo de relógio: uma rajada na virada do segundo pode passar de até o dobro do limite em menos de 1 s.
 - **Listagem da DLQ limitada.** A tela lê as últimas 50 mensagens de cada partição de `agent.dlq` e filtra pela marca; com mensagens de outra marca entre as últimas, a listagem traz menos que 50, e as mais antigas não aparecem nem podem ser reprocessadas pela tela.
 - **Republicação sem evento.** Se a gravação do `dlq.reprocessed` falhar depois do `200` do Broker, a ação já está em `agent.outbound` sem o evento; o erro vai ao log com origem e destino.
@@ -295,7 +296,7 @@ No Compose:
 | Parte | Relação |
 | - | - |
 | Banco e multi-marca (F1) | Coluna em `brands`, fora do RLS; índices parciais com `brand_id` |
-| Canais (F4) | Limite de taxa nos controllers de WhatsApp e chat, antes do `Conversations::Intake` |
+| Canais (F4) | Limite de taxa nos controllers de WhatsApp e da entrada JSON do chat, antes do `Conversations::Intake` |
 | Simulador (F5) | Chama o Core pelo `web-lb`; registra as respostas `429` no `sent.jsonl` |
 | Saída para o Broker (F7) | `jobs-webhooks` em réplicas; heartbeat e `recover_interrupted_webhooks` a cada 15 s |
 | API de ações (F8) | Deduplica as ações republicadas da DLQ pela `Idempotency-Key` |
