@@ -454,8 +454,8 @@ A tabela de todas as execuções, as sessões descartadas e o teste com YJIT est
 | Sem pooler de conexões | Conexão direta ao Postgres | O número de processos é limitado pelas conexões |
 | Linha do tempo entre contêineres | Cada salto carimba o próprio relógio | A precisão depende dos relógios; no ambiente local, são o mesmo |
 | Salto do `web-lb` fora da medida | O `received_at` é carimbado pelo `web`, depois do balanceador | A latência medida não inclui o balanceador |
-| Contador do limite de taxa no banco | Solid Cache no mesmo Postgres | Cada requisição de WhatsApp ou da entrada JSON do chat grava um incremento |
-| Widget de chat fora do limite de taxa | O formulário chega à entrada sem passar pelo contador | O limite por marca não vale para ele |
+| Contadores dos limites de taxa no banco | Solid Cache no mesmo Postgres | Cada requisição de WhatsApp ou da entrada JSON do chat grava um incremento por marca; cada envio do widget de chat, até dois |
+| Teto do widget compartilhado pelos lojistas da marca | O widget aceita 10 mensagens por segundo em cada marca, somados os lojistas | Um script com vários lojistas recusa o formulário de outros lojistas enquanto durar; WhatsApp e entrada JSON seguem aceitando |
 | Listagem parcial da DLQ | Leitura das últimas 50 mensagens de cada partição, filtradas pela marca | Mensagens mais antigas não aparecem |
 | Republicação da DLQ sem evento | A gravação do `dlq.reprocessed` vem depois do `200` do Broker | Se ela falha, a ação volta ao Kafka e o registro fica só no log |
 | Login simulado | Autenticação real fora do recorte | Basic auth por tela e escolha de pessoa na sessão |
@@ -489,5 +489,6 @@ A tabela de todas as execuções, as sessões descartadas e o teste com YJIT est
 | Operação e filas | Editor de filas com simulação, aprovação e rollback; priorização dinâmica; simulador sazonal com incidentes; disjuntor de IA por fila ou marca |
 | IA e atendimento | Detecção de incidentes em massa; copiloto do analista; memória semântica com pgvector; shadow mode e canário do agente; servidor MCP; detecção do idioma do lojista |
 | Governança | Mascaramento de dados pessoais, retenção por marca e crypto-shredding |
+| Experimento | Gerador de carga em outra máquina, para medir quanto ele disputa recursos com o sistema; variação de um fator por vez (réplicas do `web`, partições, espera do lote no Karafka), com repetições, para separar as causas do gargalo |
 
 O detalhamento está na seção "Evolução" da [arquitetura](documents/arquitetura.md#evolução).

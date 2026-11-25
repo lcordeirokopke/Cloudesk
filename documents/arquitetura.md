@@ -197,7 +197,7 @@ Fora do ambiente padrão, o profile `conformance` do Compose sobe o kit de confo
 | Banco | PostgreSQL 18 | Atendimentos, mensagens, filas, regras, auditoria, jobs, tempo real e cache |
 | Jobs | Solid Queue, no mesmo banco do app | Entrega de webhooks, varredura do timeout do agente, atualização do painel, resumos de memória |
 | Tempo real | Action Cable / Turbo Streams sobre Solid Cable | Chat e painel do analista ao vivo |
-| Cache | Solid Cache | Regras compiladas (`Routing::CompiledRules`) e contador do limite de taxa (`Channels::RateLimit`) |
+| Cache | Solid Cache | Regras compiladas (`Routing::CompiledRules`) e contadores dos limites de taxa (`Channels::RateLimit`) |
 | E-mail de entrada | Action Mailbox + Mailpit | Canal de e-mail simulado |
 | Broker | Karafka + endpoint Rack, no mesmo código e imagem do Core | Webhook → Kafka e Kafka → API de ações |
 | Balanceador | nginx `1.30.8` (`web-lb`) | Entrada HTTP e WebSocket do Core, distribuída entre as réplicas do `web` |
@@ -1006,7 +1006,8 @@ flowchart TB
 - **Processo cai no meio da operação:** nada se perde, porque mensagem e job foram gravados na mesma transação e o Broker só confirma após o ack do Kafka.
 - **Agente sem resposta:** a varredura do timeout envia a mensagem de espera na metade do SLA e escala para humano no SLA inteiro.
 - **Picos:** `web`, `jobs-webhooks`, `broker-web`, `broker-consumer` e `agent-mock` escalam horizontalmente; webhooks em fila dedicada; limite de taxa por marca.
-- **Limite de taxa por marca:** o WhatsApp e a entrada JSON do chat contam as mensagens de cada marca por segundo no Solid Cache (`Channels::RateLimit`, janela fixa de 1 s). Acima de `brands.inbound_rate_limit_per_second` (padrão 500), a entrada responde `429` com `Retry-After: 1`, sem gravar nada. No WhatsApp, a recusa vale para o payload inteiro quando alguma marca dele passa do limite. A recusa vai só ao log, sem `audit_event`, e o contador indisponível deixa a mensagem passar. O e-mail e o formulário do widget de chat ficam fora do limite.
+- **Limite de taxa por marca:** o WhatsApp e a entrada JSON do chat contam as mensagens de cada marca por segundo no Solid Cache (`Channels::RateLimit`, janela fixa de 1 s). Acima de `brands.inbound_rate_limit_per_second` (padrão 500), a entrada responde `429` com `Retry-After: 1`, sem gravar nada. No WhatsApp, a recusa vale para o payload inteiro quando alguma marca dele passa do limite. A recusa vai só ao log, sem `audit_event`, e o contador indisponível deixa a mensagem passar. O e-mail fica fora do limite.
+- **Limite do widget de chat:** o formulário do widget tem limite próprio (`Channels::RateLimit.check_widget`), com contadores separados do limite da marca: 5 mensagens em 10 s por lojista e 10 mensagens por segundo do widget em cada marca. O lojista é conferido primeiro, e a recusa dele não chega ao contador do widget da marca. Na recusa, a tela da conversa volta com `429`, `Retry-After`, aviso e o texto no campo, sem gravar nada no domínio. Um abuso no widget não consome a cota do WhatsApp nem da entrada JSON.
 - **Ação na DLQ:** a tela `/admin/dlq` lista as mensagens de `agent.dlq` da marca e reprocessa uma por vez. O Core chama os endpoints assinados do `broker-web`, que republica a ação em `agent.outbound` com a mesma chave e o mesmo valor, sem os headers de diagnóstico. Com o `200`, o Core grava `dlq.reprocessed`. A ação republicada segue o fluxo normal, e o Core descarta a ação já aplicada pela `Idempotency-Key`.
 
 Onde cada falha é absorvida, salto a salto:
@@ -1031,8 +1032,14 @@ Onde cada falha é absorvida, salto a salto:
 - Não há pooler de conexões; o número de processos é limitado pelas conexões do Postgres.
 - A linha do tempo depende dos relógios dos contêineres, que no ambiente local são o mesmo relógio da máquina.
 - O `web-lb` é um salto a mais entre os clientes e o Core, fora da medida: o nginx não registra acesso, e o `received_at` é carimbado pelo `web` depois do balanceador.
-- O contador do limite de taxa fica no Solid Cache, no mesmo Postgres: cada requisição de WhatsApp ou da entrada JSON do chat grava um incremento a mais no banco.
-- O formulário do widget de chat chega ao `Conversations::Intake` sem passar pelo limite de taxa da marca.
+- Os contadores dos limites de taxa ficam no Solid Cache, no mesmo Postgres: cada requisição de WhatsApp ou da entrada JSON do chat grava um incremento por marca a mais no banco, e cada envio aceito do widget, dois.
+- O contador é aproximado no início da janela: o Solid Cache trava a linha do contador só quando ela existe, e incrementos simultâneos que criam a linha podem contar como um. O limite da marca e o do widget deixam passar esse excedente.
+- O teto do widget é compartilhado pelos lojistas da marca: um script com vários lojistas ocupa os 10 por segundo e recusa o formulário de outros lojistas enquanto durar. O WhatsApp e a entrada JSON do chat seguem aceitando.
+- Com o login simulado, quem escolhe um lojista na tela do widget consome o limite dele.
+- A janela dos limites é fixa: na virada dela, passam cerca de 10 mensagens do lojista e 20 do widget por marca em menos de 1 s.
+- Com os dois limites, cada marca aceita cerca de 500 mensagens por segundo do WhatsApp e da entrada JSON do chat, mais 10 do widget.
+- As leituras do widget (`GET`) e a escolha do lojista não têm limite de taxa.
+- Sem JavaScript, a página do `429` do widget fica na URL do envio: recarregá-la repete o envio, e abrir essa URL direto responde 404.
 - A tela da DLQ lê as últimas 50 mensagens de cada partição de `agent.dlq` e filtra pela marca; com mensagens de outra marca entre as últimas, a listagem traz menos que 50, e mensagens mais antigas não aparecem.
 - Se a gravação do `dlq.reprocessed` falhar depois do `200` do Broker, a ação já está em `agent.outbound` sem o evento; o erro vai ao log com origem e destino.
 - Na máquina do experimento, a plataforma não sustenta 250 msg/s; os números estão em `documents/fases/18-experimento-tecnico.md`.
@@ -1216,3 +1223,8 @@ Por configuração (`AGENT_FAILURE_MODE`: `delay`, `drop`, `duplicate` ou `stale
 **Governança**
 
 - **Privacidade por design:** mascaramento de dados pessoais antes do agente e dos logs, retenção por marca e crypto-shredding.
+
+**Experimento**
+
+- **Gerador de carga em outra máquina**, para medir quanto ele disputa recursos com o sistema.
+- **Variação de um fator por vez** (réplicas do `web`, partições, espera do lote no Karafka), com repetições, para separar as causas do gargalo.

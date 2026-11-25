@@ -18,7 +18,7 @@
   <%= form_with url: chat_messages_path(@brand.slug), method: :post, class: "chat__form",
                 data: { controller: "chat-message", action: "submit->chat-message#assignId" } do |form| %>
     <%= form.hidden_field :client_message_id, data: { chat_message_target: "id" } %>
-    <%= form.text_field :text, autocomplete: "off", autofocus: true, placeholder: "Escreva uma mensagem",
+    <%= form.text_field :text, value: @text, autocomplete: "off", autofocus: true, placeholder: "Escreva uma mensagem",
                                aria: { label: "Mensagem" } %>
     <%= form.submit "Enviar", class: "chat-button" %>
   <% end %>

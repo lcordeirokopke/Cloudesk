@@ -122,7 +122,7 @@ O `message.created` leva no `payload.message` o formato do contrato (`author`, `
 | `GET /chat/:brand` | Lista os lojistas da marca com identidade de chat |
 | `POST /chat/:brand/session` | Grava o lojista escolhido na sessão |
 | `GET /chat/:brand/conversation` | Histórico da conversa aberta, com o canal de cada mensagem, e inscrição no stream do lojista |
-| `POST /chat/:brand/messages` | Envio pelo formulário, com CSRF e `client_message_id` gerado no navegador (`crypto.randomUUID()`) |
+| `POST /chat/:brand/messages` | Envio pelo formulário, com CSRF e `client_message_id` gerado no navegador (`crypto.randomUUID()`). Acima do limite do widget (`documents/fases/16-robustez-e-escala.md`), responde a tela da conversa com `429`, `Retry-After`, aviso e o texto no campo, sem gravar nada |
 
 O stream é por lojista, não por conversa: o widget continua inscrito quando uma conversa nova é aberta. O widget não tem upload de arquivos. O Action Cable atende em `/cable`, sobre o Solid Cable.
 
@@ -264,7 +264,7 @@ Os segredos têm valor de demonstração no `.env.example`, só para uso local c
 | `core/spec/modules/conversations/intake_spec.rb` | Abertura, reabertura, fechamento e nova conversa depois do prazo; reenvio sem efeito; lojista desconhecido; o mesmo lojista em WhatsApp e e-mail como um contato e uma conversa; job de webhook; texto padrão; corrida entre duas primeiras mensagens |
 | `core/spec/requests/channels/whatsapp_webhooks_spec.rb` | Verificação `GET`; assinatura válida, inválida e ausente; texto, imagem, documento, tipo sem suporte, statuses, número desconhecido, várias mensagens e reenvio |
 | `core/spec/requests/channels/chat_messages_spec.rb` | Assinatura válida, inválida, vencida e ausente; resposta com `stream`; reenvio; anexos; 422 |
-| `core/spec/requests/channels/chat_widget_spec.rb` | Lista de lojistas, sessão, envio pelo formulário e histórico com o canal de cada mensagem |
+| `core/spec/requests/channels/chat_widget_spec.rb` | Lista de lojistas, sessão, envio pelo formulário, histórico com o canal de cada mensagem e limite de taxa do formulário (`429`, `Retry-After`, aviso e texto no campo) |
 | `core/spec/requests/channels/mailpit_webhooks_spec.rb` | Webhook com e sem basic auth |
 | `core/spec/modules/channels/email/ingest_job_spec.rb` | E-mail de suporte vira `InboundEmail` com tag; Cc; resposta do Core e e-mail sem suporte ignorados; nova tentativa; o mesmo e-mail duas vezes |
 | `core/spec/modules/channels/email/sweep_job_spec.rb` | Mensagens sem tag geram `IngestJob`, com paginação |
