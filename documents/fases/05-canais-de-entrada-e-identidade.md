@@ -77,8 +77,8 @@ O cadastro de lojistas das seeds faz o papel do cadastro da CloudWalk: cada loji
    - `resolved` dentro do prazo de reabertura: volta a `triage` (`conversation.reopened`) e, na mesma transação, a memória do lojista é recalculada sem ela (`Conversations::MemoryRefresh`, `documents/fases/13-memoria-e-contexto.md`);
    - `resolved` com o prazo vencido: vai a `closed` (`conversation.closed`) e abre outra;
    - qualquer outro estado: usa a conversa.
-4. **Roteamento.** Com a conversa em `triage`, classifica e roteia por `Routing::Route` (`documents/fases/07-triagem-roteamento-e-distribuicao.md`).
-5. **Mensagem.** Grava a mensagem com a próxima sequência (`message.created`), com o job de webhook ao Broker só se a conversa está com a IA.
+4. **Roteamento.** Com a conversa em `triage`, classifica e roteia por `Routing::Route`, pelo texto da mensagem e, no e-mail, também pelo assunto (`documents/fases/07-triagem-roteamento-e-distribuicao.md`).
+5. **Mensagem.** Grava a mensagem com a próxima sequência (`message.created`), com o job de webhook ao Broker só se a conversa está com a IA e a atualização do painel do analista só se a conversa está em `awaiting_human` ou `with_human`.
 
 O `message.created` leva no `payload.message` o formato do contrato (`author`, `channel`, `text`). O `audit_event` guarda também o id externo, os anexos, a identidade que escreveu e, no e-mail, o assunto: é deles que a entrega lê o destinatário, o assunto e o `In-Reply-To` da resposta.
 
@@ -93,7 +93,7 @@ O `message.created` leva no `payload.message` o formato do contrato (`author`, `
 | Rota | Comportamento |
 | - | - |
 | `GET /channels/whatsapp/webhook` | Verificação da Meta: com `hub.mode` igual a `subscribe` e `hub.verify_token` igual a `WHATSAPP_VERIFY_TOKEN` (comparação em tempo constante), responde 200 com o `hub.challenge`; senão, 403 |
-| `POST /channels/whatsapp/webhook` | Confere `X-Hub-Signature-256` (`sha256=` e o HMAC-SHA256 do corpo bruto com `WHATSAPP_APP_SECRET`); sem assinatura válida, 401; corpo que não é um objeto JSON, 400. As mensagens vão ao Intake em uma transação por marca, e o 200 sai depois do commit |
+| `POST /channels/whatsapp/webhook` | Confere `X-Hub-Signature-256` (`sha256=` e o HMAC-SHA256 do corpo bruto com `WHATSAPP_APP_SECRET`); sem assinatura válida, 401; corpo que não é um objeto JSON, 400. Antes de gravar, o limite de taxa da marca conta as mensagens do payload por marca (`documents/fases/16-robustez-e-escala.md`): se alguma marca passa do limite, o payload inteiro recebe 429 com `Retry-After: 1` e `{"error": "rate_limited"}`, sem gravar nada. As mensagens vão ao Intake em uma transação por marca, e o 200 sai depois do commit |
 
 `Channels::Whatsapp::Payload` percorre `entry[].changes[]` com `field` igual a `messages`:
 
@@ -113,6 +113,7 @@ O `message.created` leva no `payload.message` o formato do contrato (`author`, `
 
 - A chamada é assinada com `CHAT_SIGNING_SECRET`, no esquema HMAC com timestamp do contrato; sem assinatura válida, 401.
 - JSON inválido, marca desconhecida, `app_user_id` ou `client_message_id` vazios, anexo sem `kind` válido ou mensagem sem texto e sem anexo: 422.
+- Acima do limite de taxa da marca (`documents/fases/16-robustez-e-escala.md`): 429 com `Retry-After: 1` e `{"error": "rate_limited"}`, sem gravar nada.
 - A resposta 200 traz `conversation_id`, `sequence` e `stream`, o nome assinado do stream Turbo do lojista. O reenvio do mesmo `client_message_id` devolve a mesma resposta.
 
 **Widget** (Hotwire), com login simulado por marca:
@@ -144,7 +145,7 @@ O índice único do Action Mailbox em (`message_id`, `message_checksum`) impede 
 `Conversations::Outbound.append!` é o caminho único das respostas, para os autores `ai`, `analyst` e `system`:
 
 - acha a mensagem respondida pela sequência; o canal e o número ou e-mail da marca vêm dela, e a resposta sai por onde a mensagem chegou;
-- grava a mensagem com `message.created` (sem webhook ao Broker) e enfileira `Channels::DeliveryJob` na mesma transação.
+- grava a mensagem com `message.created` (sem webhook ao Broker; com a conversa em `awaiting_human` ou `with_human`, atualiza o painel do analista) e enfileira `Channels::DeliveryJob` na mesma transação.
 
 | Canal | Entrega |
 | - | - |
@@ -224,7 +225,7 @@ Nenhum diferencial é implementado aqui. Esta parte fornece o que eles usam: as 
 Os segredos têm valor de demonstração no `.env.example`, só para uso local com dados sintéticos, e são trocados fora dele, por exemplo com `openssl rand -hex 32`; não existe conta na Meta nem custo.
 
 - O serviço `mailpit` do Compose recebe `MP_WEBHOOK_URL`, com o basic auth na URL, e `MP_WEBHOOK_LIMIT=0`, que desliga o limite padrão de uma chamada por segundo do webhook.
-- Em desenvolvimento, o Action Mailer envia por SMTP ao Mailpit, e `config.hosts` inclui `web`, porque o Mailpit chama o Core pelo nome do serviço.
+- Em desenvolvimento, o Action Mailer envia por SMTP ao Mailpit, e `config.hosts` inclui `web` e `web-lb`; o Mailpit chama o Core por `web-lb`.
 - O `config/application.rb` fixa as filas `action_mailbox_routing` e `action_mailbox_incineration`, que os defaults do Rails deixariam vazias.
 - A entrega roda na fila `channels` e a ingestão de e-mail e as varreduras na fila `default`, no processo `jobs-default` (`documents/fases/08-saida-core-broker.md`). As tarefas `close_expired_conversations` e `sweep_mailpit` estão em `config/recurring.yml`, a cada minuto.
 

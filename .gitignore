@@ -8,3 +8,5 @@ channel_simulator/data/
 experiment/results/**/raw/
 experiment/results/personas.json
 experiment/results/.session
+.claude/
+arquitetura.html

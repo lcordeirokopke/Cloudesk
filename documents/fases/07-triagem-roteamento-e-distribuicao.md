@@ -70,7 +70,7 @@ Como a decisão é tomada:
 | "O cliente foi cobrado duas vezes" | `transacao` 3 (cliente 1, cobrado duas vezes 2) | `transacao` |
 | "A taxa do repasse" | `repasse` 2, `taxas` 2 | `repasse`, pelo desempate |
 
-As listas são sintéticas e estão na versão 2 nas duas marcas. Toda mudança nelas aumenta a `version` da marca e passa pelo corpus `core/spec/fixtures/routing/classifier_corpus.yml`, com 117 frases sintéticas e a categoria e urgência esperadas de cada uma: os modelos de mensagem e os assuntos de e-mail do simulador de canais, frases por categoria, frases sem categoria, armadilhas de limite de palavra e casos de urgência. No corpus, 2 frases empatam, e as duas são ambíguas de fato: "Tem mensalidade para usar a maquininha?" e "How much do you charge per transaction?".
+As listas são sintéticas e estão na versão 2 nas duas marcas. Toda mudança nelas aumenta a `version` da marca e passa pelo corpus `core/spec/fixtures/routing/classifier_corpus.yml`, com 133 frases sintéticas e a categoria e urgência esperadas de cada uma: os modelos de mensagem e os assuntos de e-mail do simulador de canais, frases por categoria, frases sem categoria, armadilhas de limite de palavra e casos de urgência. No corpus, 2 frases empatam, e as duas são ambíguas de fato: "Tem mensalidade para usar a maquininha?" e "How much do you charge per transaction?".
 
 **Por que palavras-chave.** O classificador é determinístico e explicável: a mesma mensagem dá sempre o mesmo resultado, e a auditoria mostra as palavras e a pontuação que o produziram. Ele roda na transação da entrada, sem chamada externa. A classificação fina fica com o agente, que pode corrigir a categoria pela ação `categorize`.
 
@@ -125,7 +125,7 @@ Depois da classificação, o caminho é o mesmo:
 1. **Regra.** A primeira regra que casa com os fatos da conversa: marca, canal, categoria, urgência, segmento e idioma do lojista e horário da mensagem.
 2. **Fila e transbordo.** Conta as conversas abertas da fila (`with_ai`, `awaiting_human` e `with_human`). Se a contagem atinge a capacidade, segue para a `overflow_queue` e conta de novo, até uma fila com vaga ou o fim da cadeia; a conversa entra na última fila visitada. Um ciclo na cadeia também a encerra.
 3. **Valores.** A prioridade vem sempre da regra. Sem transbordo, SLA e atendente inicial vêm da regra quando ela informa, e da fila quando não. Com transbordo, valem o SLA e o atendente inicial da fila que recebeu a conversa.
-4. **Atribuição.** Atendente inicial `ai`: o atendente IA da marca e o estado `with_ai`. Atendente inicial `human`: o estado `awaiting_human`, sem atendente, com `queued_at` igual ao horário da mensagem.
+4. **Atribuição.** Atendente inicial `ai`: o atendente IA da marca e o estado `with_ai`. Atendente inicial `human`: o estado `awaiting_human`, sem atendente, com `queued_at` igual ao horário da mensagem, e o painel do analista é atualizado.
 
 Sem regra que case, ou com a fila da regra inexistente, a conversa fica em `triage` e o Core grava `conversation.unrouted`; a próxima mensagem do lojista tenta de novo. Com a regra genérica obrigatória e a fila conferida na gravação da regra, esse caso funciona como proteção.
 

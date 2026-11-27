@@ -296,6 +296,7 @@ docker compose run --rm agent-mock pytest
 | `tests/test_context_client.py` | Servidor aiohttp de teste conferindo assinatura, caminho com a marca e `traceparent`; classificação de permanentes e transitórios; pausas de 2 a 60 s |
 | `tests/test_offsets.py` | Confirmação só do offset contíguo; lacuna segura a confirmação; série por conversa e paralelo entre conversas; semáforo; falha inesperada; configuração; assinatura e publicação nos tópicos de `Settings` |
 | `tests/test_trace.py` | Continuação do `traceparent` e início de trace com header inválido |
+| `tests/test_smoke.py` | O pacote `agent_mock` importa |
 | `tests/contract/test_contract.py` | Schemas, exemplos e vetores de assinatura do contrato |
 
 No Compose:

@@ -4,11 +4,11 @@
 
 O núcleo transacional e de auditoria é o caminho único pelo qual toda decisão do Cloudesk é gravada. Ele reúne três peças:
 
-- **o serviço de comando** (`Audit::Command`): executa uma mudança de estado, grava o registro de auditoria dela e, quando o evento sai para o Broker, enfileira o webhook, tudo na mesma transação;
+- **o serviço de comando** (`Audit::Command`): executa uma mudança de estado, grava o registro de auditoria dela e, quando o evento sai para o Broker, enfileira o webhook; quando a mudança aparece no painel do analista, enfileira também a atualização do painel, tudo na mesma transação;
 - **o envelope canônico de evento** (`Audit::EventEnvelope`): o formato único de todo evento do Core, gravado inteiro na auditoria;
 - **o contexto de trace** (`TraceContext` e `TraceContextMiddleware`): o `traceparent` W3C e o horário de recebimento de cada requisição, que acompanham o evento de ponta a ponta.
 
-Canais, roteamento, ações do agente, distribuição, gravação de regras e entregas passam todos por esse caminho. Não existe escrita de domínio fora dele.
+Canais, roteamento, ações do agente, distribuição, gravação de regras, entregas, escalação, ações do analista, varreduras de timeout e de prazo de reabertura, memória do lojista, editores do admin e reprocessamento da DLQ passam todos por esse caminho. As exceções são o registro de idempotência em `processed_events`, gravado pelo `Agents::ActionProcessor` fora do bloco do comando, mas no mesmo `Tenancy.with_brand` e na mesma transação da ação, e as seeds.
 
 ## Onde fica no fluxo
 
@@ -21,7 +21,8 @@ requisição HTTP ── TraceContextMiddleware ── Current.traceparent, Curr
                                     ├─ bloco: mudança de estado
                                     ├─ envelope canônico
                                     ├─ audit_event (append-only)
-                                    └─ Agents::WebhookDeliveryJob (quando o evento sai para o Broker)
+                                    ├─ Agents::WebhookDeliveryJob (quando o evento sai para o Broker)
+                                    └─ Conversations::PanelBroadcastJob (com panel: true)
 ```
 
 ## Por que existe e que valor gera
@@ -59,6 +60,7 @@ end
 | `reason` | Motivo da decisão |
 | `routing_rule` | Versão da `RoutingRule` que casou; o comando grava a regra e a versão |
 | `webhook` | `true` quando o evento sai para o Broker |
+| `panel` | `true` quando a mudança aparece no painel do analista; exige `change.conversation` |
 
 O bloco executa a mudança e informa, em `change`, o alvo, a conversa, a sequência, o estado antes e depois e o payload. O bloco também pode informar `change.routing_rule`, que vale no lugar do argumento: é o caso da versão de regra gravada pelo próprio bloco. O comando devolve o retorno do bloco, o `audit_event` e o envelope.
 
@@ -68,14 +70,15 @@ Todos os passos rodam em um único `Tenancy.with_brand`, na marca do comando:
 2. recusa o comando que não informa o alvo da mudança;
 3. monta o envelope com o `traceparent` e o `received_at` correntes;
 4. grava o `audit_event`: ator, ação, alvo, conversa, antes e depois, envelope, motivo, regra e versão e `trace_id`;
-5. enfileira o `Agents::WebhookDeliveryJob`, quando `webhook` é `true`.
+5. enfileira o `Agents::WebhookDeliveryJob`, quando `webhook` é `true`;
+6. com `panel: true`, recusa o comando sem a conversa e enfileira o `Conversations::PanelBroadcastJob`, com `brand_id`, a conversa e o `team_id` da fila dela.
 
-Um erro em qualquer passo desfaz todos os anteriores. Um comando chamado dentro de outro (por exemplo, o roteamento dentro do Intake) participa da mesma transação.
+Um erro em qualquer passo desfaz todos os anteriores. Um comando chamado dentro do bloco de outro participa da mesma transação, em um savepoint: por exemplo, o comando `agent.<tipo>` do `Agents::ActionProcessor` executa no bloco o `Conversations::Outbound`, o `Conversations::Escalate` ou o `Routing::Route`, que gravam os próprios comandos. Comandos chamados em sequência dentro do mesmo `Tenancy.with_brand` também compartilham a transação: é o caso do Intake, em que contato, conversa, roteamento e mensagem são comandos separados na transação do `Conversations::Intake.call`.
 
 ### Outbox implícito
 
 - O Solid Queue usa o mesmo banco do app e grava o job pela mesma conexão (`SolidQueue::Record.connection_pool` é o pool do `ApplicationRecord`). O `INSERT` do job participa da transação do comando.
-- `enqueue_after_transaction_commit` fica desligado nos jobs de saída (`Agents::WebhookDeliveryJob` e `Channels::DeliveryJob`): com ele ligado, o job seria gravado depois do commit, fora da transação, e um processo que caísse entre o commit e a gravação perderia o job.
+- `enqueue_after_transaction_commit` fica desligado no `ApplicationJob` e, de forma explícita, nos jobs enfileirados dentro da transação (`Agents::WebhookDeliveryJob`, `Channels::DeliveryJob`, `Conversations::MemoryRefreshJob` e `Conversations::PanelBroadcastJob`): com ele ligado, o job seria gravado depois do commit, fora da transação, e um processo que caísse entre o commit e a gravação perderia o job.
 - O job leva nos argumentos `brand_id`, `event_id` e `traceparent`. As tabelas do Solid Queue ficam fora do RLS, e o worker define a marca a partir dos argumentos; o envelope é lido de `audit_events`.
 
 ### Envelope canônico
@@ -87,7 +90,7 @@ Um erro em qualquer passo desfaz todos os anteriores. Um comando chamado dentro 
 | `brand` | Slug da marca |
 | `conversation_id` | Conversa do evento, ou nulo quando o evento não pertence a uma conversa |
 | `sequence` | Sequência da mensagem na conversa, ou nulo quando o evento não é de mensagem |
-| `received_at` | Horário em que o Core recebeu a requisição que produziu o evento; ISO 8601, UTC, com milissegundos |
+| `received_at` | Horário em que o Core recebeu a requisição que produziu o evento (no e-mail, a criação do `InboundEmail`; fora de requisição, o horário do comando); ISO 8601, UTC, com milissegundos |
 | `payload` | Conteúdo completo do evento, específico do tipo |
 | `traceparent` | Contexto de trace W3C do salto que produziu o evento |
 
@@ -106,7 +109,8 @@ versão - trace_id (32 hex) - parent_id (16 hex) - flags (2 hex)
 - O `TraceContextMiddleware` lê o `traceparent` de cada requisição HTTP. Com header válido, o Core mantém o `trace_id` e gera um `parent_id` próprio; sem header, ou com header inválido, inicia um trace. Só a versão `00` é aceita, e `trace_id` ou `parent_id` zerados são inválidos, como define o W3C.
 - O mesmo middleware carimba o `received_at`, o horário de recebimento da requisição. É o ponto inicial das medidas das hipóteses H2 e H4.
 - Os dois valores ficam em `Current`, que o Rails limpa antes e depois de cada requisição. O middleware fica depois de `ActionDispatch::Callbacks` na pilha: em desenvolvimento, o recarregamento de código troca a classe `Current`, e um valor gravado antes dele se perderia.
-- Os jobs continuam o trace recebido nos argumentos (`TraceContext.continue`), e o comando chamado fora de uma requisição HTTP inicia um trace.
+- O e-mail não passa pelo middleware: o `SupportMailbox` grava em `Current.received_at` a criação do `InboundEmail` e inicia o trace.
+- O `Agents::WebhookDeliveryJob` e o `Channels::DeliveryJob` continuam o trace recebido nos argumentos (`TraceContext.continue`). Nos demais jobs (`Conversations::MemoryRefreshJob`, `Conversations::PanelBroadcastJob` e as varreduras), sem `traceparent` nos argumentos, e em todo comando chamado fora de uma requisição HTTP, o comando inicia um trace e usa como `received_at` o horário corrente.
 - O comando grava o `trace_id` em `audit_events.trace_id` e o `traceparent` no envelope e nos argumentos do job.
 
 ## O que o sistema garante
@@ -122,7 +126,7 @@ versão - trace_id (32 hex) - parent_id (16 hex) - flags (2 hex)
 
 | Entregável | O que esta parte entrega | O que fica com outras partes |
 | - | - | - |
-| Rastreabilidade e auditoria das decisões, com linha do tempo por mensagem a partir de `audit_events` e `trace_id` | O registro de toda decisão, com ator, motivo, regra, versão, payload completo, `trace_id` e `received_at` | Tabela append-only e RLS (F1); carimbos dos outros saltos (F3 e F8); linha do tempo na tela (F14) |
+| Rastreabilidade e auditoria das decisões, com linha do tempo por mensagem a partir de `audit_events` e `trace_id` | O registro de toda decisão, com ator, motivo, regra, versão, payload completo, `trace_id` e `received_at` | Tabela append-only e RLS (F1); carimbos do Broker (F9) e do agente (F10), gravados no `audit_event` da ação (F8); linha do tempo na tela (F14) |
 | Integração com o atendente por webhooks e broker | O job de webhook gravado na transação da mensagem, com o envelope que vira o corpo do webhook | Envio (F7) e Broker (F9) |
 | Triagem, handoff e ações do agente auditados | O caminho comum pelo qual o roteamento, as ações do agente e a distribuição gravam as suas decisões | Cada decisão na sua parte (F4, F6, F8 e F11) |
 
@@ -132,7 +136,7 @@ versão - trace_id (32 hex) - parent_id (16 hex) - flags (2 hex)
 | - | - |
 | H3 · nada perdido nem duplicado | O outbox implícito garante que toda mensagem aceita com a conversa na IA tem o job de webhook persistido; uma queda depois do commit não perde o aviso |
 | H2 e H4 · latência | O `received_at` carimbado na entrada é o início das duas medidas, e o `trace_id` liga os carimbos de todos os saltos |
-| H1 · 250 msg/s | Cada mensagem custa uma transação com a mudança, um ou mais `audit_events` e o job; o volume de gravações por mensagem é uma das medidas do experimento |
+| H1 · 250 msg/s | Cada mensagem custa uma transação com a mudança, um ou mais `audit_events` e o job |
 
 ## Diferenciais
 
@@ -165,7 +169,7 @@ versão - trace_id (32 hex) - parent_id (16 hex) - flags (2 hex)
 
 | Arquivo | O que comprova |
 | - | - |
-| `core/spec/modules/audit/command_spec.rb` | Com erro no bloco, na gravação do `audit_event` ou no enfileiramento, não existe mudança, `audit_event` nem job; com sucesso, os três existem e o job está na fila `webhooks`; `enqueue_after_transaction_commit` desligado; o `traceparent` da requisição no `audit_event` e nos argumentos do job |
+| `core/spec/modules/audit/command_spec.rb` | Com erro no bloco, na gravação do `audit_event` ou no enfileiramento, não existe mudança, `audit_event` nem job; com sucesso, os três existem e o job está na fila `webhooks`; com `panel: true`, o `PanelBroadcastJob` na transação, com a conversa e a equipe da fila, e a recusa sem a conversa; `enqueue_after_transaction_commit` desligado e o Solid Queue no pool do app; o `traceparent` da requisição no `audit_event` e nos argumentos do job, e um trace iniciado sem requisição |
 | `core/spec/modules/audit/event_envelope_spec.rb` | Forma do envelope, `event_id` UUID v7 e leitura de volta |
 | `core/spec/lib/trace_context_spec.rb` | Leitura, recusa de header inválido, geração e continuação do trace |
 | `core/spec/lib/trace_context_middleware_spec.rb` | Trace continuado ou iniciado e `received_at` em `Current` durante a requisição; posição na pilha do app; nenhum contexto de uma requisição passa para a seguinte |
@@ -176,11 +180,15 @@ versão - trace_id (32 hex) - parent_id (16 hex) - flags (2 hex)
 | - | - |
 | Banco multi-marca (F1) | `Tenancy.with_brand`, a tabela `audit_events` append-only e as colunas de ator, regra, versão e `trace_id` |
 | Contrato (F3) | O webhook é montado a partir do envelope |
-| Canais (F4) | O Intake, o Outbound e a entrega gravam pelo comando |
+| Canais (F4) | O Intake, o Outbound, a entrega e o `Conversations::CloseExpiredJob` gravam pelo comando |
 | Roteamento (F6) | Classificação, roteamento, atribuição e publicação de regra gravam pelo comando, com a regra e a versão |
 | Saída para o Broker (F7) | O `Agents::WebhookDeliveryJob` lê o envelope e envia |
-| API de ações (F8) | Cada ação e cada recusa gravam pelo comando |
+| API de ações (F8) | Cada ação e cada recusa gravam pelo comando; o registro em `processed_events` fica fora do bloco, na mesma transação |
+| Handoff e painel (F11) | Escalação, ações do analista e varredura de timeout gravam pelo comando; `panel: true` atualiza as telas do painel |
+| Memória (F12) | O `Conversations::MemoryRefresh` e o `memory:demo_close` gravam pelo comando |
+| Admin (F13) | Os editores de filas, equipes e analistas gravam pelo comando |
 | Observabilidade (F14) | A linha do tempo por mensagem parte de `received_at` e `trace_id` |
+| Robustez e escala (F15) | O `Admin::DlqReprocessor` grava `dlq.reprocessed` pelo comando |
 
 ## Fontes
 

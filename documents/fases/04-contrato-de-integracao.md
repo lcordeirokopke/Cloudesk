@@ -24,7 +24,7 @@ Cada seta tem um schema; cada chamada HTTP tem uma assinatura com segredo própr
 
 ## Por que existe e que valor gera
 
-**Componentes independentes.** O Core, o Broker e o agente têm processos, linguagens e ciclos próprios. O contrato é a única coisa que eles compartilham: cada lado valida o que recebe contra o mesmo schema, e uma mudança incompatível aparece como teste de contrato falhando, não como erro em produção.
+**Componentes independentes.** O Core, o Broker e o agente têm processos, linguagens e ciclos próprios. O contrato é a única coisa que eles compartilham: os testes dos dois lados conferem as peças contra os mesmos schemas, e uma mudança incompatível aparece como teste de contrato falhando, não como erro em produção.
 
 **Uma só fonte para duas linguagens.** Schemas, exemplos e vetores ficam em arquivos, não em código. Ruby e Python não traduzem regras um do outro; eles leem o mesmo arquivo. Os vetores de assinatura são conferidos pelas duas implementações e pelo `openssl`.
 
@@ -71,7 +71,19 @@ O código Ruby do contrato fica em `core/lib/contract/` e não acessa o banco, p
 | `idempotency_key.rb` | Deriva a `Idempotency-Key` |
 | `message_created.rb` | Monta o corpo do webhook a partir do envelope canônico do evento |
 
-No Python, a assinatura fica em `agent_mock/src/agent_mock/signature.py`, e o simulador de canais usa a mesma implementação na entrada do chat.
+No Python, a assinatura fica em `agent_mock/src/agent_mock/signature.py`. O simulador de canais tem uma cópia dela em `channel_simulator/src/channel_simulator/signature.py`, usada na entrada JSON do chat, e o kit de conformidade do agente tem a própria conferência em `agent_conformance/src/agent_conformance/signature.py`, usada pelo Core falso.
+
+### Validação em produção
+
+| Peça | Quem valida contra o schema em produção |
+| - | - |
+| `webhook.message-created` | O Core, ao montar o corpo (`Contract::MessageCreated.build`), e o Broker, ao receber o webhook |
+| `kafka.inbound-headers` | O Broker, ao gravar os headers em `agent.inbound` |
+| `kafka.dlq-headers` | O `broker-consumer`, ao gravar os headers de diagnóstico em `agent.dlq` |
+| `action` | O Core, na API de ações (`Agents::ActionProcessor`); o `broker-consumer` não valida a ação, só deriva dela a `Idempotency-Key` |
+| `kafka.outbound-headers`, `action-response`, `context` | Ninguém; são conferidos só nos testes |
+
+O agente não usa os schemas em produção (o `jsonschema` fica só no extra `test`): ele confere os campos do evento e dos headers de `agent.inbound` com checagens próprias e, no contexto, só a forma de `conversation` e `messages`. As peças que ninguém valida em produção são conferidas nos testes do lado que as emite: os specs do Core para `context` e `action-response`, e o kit de conformidade para a ação e os headers publicados pelo agente.
 
 ### Webhook `message.created`
 
@@ -99,7 +111,7 @@ Schema `webhook.message-created`. É o corpo do webhook do Core ao Broker e, sem
 | `agent.outbound` | `kafka.outbound-headers` | `brand` e `traceparent` |
 | `agent.dlq` | `kafka.dlq-headers` | Os headers originais da ação, mais `dlq_reason`, `dlq_status` (opcional), `dlq_source_topic`, `dlq_source_partition`, `dlq_source_offset` e `dlq_failed_at` |
 
-Na DLQ, a mensagem mantém chave, payload e headers originais, e os headers de diagnóstico dizem por que ela está ali:
+Na DLQ, a mensagem mantém chave, payload e headers originais, e os headers de diagnóstico dizem por que ela está ali. Na republicação pela tela `/admin/dlq`, o `Broker::DlqEndpoints` tira da mensagem os headers listados no schema `kafka.dlq-headers` antes de publicá-la de novo em `agent.outbound`:
 
 | `dlq_reason` | Significado |
 | - | - |
@@ -154,7 +166,7 @@ O `context` do `escalate` é o briefing do handoff, com todos os campos obrigat�
 
 ### Resposta da API de ações
 
-Schema `action-response`. É o corpo da resposta do Core ao Broker.
+Schema `action-response`. É o corpo da resposta do Core ao Broker. O formato `error` é também o corpo das respostas de erro do Core ao `GET` da `context_url`.
 
 | `status` | Código HTTP | Campos |
 | - | - | - |
@@ -190,7 +202,7 @@ Os exemplos `valid/com-memoria.json` e `valid/memoria-com-duas-conversas.json` m
 
 ### Assinatura
 
-Todas as chamadas HTTP entre os três componentes são assinadas da mesma forma.
+Todas as chamadas HTTP entre os três componentes, as chamadas do Core aos endpoints da DLQ no Broker e a entrada JSON do chat são assinadas da mesma forma.
 
 | Item | Definição |
 | - | - |
@@ -208,6 +220,8 @@ Todas as chamadas HTTP entre os três componentes são assinadas da mesma forma.
 | Webhook `message.created` | Core (`jobs-webhooks`) | Broker (`broker-web`) | `BROKER_WEBHOOK_SECRET` |
 | API de ações (`POST /api/v1/agent/actions`) | Broker (`broker-consumer`) | Core (`web`) | `AGENT_ACTIONS_SECRET` |
 | `GET` da `context_url` | Agente | Core (`web`) | `AGENT_CONTEXT_SECRET` |
+| Endpoints da DLQ (`GET /dlq/messages`, `POST /dlq/messages/<partition>/<offset>/reprocess`) | Core (`web`, tela `/admin/dlq`) | Broker (`broker-web`) | `BROKER_DLQ_SECRET` |
+| Entrada JSON do chat (`POST /channels/chat/messages`) | Simulador de canais | Core (`web`) | `CHAT_SIGNING_SECRET` |
 
 - O receptor recusa a chamada com timestamp fora da janela (anti-replay) e a chamada cuja assinatura não confere, com comparação em tempo constante.
 - Assinar o método e o caminho amarra a assinatura a um endpoint: um corpo capturado não vale em outra rota.
@@ -224,7 +238,7 @@ Todas as chamadas HTTP entre os três componentes são assinadas da mesma forma.
 
 ## O que o sistema garante
 
-- Toda peça que trafega entre Core, Broker e agente tem um schema, e o lado que recebe a valida.
+- Toda peça que trafega entre Core, Broker e agente tem um schema; o webhook, a ação e os headers gravados pelo Broker são validados em produção, e as demais peças são conferidas nos testes.
 - Ruby e Python validam contra os mesmos schemas e exemplos e assinam com os mesmos vetores.
 - Toda chamada HTTP entre os componentes é assinada, com um segredo por chamada e janela de 5 minutos.
 - A mesma ação, reentregue por qualquer salto, tem sempre a mesma `Idempotency-Key`.
@@ -262,7 +276,8 @@ Todas as chamadas HTTP entre os três componentes são assinadas da mesma forma.
 
 - **Uma versão.** Existe só `v1/`. Uma mudança incompatível exige uma pasta nova e a convivência das duas versões nos três componentes, e não existe negociação de versão nas chamadas.
 - **Duplicação dos padrões.** Os padrões comuns se repetem em cada schema; uma mudança neles precisa ser feita em todos os arquivos.
-- **Assinatura em duas linguagens.** A assinatura tem uma implementação em Ruby e uma em Python (com uma cópia no simulador de canais). Os vetores comuns garantem o mesmo resultado, mas uma mudança no esquema precisa ser feita nos três arquivos.
+- **Assinatura em duas linguagens.** A assinatura tem uma implementação em Ruby e três em Python: a do agente, a cópia no simulador de canais e a conferência do kit de conformidade. Os vetores comuns garantem o mesmo resultado, mas uma mudança no esquema precisa ser feita nos quatro arquivos.
+- **Validação parcial em produção.** O `broker-consumer` não valida a ação, o agente não usa os schemas, e ninguém valida em produção os headers de `agent.outbound`, o `action-response` e o `context`; essas peças dependem dos testes do lado que as emite.
 - **Uma ação por tipo e evento.** A chave não distingue duas ações do mesmo tipo para o mesmo evento: a segunda é tratada como repetição da primeira.
 - **Relógios.** A janela de 300 s e a comparação dos carimbos dependem de os relógios dos componentes estarem alinhados; no ambiente local, todos usam o relógio da mesma máquina.
 - **Segredos compartilhados.** Cada segredo é conhecido pelo emissor e pelo receptor da chamada; a troca de um segredo exige atualizar os dois lados ao mesmo tempo.
@@ -284,7 +299,12 @@ Todas as chamadas HTTP entre os três componentes são assinadas da mesma forma.
 | Ruby | `core/spec/contract/signature_spec.rb` | Os vetores de assinatura; a janela de tempo; a recusa de corpo, caminho, método, timestamp ou segredo diferentes |
 | Ruby | `core/spec/contract/idempotency_key_spec.rb` | Os vetores da chave; a mesma chave para o mesmo evento e tipo |
 | Ruby | `core/spec/contract/message_created_spec.rb` | O evento gravado pelo serviço de comando vira um webhook que segue o schema, com a `context_url` com a marca |
+| Ruby | `core/spec/modules/agents/conversation_context_spec.rb` e `core/spec/requests/api/v1/agent/contexts_spec.rb` | O contexto montado pelo Core segue o schema `context`, e as respostas de erro do contexto seguem o `action-response` |
+| Ruby | `core/spec/modules/agents/action_processor_spec.rb` e `core/spec/requests/api/v1/agent/actions_spec.rb` | As respostas da API de ações seguem o schema `action-response` |
 | Python | `agent_mock/tests/contract/test_contract.py` | Os mesmos schemas, exemplos e vetores de assinatura |
+| Python | `channel_simulator/tests/test_signature.py` | Os vetores de assinatura na cópia do simulador |
+| Python | `agent_conformance/tests/test_signature.py` | Os vetores de assinatura na conferência do kit |
+| Python | `agent_conformance/tests/test_conformance.py` | A ação e os headers publicados pelo agente sob teste seguem os schemas `action` e `kafka.outbound-headers`; a reentrega gera a mesma `Idempotency-Key`; o `escalate` leva o contexto estruturado |
 
 Os testes em Python rodam em `agent_mock/`, com `pip install -e ".[test]"` e `pytest`; o extra `test` inclui o `jsonschema`. Os vetores de `signature-vectors.json` também são conferidos por `openssl dgst -sha256 -hmac`.
 
@@ -297,7 +317,8 @@ Os testes em Python rodam em `agent_mock/`, com `pip install -e ".[test]"` e `py
 | Saída para o Broker (F7) | Monta o corpo com `Contract::MessageCreated.build` e assina com `BROKER_WEBHOOK_SECRET` |
 | API de ações e contexto (F8) | Valida a assinatura, o schema `action` e a `Idempotency-Key`, responde conforme `action-response` e monta o `context` |
 | Broker (F9) | Valida o webhook e os headers, publica o corpo sem alterar, calcula a `Idempotency-Key`, chama a API de ações e grava a DLQ com os headers de diagnóstico (`documents/fases/10-broker.md`) |
-| Agente mock (F10) | Lê o timestamp do registro, devolve os carimbos, assina o `GET` do contexto e publica ações no schema `action` |
+| Agente mock (F10) | Lê o timestamp do registro, devolve os carimbos, assina o `GET` do contexto e publica ações no schema `action`; o kit de conformidade confere o agente contra os schemas |
+| Robustez e escala (F15) | Assina com `BROKER_DLQ_SECRET` as chamadas da tela `/admin/dlq` ao Broker, que tira os headers de `kafka.dlq-headers` na republicação |
 
 ## Fontes
 

@@ -15,13 +15,13 @@ O banco é o único sistema de estado do Cloudesk: atendimentos, mensagens, fila
 ## Onde fica no fluxo
 
 ```text
-web, jobs-webhooks, jobs-default ── papel cloudesk_app ──┐
-                                                         ├── PostgreSQL 18
-migrações e seeds ───────────────── papel cloudesk_owner ┘     │
-                                                               ├─ domínio: brand_id + RLS forçado
-   Tenancy.with_brand(marca)                                   │   (marca da transação em app.brand_id)
-     └─ BEGIN; set_config('app.brand_id', id, true); ...       ├─ brands, brand_channels: só leitura
-                                                               └─ Solid Queue, Cable, Cache; gems
+web, jobs-webhooks, jobs-default, metrics ── papel cloudesk_app ──┐
+                                                                  ├── PostgreSQL 18
+migrações e seeds ────────────────────────── papel cloudesk_owner ┤     │
+postgres-exporter ──────────────────────── papel cloudesk_monitor ┘     ├─ domínio: brand_id + RLS forçado
+   Tenancy.with_brand(marca)                                            │   (marca da transação em app.brand_id)
+     └─ BEGIN; set_config('app.brand_id', id, true); ...                ├─ brands, brand_channels: só leitura
+                                                                        └─ Solid Queue, Cable, Cache; gems
 ```
 
 O Broker não acessa o banco: fala com o Core só por HTTP.
@@ -46,9 +46,10 @@ O Broker não acessa o banco: fala com o Core só por HTTP.
 
 | Papel | Uso | Atributos |
 | - | - | - |
-| Superusuário da imagem | Script de inicialização: cria os papéis e os bancos | Superusuário |
+| Superusuário da imagem | Script de inicialização: cria `cloudesk_owner`, `cloudesk_app` e os bancos; `postgres-monitor-init`: cria ou atualiza `cloudesk_monitor` | Superusuário |
 | `cloudesk_owner` | Migrações e seeds | Dono das tabelas; sem superusuário, `BYPASSRLS` ou `CREATEDB` |
-| `cloudesk_app` | `web`, `jobs-webhooks`, `jobs-default` e testes | Sem superusuário, `BYPASSRLS` ou `CREATEDB`; não é dono |
+| `cloudesk_app` | `web`, `jobs-webhooks`, `jobs-default`, `metrics` e testes | Sem superusuário, `BYPASSRLS` ou `CREATEDB`; não é dono |
+| `cloudesk_monitor` | `postgres-exporter` | Membro de `pg_monitor`, sem `GRANT` em tabelas de domínio; sem superusuário, `BYPASSRLS` ou `CREATEDB`; papel de cluster, fora do `db/structure.sql` |
 
 Permissões do papel da aplicação:
 
@@ -61,7 +62,7 @@ Permissões do papel da aplicação:
 | `schema_migrations`, `ar_internal_metadata` | `SELECT` |
 | Todas | Sem `TRUNCATE` |
 
-Os nomes dos papéis são fixos, porque ficam gravados nos `GRANT` do `db/structure.sql`.
+Os nomes de `cloudesk_owner` e `cloudesk_app` são fixos, porque ficam gravados nos `GRANT` do `db/structure.sql`.
 
 ### Isolamento por marca
 
@@ -89,10 +90,10 @@ SELECT set_config('app.brand_id', '<id da marca>', true);
 - O `true` limita o valor à transação. O pool reutiliza conexões entre requisições, e um valor de sessão passaria de uma requisição para a seguinte.
 - O bloco aninhado restaura a marca anterior ao sair, com sucesso ou com erro.
 - A leitura e a gravação de `app.brand_id` rodam sem o query cache, que devolveria um valor antigo de `current_setting` e deixaria de executar um `set_config` repetido.
-- A chave do query cache é o SQL, sem a marca, e o mesmo SQL devolve linhas diferentes em cada marca. Quando o bloco muda a marca, o cache é limpo na entrada e na saída; o bloco aninhado da mesma marca mantém o cache.
-- Nos jobs, a marca vem nos argumentos e é definida da mesma forma.
+- A chave do query cache é o SQL e os binds, sem a marca, e o mesmo SQL devolve linhas diferentes em cada marca. Quando o bloco muda a marca, o cache é limpo na entrada e na saída; o bloco aninhado da mesma marca mantém o cache.
+- Nos jobs, a marca é definida da mesma forma: os jobs de uma conversa ou mensagem (`Agents::WebhookDeliveryJob`, `Channels::DeliveryJob`, `Conversations::MemoryRefreshJob`, `Conversations::PanelBroadcastJob`) recebem a marca nos argumentos; as varreduras recorrentes (`Conversations::AiTimeoutSweepJob`, `Conversations::CloseExpiredJob`) percorrem as marcas, uma por vez; o e-mail descobre a marca pelo `brand_channels`.
 
-**Tabelas fora do RLS.** Ficam fora as tabelas sem `brand_id`: Solid Queue, Solid Cable e Solid Cache (os workers atendem todas as marcas), Active Storage e Action Mailbox (o e-mail chega antes de a marca ser conhecida), `brands` e `brand_channels` (lidas para descobrir a marca antes de defini-la). As duas últimas são só leitura para a aplicação.
+**Tabelas fora do RLS.** Ficam fora as tabelas sem `brand_id`: Solid Queue, Solid Cable e Solid Cache (os workers atendem todas as marcas), Active Storage e Action Mailbox (o e-mail chega antes de a marca ser conhecida) e `brands`. Fica fora também `brand_channels`, que tem `brand_id`, com chave estrangeira para `brands` e índice único em `(brand_id, id)`, mas é lida para descobrir a marca antes de defini-la; o índice único `(channel, value)` dela não inclui `brand_id`, porque o par define a marca. `brands` e `brand_channels` são só leitura para a aplicação.
 
 **Cuidados com o que ignora o RLS.**
 
@@ -108,13 +109,13 @@ Chaves primárias e `event_id` são UUID v7, gerados pelo banco com o default `u
 
 | Entidade | Tabela | Conteúdo |
 | - | - | - |
-| Brand | `brands` | Marca (InfinitePay, JIM), idioma e prazo de reabertura; fora do RLS |
+| Brand | `brands` | Marca (InfinitePay, JIM), idioma, prazo de reabertura (`reopen_window_minutes`) e limite de taxa de entrada (`inbound_rate_limit_per_second`); fora do RLS |
 | Team | `teams` | Equipe de analistas, com skills e horário comercial |
 | Queue | `queues` | SLA, capacidade, atendente inicial (`ai` ou `human`), fila de transbordo e fila de escalação (fila humana da mesma marca) |
 | RoutingRule | `routing_rules` | Condição (`when`) e resultado (`then`) em `jsonb`, posição, versão e `active`; cada versão é uma linha imutável |
-| Contact | `contacts` e `contact_identities` | Lojista sintético e as identidades dele por canal (telefone, e-mail, id do app), únicas por marca |
-| Conversation | `conversations` | Estado, fila, categoria, urgência, prioridade, SLA, entrada na fila humana, atendente e `last_sequence` |
-| Message | `messages` | Canal, autor (lojista, IA, analista, sistema), texto, anexos e `sequence` |
+| Contact | `contacts` e `contact_identities` | Lojista sintético, com segmento e idioma, e as identidades dele por canal (telefone, e-mail, id do app), únicas por marca |
+| Conversation | `conversations` | Canal, estado, fila, categoria, urgência, prioridade, SLA, entrada na fila humana, atendente, horário da resolução (`resolved_at`) e `last_sequence` |
+| Message | `messages` | Canal, autor (lojista, IA, analista, sistema), texto, anexos, `sequence`, id externo de quem enviou (`external_id`) e canal da marca que recebeu (`brand_channel_id`) |
 | Attendant | `attendants` | Tipo (`ai` ou `human`), equipe, capacidade simultânea e skills |
 | Handoff | `handoffs` | Motivo, resumo e contexto estruturado em `jsonb`; avaliação do briefing (`rating`: `useful` ou `not_useful`), analista que avaliou (`rated_by_id`) e horário (`rated_at`) |
 | AuditEvent | `audit_events` | `event_id`, ator, ação, alvo, antes e depois, envelope, motivo, regra e versão, `trace_id` |
@@ -166,7 +167,7 @@ flowchart LR
 | `awaiting_human` | `with_human` | Analista assume pela distribuição (F6) |
 | `with_human` | `resolved` | Analista resolve (F11) |
 | `resolved` | `triage` | Lojista escreve dentro do prazo de reabertura (F4) |
-| `resolved` | `closed` | Prazo de reabertura vence (F4) |
+| `resolved` | `closed` | Prazo de reabertura vence: varredura recorrente `Conversations::CloseExpiredJob` ou mensagem do lojista com o prazo vencido no `Conversations::Intake` (F4); encerramento de demonstração `memory:demo_close`, sem esperar o prazo (F12) |
 
 A conversa abre sempre em `triage`. Depois de `closed`, uma nova mensagem do lojista abre outra conversa; um índice único parcial garante no máximo uma conversa não `closed` por lojista. Toda transição gera `audit_event`.
 

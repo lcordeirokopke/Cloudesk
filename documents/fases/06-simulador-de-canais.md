@@ -62,7 +62,7 @@ A task `bin/rails simulator:personas`, no Core, exporta para `core/tmp/simulator
 }
 ```
 
-- A task roda com o papel da aplicação e lê os lojistas marca por marca, dentro do RLS. A ordem é fixa e o arquivo não tem horário de geração: o mesmo banco gera sempre o mesmo arquivo.
+- A task roda com o papel da aplicação e lê os lojistas marca por marca, dentro do RLS. Só entram os lojistas com as três identidades (WhatsApp, e-mail e chat). A ordem é fixa e o arquivo não tem horário de geração: o mesmo banco gera sempre o mesmo arquivo.
 - No Compose, a pasta é montada só leitura no simulador, que lê o arquivo a cada comando. O `serve` não depende dele.
 - Com `contacts` igual a `new`, o simulador cria lojistas novos: nome de listas fixas por idioma, telefone com o código do país da marca (`+55` ou `+1`), e-mail `sim.<token>@example.com` e id do app `app-sim-<token>`. O Core cria o lojista na primeira mensagem.
 - Os e-mails dos lojistas das seeds são ASCII. O `formataddr` do Python recusa endereço com acento na parte local, que exigiria SMTPUTF8 do simulador ao Mailpit e ao Action Mailbox.
@@ -118,7 +118,7 @@ Cada linha é um objeto JSON, gravado com append e `flush`, em `channel_simulato
 | Arquivo | Conteúdo |
 | - | - |
 | `runs/<run_id>/sent.jsonl` | Uma linha por envio: execução, canal, marca, origem do lojista (`seed` ou `new`), identidade, `external_id`, intenção, urgência (`urgent`), anexo, horário, status (HTTP, ou 250 no SMTP) e duração; no chat, `conversation_id`, `sequence` e o status do registro do stream; `error` quando a montagem ou o envio falha |
-| `received.jsonl` | Uma linha por resposta recebida: canal, `core_message_id` (o id da `Message` do Core), destinatário, remetente e horário; no WhatsApp, texto e `traceparent`; no chat, stream, autor, texto e sequência; no e-mail, assunto e id do Mailpit |
+| `received.jsonl` | Uma linha por resposta recebida: canal, `core_message_id` (o id da `Message` do Core), destinatário, remetente e horário; no WhatsApp, texto e `traceparent`; no chat, stream, autor, texto e sequência, com o `app_user_id` do stream como destinatário e remetente nulo; no e-mail, assunto e id do Mailpit |
 | `streams.jsonl` | Streams do chat registrados |
 | `mailpit_seen.jsonl` | Ids do Mailpit já tratados |
 

@@ -223,6 +223,7 @@ docker compose exec redpanda rpk group describe cloudesk-broker
 | `core/spec/broker/webhook_app_spec.rb` | `200` com corpo inalterado, chave, headers e posição; `traceparent` com o mesmo `trace_id` e `parent_id` novo; `broker_received_at` com milissegundos; `401` por assinatura, corpo alterado, outro segredo e timestamp vencido; `422` por JSON e schema; `503` sem confirmação do Kafka; `404`, `405` e `/up` |
 | `core/spec/broker/core_client_spec.rb` | Assinatura conferida com `Contract::Signature.verify!`, `Idempotency-Key`, corpo idêntico e `traceparent`; classificação de `200`, `409`, `4xx`, `408`, `429`, `5xx` e erros de rede |
 | `core/spec/broker/actions_consumer_spec.rb` | `200` e `409` marcam sem DLQ; recusa permanente e valor ilegível vão à DLQ com chave, valor e headers originais mais os de diagnóstico; falha transitória lança antes da 10ª tentativa e vai à DLQ na 10ª; falha na DLQ lança sem marcar; o lote para na ação que falhou |
+| `core/spec/broker/producer_spec.rb` | Partição escolhida pelo murmur2 da chave, como no `aiokafka` do agente e no `rpk`; confirmação só com a mensagem gravada, com idempotência e prazo de 3 s |
 | `core/spec/broker/isolation_spec.rb` | `core/lib/broker.rb` e o CLI do Karafka, em processos novos, não definem `Rails` nem `ActiveRecord` |
 | `core/spec/contract/` e `agent_mock/tests/contract/` | Schema `kafka.dlq-headers` e seus exemplos em Ruby e em Python |
 

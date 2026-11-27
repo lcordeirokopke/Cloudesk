@@ -97,9 +97,10 @@ A tarefa recorrente `ai_timeout_sweep` (`core/config/recurring.yml`, `every 15 s
 | `GET /panel/queue` | `Panel::QueuesController#show` | Fila de escalas da equipe e "Minhas conversas" |
 | `POST /panel/assignments` | `Panel::AssignmentsController#create` | "Pegar próximo" |
 | `GET /panel/conversations/:id` | `Panel::ConversationsController#show` | Tela da conversa |
-| `POST /panel/conversations/:id/replies` | `Panel::RepliesController#create` | Resposta do analista |
-| `POST /panel/conversations/:id/resolution` | `Panel::ResolutionsController#create` | Resolução |
-| `POST /panel/handoffs/:id/rating` | `Panel::HandoffRatingsController#create` | Avaliação do briefing (`rating=useful` ou `not_useful`) |
+| `GET /panel/conversations/:conversation_id/messages/:message_id/timeline` | `Panel::TimelinesController#show` | Linha do tempo de uma mensagem do lojista (`documents/fases/15-observabilidade.md`) |
+| `POST /panel/conversations/:conversation_id/replies` | `Panel::RepliesController#create` | Resposta do analista |
+| `POST /panel/conversations/:conversation_id/resolution` | `Panel::ResolutionsController#create` | Resolução |
+| `POST /panel/handoffs/:handoff_id/rating` | `Panel::HandoffRatingsController#create` | Avaliação do briefing (`rating=useful` ou `not_useful`) |
 
 **Acesso.** Todo o `/panel` fica atrás de HTTP basic auth com `PANEL_USER` e `PANEL_PASSWORD`, lidos a cada requisição (`Panel::BaseController`); sem os dois preenchidos, o acesso é negado. Dentro dele, o login é simulado, como o do widget de chat: a escolha do analista fica em `session[:panel_brand]` e `session[:panel_attendant_id]`, e sem ela as páginas voltam à escolha. Só aparece e só entra analista `human` com equipe, conferido na marca da sessão. Toda leitura roda em `Tenancy.with_brand` da marca da sessão: conversa de outra marca responde `404`.
 

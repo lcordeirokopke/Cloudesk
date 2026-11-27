@@ -45,6 +45,7 @@ O admin escreve; o roteamento (`Routing::Route`, F6) lê as regras vigentes e as
 | Filas | `index`, `show`, `new`, `create`, `edit`, `update` | Equipe, SLA, capacidade, atendente inicial, transbordo e fila de escalação; histórico de edições |
 | Equipes | idem | Habilidades e horário comercial; histórico de edições |
 | Atendentes | idem | Analistas humanos editáveis e o atendente IA só para leitura; histórico de edições |
+| DLQ | `GET /admin/dlq`, `POST /admin/dlq/:partition/:offset/reprocess` | Mensagens de `agent.dlq` da marca e o reprocessamento; fora do escopo desta parte (`documents/fases/16-robustez-e-escala.md`) |
 
 Não existe rota de exclusão. Regras são ativadas e desativadas; filas, equipes e analistas são criados e editados. Os horários aparecem em UTC.
 
